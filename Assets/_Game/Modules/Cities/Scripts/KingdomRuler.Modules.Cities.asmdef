@@ -1,0 +1,21 @@
+{
+    "name": "KingdomRuler.Modules.Cities",
+    "rootNamespace": "KingdomRuler.Modules.Cities",
+    "references": [
+        "KingdomRuler.Core",
+        "KingdomRuler.Shared",
+        "VContainer",
+        "Unity.InputSystem",
+        "Unity.TextMeshPro",
+        "Unity.Localization"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,4 +1,4 @@
-# AGENTS.md — Working rules for Claude Code on this project
+# AGENTS.md — Working rules for Agents on this project
 
 This is a Unity 2D mobile game (portrait, pixel-art kingdom sim). Before doing anything
 else in a new session, read:
@@ -71,21 +71,35 @@ Say so explicitly, propose the smallest addition that would cover it, and ask wh
 add it to the relevant doc before or after implementing. Don't quietly improvise a new
 mechanic, currency, or sink/source and let it exist only in code.
 
-## 4. Unity-specific hazards (these cause real damage if ignored)
+## 4. Unity MCP Server (live Editor access) & Unity-specific hazards
 
-- **`.meta` files carry GUIDs that other assets reference by ID.** Never hand-edit a `.meta`
-  file. If you rename or move an asset from outside the Editor (via bash/file tools), its
-  `.meta` file must move/rename with it, or references break silently. When a rename touches
-  anything with a `.meta` file (basically anything under `Assets/`), prefer to describe the
-  rename and let the human do it inside the Editor, or move both files together explicitly
-  and say so.
-- **Scenes and prefabs are YAML.** They're diff-hostile and easy to corrupt with a
-  hand-edit. Prefer expressing changes as C# code (a script that configures itself at
-  runtime, or an editor script) over hand-editing scene/prefab YAML. If a YAML edit is
-  unavoidable, keep it minimal and call out exactly what changed.
-- **Don't assume the Editor is closed.** Unity locks some files while running. If a build or
-  test command fails mysteriously, check whether that's the cause before debugging the
-  actual code.
+This project uses **MCP for Unity** (github.com/CoplayDev/unity-mcp), which gives you direct
+control of the running Unity Editor — creating scenes and GameObjects, editing scripts,
+managing assets, running tests, and building — not just writing files to disk. Use it
+deliberately:
+
+- **Creating new script files via normal text edits is fine** — Unity auto-generates the
+  `.meta` on its next asset import. **Moving, renaming, or deleting an existing asset is the
+  risky operation** — anything already referenced by a scene, prefab, or ScriptableObject
+  carries a GUID in its `.meta` that breaks silently if the file moves without it. Do those
+  operations through MCP's asset tools, not raw `mv`/`rm`, so the Editor's own AssetDatabase
+  keeps the GUID bookkeeping intact. This is the resolution to what used to be a hard
+  "ask the human to do it in the Editor" hazard — MCP lets you do Editor-native asset
+  operations yourself.
+- **Use MCP to verify, not just to build.** After a change, use it to check the console for
+  compile errors and to actually run EditMode (and PlayMode where relevant) tests, rather
+  than asserting they'd pass. The "compiles clean" and "tests pass" items in the Definition
+  of Done (§5) mean *confirmed via MCP this session*, not assumed.
+- **Scenes and prefabs are still YAML underneath**, still diff-hostile, still not something
+  to hand-edit directly — but the fallback is now "use MCP's scene/GameObject/prefab tools,"
+  not "ask a human." A raw YAML edit should be rare and called out explicitly when it
+  happens.
+- **One agent/person per scene at a time, still true regardless of MCP.** MCP doesn't
+  resolve a real-time conflict if a human has the same scene open — coordinate before
+  touching a scene someone else is actively working in.
+- **Don't assume the Editor is closed** when working outside MCP (e.g. plain bash/file
+  tools). Unity locks some files while running; if a build or test command fails
+  mysteriously, check whether that's the cause before debugging the actual code.
 - **Newtonsoft.Json + IL2CPP.** Save/load can work perfectly in the Editor and silently fail
   on a real device build, because IL2CPP's code stripping can remove reflection members
   Newtonsoft needs. If you touch save code, check a `link.xml` is protecting the
@@ -102,9 +116,10 @@ mechanic, currency, or sink/source and let it exist only in code.
 
 A task isn't complete until:
 
-- [ ] It compiles with no new warnings introduced.
-- [ ] Relevant EditMode tests exist and pass (domain logic changes should come with tests,
-      per `ARCHITECTURE.md` §8).
+- [ ] It compiles with no new warnings introduced — confirmed via Unity MCP's console check,
+      not assumed from reading the code.
+- [ ] Relevant EditMode tests exist and were actually run via Unity MCP, and pass (domain
+      logic changes should come with tests, per `ARCHITECTURE.md` §8).
 - [ ] New code lives in the right place per `ARCHITECTURE.md` §3 — inside its module
       (`Modules/<X>/Scripts/{Domain,Presenters,Views}` + the module's `Manager`) or, if it's
       cross-cutting, under `Shared/` or `Core/`, not invented as a new top-level folder.
@@ -146,3 +161,5 @@ A task isn't complete until:
 - Never cram a module's content list (all its cities, businesses, cards, or events) into one
   big Config SO — content items are one-asset-each under that module's `Data/` folder;
   `Config/` is for tunable parameters only (`ARCHITECTURE.md` §7).
+- Never report "compiles" or "tests pass" without having actually checked the console and run
+  the tests through Unity MCP — see §4.

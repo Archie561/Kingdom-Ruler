@@ -1,0 +1,21 @@
+{
+    "name": "KingdomRuler.Modules.Shop",
+    "rootNamespace": "KingdomRuler.Modules.Shop",
+    "references": [
+        "KingdomRuler.Core",
+        "KingdomRuler.Shared",
+        "VContainer",
+        "Unity.InputSystem",
+        "Unity.TextMeshPro",
+        "Unity.Localization"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,24 @@
+{
+    "name": "KingdomRuler.Bootstrap",
+    "rootNamespace": "KingdomRuler.Core",
+    "references": [
+        "KingdomRuler.Core",
+        "KingdomRuler.Shared",
+        "KingdomRuler.Modules.Laws",
+        "KingdomRuler.Modules.Trade",
+        "KingdomRuler.Modules.Economy",
+        "KingdomRuler.Modules.Cities",
+        "KingdomRuler.Modules.Events",
+        "KingdomRuler.Modules.Shop",
+        "VContainer"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
