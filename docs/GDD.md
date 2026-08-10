@@ -24,7 +24,7 @@ it to expand your kingdom on a region map. ~80 hours to fully complete.
    to answer "why am I doing this mechanic right now" with "to afford the next city."
 3. **Crisp, tactile feedback.** Every player action gets a visual + audio + haptic response.
    Nothing feels like it happened only because a number changed in a corner.
-4. **Simple algorithms, not simulations.** Trade offers, events, and pricing use readable
+4. **Simple algorithms, not simulations.** Trade offers, random occurrences, and pricing use readable
    weighted-random and curve formulas — not emergent systems that are hard to balance or
    explain.
 
@@ -40,15 +40,15 @@ it to expand your kingdom on a region map. ~80 hours to fully complete.
   twitch-reflex game — there is no excuse for it draining a battery).
 - **Feel requirements (non-negotiable, apply everywhere):**
   - Animation on every state change (card swipe, number tick-up, screen transition).
-  - Sound effect on every confirmed player action and every notable passive event
-    (level-up, business full, event arrived).
+  - Sound effect on every confirmed player action and every notable passive moment
+    (level-up, business full, occurrence arrived).
   - Haptic feedback (light impact) on swipe-decision, purchase confirmation, and
     level-up; do not overuse haptics elsewhere or it becomes noise.
 
 ## 4. Core loop
 
 **Session loop (2–5 minutes, several times a day):**
-Open app → check mailbox for a random event → collect gold from ready businesses → review
+Open app → check mailbox for a random occurrence → collect gold from ready businesses → review
 any waiting law cards → check trade offers, take good ones → see if a city/village is now
 affordable → buy it if so → close app, resources keep regenerating.
 
@@ -61,10 +61,10 @@ passive bonus, encouraging regional completion over random purchases.
 
 | Resource | Type | Source | Sink |
 |---|---|---|---|
-| **Crystals** | Premium (real-money eventually, see §9) | Shop (mock IAP for now), ads, rare event rewards | Law refill, instant trade refresh, warehouse capacity upgrade (alt path) |
-| **Gold** | Soft | Businesses (Economy screen) | Business purchases, city/village purchases, some event choices |
-| **Characteristics (×6):** Medicine, Education, Army, Science, Infrastructure, Welfare | Soft, leveled stat | Law decisions, some events | City/village purchase requirements (never spent down, only gate checks) |
-| **Trade resources (×6):** Stone, Wood, Metal, Minerals, Leather, Clay | Soft, stored with capacity | Passive regen, trade offers, some events | Trade offers, warehouse upgrades (cross-resource cost), city/village purchases |
+| **Crystals** | Premium (real-money eventually, see §9) | Shop (mock IAP for now), ads, rare occurrence rewards | Law refill, instant trade refresh, warehouse capacity upgrade (alt path) |
+| **Gold** | Soft | Businesses (Economy screen) | Business purchases, city/village purchases, some occurrence choices |
+| **Characteristics (×6):** Medicine, Education, Army, Science, Infrastructure, Welfare | Soft, leveled stat | Law decisions, some occurrences | City/village purchase requirements (never spent down, only gate checks) |
+| **Trade resources (×6):** Stone, Wood, Metal, Minerals, Leather, Clay | Soft, stored with capacity | Passive regen, trade offers, some occurrences | Trade offers, warehouse upgrades (cross-resource cost), city/village purchases |
 
 ## 6. Mechanic 1 — Law Enactment
 
@@ -74,15 +74,24 @@ left = reject) plus a compact readout of all 6 characteristic bars/levels.
 - Player holds up to **8 law cards** at once. Each card is short flavor text plus a small,
   legible summary of which characteristics it affects and by how much (player should never
   be surprised by the outcome of a swipe).
+- **Draw order:** cards are drawn at random from the full card pool, with no repeats until
+  every card has appeared once (a "shuffle bag") — then the pool reshuffles and the cycle
+  continues. Plain sequential or fixed-order cycling is explicitly not the intended feel.
 - Accepting or rejecting a law both apply *some* effect (this is the point — every law
   matters, there's no "safe" choice) to 1–3 of the 6 characteristics.
 - Characteristics level up via an accumulating point total. **Level floor is permanent** —
   once a characteristic reaches level *N*, no card can ever push it back below *N*'s
   threshold, only slow further gain or (rarely) reduce progress *within* the current level.
-- **[ASSUMED — CONFIRM]** Points required to reach level *N*:
-  `required(N) = 100 × 1.35^(N-1)`, rounded to the nearest 10. Store this as a designer-editable
-  curve (array or `AnimationCurve` asset), not a hardcoded formula, so it can be hand-tuned
-  per characteristic later without a code change.
+- **Points required to reach level *N* is a formula, not a lookup table:**
+  `required(N) = round(base × growth^(N-1) / roundTo) × roundTo`, with
+  **[ASSUMED — CONFIRM]** `base = 100`, `growth = 1.35`, `roundTo = 10`. The three coefficients are
+  designer-editable on a config asset so the curve can be retuned without a code change; there is
+  deliberately **no** per-level value array or `AnimationCurve` — a formula keeps every level
+  defined, including ones no designer has reached yet. Per-characteristic coefficient overrides can
+  be layered on later if the curve needs to differ per stat.
+- **The curve is owned by the Ledger, not by Laws.** Every mechanic that awards characteristic
+  points (Laws today, Random Occurrences per §10) must level a given characteristic at the same
+  rate — see `ARCHITECTURE.md` §4.3.
 - **Crystal buy-up:** player may spend crystals to instantly fill the remaining points needed
   for the next level. **[ASSUMED — CONFIRM]** Cost = `ceil(points_remaining / 20)` crystals,
   minimum 1.
@@ -142,7 +151,7 @@ market, etc. — content list to be expanded during production).
 
 **Screen:** Kingdom/Map tab — this is the **home screen**. Shows kingdom population (derived
 from cities/villages owned, and it determines the kingdom's overall level) and an entry
-point into a scrollable region map. The mailbox button for Random Events (§10) also lives
+point into a scrollable region map. The mailbox button for Random Occurrences (§10) also lives
 here.
 
 - The map is divided into **regions** (e.g. Forest Realm, Mountain Ranges, Desert — final
@@ -164,20 +173,30 @@ here.
 - Tapping a locked city shows price breakdown, description, and artwork before purchase;
   tapping an owned one can show flavor/stats (nice-to-have, not core).
 
-## 10. Mechanic 5 — Random Events
+## 10. Mechanic 5 — Random Occurrences
 
-**Delivery:** a mailbox icon/badge on the home (Map) screen. Opening it shows pending event
-letters. Each event presents **a choice between two outcomes**, not a flat notification —
+> **Naming.** This mechanic is called *Random Occurrences*, not "Random Events", throughout the
+> codebase and these docs. "Event" is reserved for messages on the `Core/EventBus` pub/sub
+> (`CharacteristicLeveledUp`, `GoldChanged`, …) — see `ARCHITECTURE.md` §4.2. The two meanings
+> collided constantly in code (`EventsManager` vs. event-bus events), so the mechanic gets the
+> distinct word.
+
+**Delivery:** a mailbox icon/badge on the home (Map) screen. Opening it shows pending occurrence
+letters. Each occurrence presents **a choice between two outcomes**, not a flat notification —
 e.g. *"A flood threatens the riverbanks. Reinforce them for 5,000 gold, or accept losing 30%
 of your stored Wood?"*
 
-- Events can affect **any resource except crystals** (characteristics, trade resources,
+- Occurrences can affect **any resource except crystals** (characteristics, trade resources,
   gold) — never the premium currency, to keep it monetization-safe.
-- **v1 approach: pure weighted-random** event table (simplest to ship, matches the brief's
-  fallback suggestion). Each event has independent trigger odds and a pool of 2 outcomes.
+- Because occurrences reach across into other mechanics' state, they go through the shared Ledger
+  and the shared cross-module events, never through another module's Manager directly
+  (`ARCHITECTURE.md` §4.2). In particular, an occurrence that awards characteristic points levels
+  that characteristic at exactly the same rate Laws does — the curve is Ledger-owned (§6).
+- **v1 approach: pure weighted-random** occurrence table (simplest to ship, matches the brief's
+  fallback suggestion). Each occurrence has independent trigger odds and a pool of 2 outcomes.
 - **v2 (later, optional):** layer in dynamic pacing — track the player's progress rate (e.g.
-  population growth vs. an expected curve) and bias the event table toward
-  slowdown-flavored events when the player is ahead of pace, boost-flavored events when
+  population growth vs. an expected curve) and bias the occurrence table toward
+  slowdown-flavored occurrences when the player is ahead of pace, boost-flavored ones when
   behind. Do not build this until v1 is shipped and there's real data on player pacing —
   building it earlier is guessing at a curve nobody has measured yet.
 
@@ -200,7 +219,7 @@ finish this timer"), and boosters (content TBD, e.g. temporary production multip
   crystals is a non-issue today and a real problem the day crystals cost money.
 - Crystal *sinks* already defined by the brief: law refill, instant law queue refill,
   instant trade refresh, warehouse upgrade (alt path), level buy-up. Crystal *sources*
-  today: Shop (mock), rewarded ads, occasional event rewards. Keep sinks and sources
+  today: Shop (mock), rewarded ads, occasional occurrence rewards. Keep sinks and sources
   roughly matched as content grows — this is a balance concern for playtesting, not
   something to solve up front.
 
@@ -211,7 +230,7 @@ Bottom navigation, 5 tabs:
 1. **Laws** (§6)
 2. **Trade** (§7)
 3. **Economy** (§8)
-4. **Kingdom** (home — map + population + mailbox) (§9, §10)
+4. **Kingdom** (home — map + population + Random Occurrences mailbox) (§9, §10)
 5. **Shop** (§11)
 
 ## 14. Explicit non-goals (v1)
@@ -228,4 +247,4 @@ Bottom navigation, 5 tabs:
   architecture — can grow after the code framework exists).
 - Exact regional completion bonus per region.
 - Whether "watch an ad" actions exist at launch or are a fast-follow.
-- Whether random events need the DDA layer (§10) or ship as pure RNG indefinitely.
+- Whether random occurrences need the DDA layer (§10) or ship as pure RNG indefinitely.

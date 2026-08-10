@@ -60,9 +60,14 @@
   constructor-injected in Unity, so they get method injection via `[Inject]`, registered
   with `RegisterComponentInHierarchy`/`RegisterComponentInNewPrefab` as appropriate.
 - **Unity Localization** — every user-facing string (law card text, city descriptions, UI
-  labels, event flavor text) goes through a String Table key from the start, even before a
-  second language exists. Retrofitting localization onto hardcoded strings later is
-  expensive; routing through tables from day one is nearly free.
+  labels, occurrence flavor text) goes through a String Table key. Retrofitting localization onto
+  hardcoded strings later is expensive; routing through tables is nearly free.
+  **Current status: deliberately deferred.** Content assets already carry key *fields*
+  (`TitleKey`, `FlavorTextKey`), but the Views render those keys as literal text rather than
+  resolving them through a String Table, and no tables exist yet. This is a known, accepted
+  shortcut until the main mechanics are built — the localization pass happens in one go afterwards,
+  which is cheap precisely because the key fields are already in the data model. Keep authoring new
+  user-facing text as a key field; don't hardcode display strings into content assets.
 - **DOTween** — UI animation. Lives in the **View** layer only. A Presenter tells a View
   "show accepted state"; the View decides *how*, including which DOTween sequence plays.
   Presenters and Managers should never construct a `Tween` directly — that's presentation
@@ -86,7 +91,7 @@ Assets/
     Core/
       Scripts/
         Bootstrap/         # Bootstrap scene entry point, root VContainer LifetimeScope
-        EventBus/           # lightweight typed pub/sub used across modules
+        EventBus/           # the pub/sub MECHANISM only — no event message types (§4.2)
     Shared/
       Fonts/
       UI/                   # shared UI atoms: buttons, toasts, currency pips, popups
@@ -105,12 +110,21 @@ Assets/
         Clock/
           Scripts/          # IClock abstraction — makes time-based logic testable
       Ledger/
-        Scripts/            # KingdomLedger (the one source of truth) + state types
-        ScriptableObjects/  # starting-values config (starting gold/crystals, etc.)
+        Scripts/            # KingdomLedger (the one source of truth) + state types +
+                            # leveling math (the points-required formula) — shared by any
+                            # module that mutates a characteristic (Laws today, Random
+                            # Occurrences later)
+          Events/           # cross-module ledger events — see §4.2 tier 2
+        ScriptableObjects/  # starting-values config + leveling-curve coefficients
     Modules/
       Laws/
         Scripts/
-          Domain/           # pure C#: leveling math, permanent-floor rule, card effects
+          Domain/           # pure C#: card-queue and card-effect resolution specific
+                            # to Laws, plus Laws-only math like crystal buy-up pricing.
+                            # NOT the leveling curve — that's Ledger-owned, see §4.3.
+          Events/           # module-local bus events — §4.2 tier 3. Only create this
+                            # when a module actually needs one; Laws deliberately uses
+                            # a plain event on its Manager instead.
           LawsManager.cs    # Model: orchestrates Domain + Ledger + queue timers
           Presenters/
           Views/
@@ -118,10 +132,11 @@ Assets/
           Config/           # LawsConfig.asset — queue cap, replenish time, crystal costs
           Data/             # one LawCardDefinition asset per card
         Prefabs/
+        Images/             # sprites/textures for this mechanic (see note below)
       Trade/                # same internal shape as Laws
       Economy/              # same internal shape as Laws
       Cities/                # same internal shape as Laws
-      Events/                 # same internal shape as Laws
+      RandomOccurrences/      # same internal shape as Laws — the mechanic in GDD §10
       Shop/                    # same internal shape as Laws
     Scenes/
       Bootstrap.unity        # loads first: root LifetimeScope, services, then loads Main
@@ -135,14 +150,21 @@ Assets/
 docs/
   GDD.md
   ARCHITECTURE.md
-AGENTS.md
+CLAUDE.md
 ```
 
 The rule from the brief generalizes cleanly: **group by type within whatever folder you're
-in.** Inside a module: `Scripts/` (further split by role — Domain, Manager, Presenters,
+in.** Inside a module: `Scripts/` (further split by role — Domain, Events, Manager, Presenters,
 Views) and `ScriptableObjects/` (further split into `Config/` and `Data/`). Inside
 `Shared/Services/Audio`: `Scripts/` and `ScriptableObjects/`. Same pattern, applied
 consistently, all the way down.
+
+**This tree is the recommended shape, not an exhaustive whitelist.** A module may add asset folders
+the tree doesn't list — `Images/` for that mechanic's sprites and textures, `Audio/`, `Fonts/` —
+whenever it keeps the mechanic's assets next to the mechanic. What the tree *is* strict about is the
+`Scripts/` role split and the `Config/` vs. `Data/` split (§7), because those two carry real
+architectural meaning. Adding a sprite folder does not need a doc update; adding a new **script
+role** or a new top-level folder under `_Game/` does.
 
 ## 4. Core systems
 
@@ -153,12 +175,46 @@ The Bootstrap scene holds the root `LifetimeScope`. It registers, in order: shar
 the only place that constructs top-level services — everything downstream receives what it
 needs through injection, it doesn't look anything up itself. Bootstrap then loads `Main`.
 
-### 4.2 Event bus (`Core/EventBus`)
+### 4.2 Event bus (`Core/EventBus`) and where event types live
 
-A minimal typed pub/sub, registered as a singleton in the root scope so anyone can inject
-it. Used for cross-module notifications: `CharacteristicLeveledUp`, `ResourceChanged`,
-`GoldChanged`, `CrystalsChanged`, `CityPurchased`, `RegionCompleted`. Presenters subscribe
-to update Views without polling.
+A minimal typed pub/sub, registered as a singleton in the root scope so anyone can inject it.
+Presenters subscribe to update Views without polling.
+
+**"Event" always means a message on this bus.** The mailbox mechanic in `GDD.md` §10 is called
+*Random Occurrences* precisely so the word stays unambiguous — don't reintroduce "event" as a name
+for that mechanic.
+
+Event *types* live in one of three places, by who is allowed to subscribe:
+
+**Tier 1 — `Core/EventBus/`: the mechanism only.** `EventBus.cs` and nothing else. No message types
+live here.
+
+**Tier 2 — `Shared/Ledger/Scripts/Events/`: cross-module ledger events.**
+`CharacteristicLeveledUp`, `ResourceChanged`, `GoldChanged`, `CrystalsChanged`, `CityPurchased`,
+`RegionCompleted`. These describe changes to the one shared source of truth, so any module may
+subscribe — this is the tier the Random Occurrences mechanic reaches across modules through.
+
+They live in `Shared`, not `Core`, and this is a hard constraint rather than a preference: they carry
+`CharacteristicType` / `TradeResourceType`, which are `Shared.Ledger` types. `KingdomRuler.Shared`
+references `KingdomRuler.Core`, so putting them in `Core` would require the reverse reference too —
+an assembly-definition cycle Unity will reject.
+
+**Tier 3 — `Modules/<X>/Scripts/Events/`: module-local events.** Namespace
+`KingdomRuler.Modules.<X>`. Published and subscribed entirely inside one module. If something outside
+the module needs to subscribe, that's the signal it belongs in tier 2, not a reason to reach into the
+module's namespace. **No module has one today**, so the folder is created when a module first earns
+it — see the next paragraph for why.
+
+**Before adding a tier-3 event, check you need the bus at all.** When the only subscriber already
+holds a direct reference to the publisher (a Presenter and its own Manager, say), a plain
+`event Action` on the publisher is simpler, typed, and doesn't need an unsubscribe on the bus. Reach
+for the bus when the publisher shouldn't have to know who's listening.
+
+Worked example: the law card queue used to publish a `CardQueueChanged` message on the bus. Its only
+subscriber was `LawsPresenter`, which is constructed with the `LawsManager` that published it — so it
+is now `LawsManager.QueueChanged`, a plain event, and `LawsManager` no longer takes an `EventBus` at
+all. The trigger to promote it back to tier 2 would be a subscriber outside Laws, such as a
+bottom-nav badge showing how many cards are waiting.
 
 ### 4.3 The Ledger (`Shared/Ledger`)
 
@@ -167,6 +223,66 @@ One class, `KingdomLedger`, owns:
 - 6 `TradeResourceState` (amount, capacity, regen rate)
 - 6 `CharacteristicState` (level, points-into-current-level, permanent level floor)
 
+It also owns the **leveling math** — the points-required-per-level curve — even though today only
+Laws exercises it. Anything that mutates a characteristic (Laws now, Random Occurrences later per
+the GDD) calls into this one implementation rather than each module reimplementing or duplicating
+it. A module can still own its own *config* for how it presents this to the player (e.g. Laws'
+crystal buy-up divisor), but the curve itself is Ledger-owned.
+
+**The curve is a formula, not a table, and the Ledger holds it — callers do not pass it in.**
+Concretely:
+
+- `LevelingCurve` is a plain C# value type in `Shared/Ledger` holding `basePoints`, `growthFactor`,
+  and `roundToNearest`, with the formula from `GDD.md` §6. Keeping it a struct rather than a
+  `ScriptableObject` keeps `KingdomLedger` free of `UnityEngine` types and trivially unit-testable.
+- A `LevelingConfig` SO in `Shared/Ledger/ScriptableObjects/` holds the designer-editable
+  coefficients and produces that struct. It validates in `OnValidate` — a non-positive base or
+  growth would make the level-up loop non-terminating.
+- `KingdomLedger` is constructed with the curve. `AddCharacteristicPoints` and
+  `ReduceCharacteristicPoints` take `(type, points)` only.
+
+The anti-pattern this replaces, and the reason it's spelled out: callers used to pass a
+`Func<int, float>` per call. Laws built one from its own config while the occurrences module shipped
+`level => 100f`, so **the same characteristic leveled at two different rates depending on which
+mechanic touched it.** Any API that lets a caller supply the curve will drift this way again.
+
+**Note on the permanent level floor.** `GDD.md` §6 guarantees a characteristic never drops below a
+level it has reached. That is satisfied by clamping points at 0 within the current level — the floor
+is always exactly the current level, so it is not tracked as a separate field. If a future mechanic
+needs a floor that genuinely diverges from the current level, that's a real design change: update
+the GDD first.
+
+**Notify only once the mutation has settled.** The event bus is synchronous, so a subscriber runs
+*inside* the call that changed the state. Finish mutating, then publish — never publish from inside
+a loop that is still applying changes, or a Presenter can render a half-applied state.
+
+#### Where new math goes — the ownership test
+
+Every mechanic brings its own calculations (warehouse upgrade costs, business profit, offer
+valuation). Almost none of them belong in `Shared/Ledger`. Ask one question:
+
+> **If a second mechanic performed this same operation, would the result have to match?**
+
+- **Yes → `Shared/Ledger`.** The math governs how shared state changes, and divergence would be a
+  bug. This set is small and mostly closed: the characteristic leveling curve (Laws and Random
+  Occurrences both award points) and the trade-resource regen rate derived from warehouse capacity.
+- **No → the module's own `Domain/`.** The math produces a number *that module* then asks the Ledger
+  to move. The Ledger neither knows nor cares how it was derived, and nothing else computes it.
+  `WarehouseUpgradeCalculator`, `BusinessCostCalculator`, `BusinessAccrualCalculator`,
+  `CityAffordabilityChecker` and `CrystalBuyUpCalculator` are all this kind.
+
+Worked example: the leveling curve is Ledger-owned because two mechanics award characteristic points
+and a stat must level at one rate. Crystal buy-up pricing sits in `Modules/Laws/` even though it is
+*about* levelling, because only Laws prices a buy-up — and per `GDD.md` §10 occurrences can never
+touch crystals, so it cannot acquire a second consumer.
+
+**Do not inject module calculators into the Ledger.** Two reasons. Structurally, `KingdomRuler.Shared`
+is referenced *by* the modules; for the Ledger to hold a Trade calculator, `Shared` would need a
+reference back to `Modules.Trade` — an assembly-definition cycle Unity rejects. Semantically, letting
+one module supply the policy for shared state makes every other mechanic depend on that module's
+rules, which is the drift the Ledger exists to prevent. Modules compute a number and hand it to the
+Ledger; they never hand the Ledger a way to compute.
+
 Every module's Manager queries and mutates state through this one object — nobody holds a
 private copy. `CitiesManager.CanAfford(cost)` is a pure function over a `KingdomLedger`
 snapshot plus a `CityCost` data object.
@@ -174,7 +290,7 @@ snapshot plus a `CityCost` data object.
 ### 4.4 Per-module Managers, Presenters, Views (`Modules/*`)
 
 Each module (`LawsManager`, `TradeManager`, `EconomyManager`, `CitiesManager`,
-`EventsManager`, `ShopManager`) owns the behavior specific to its mechanic — card
+`RandomOccurrenceManager`, `ShopManager`) owns the behavior specific to its mechanic — card
 queueing, offer generation, business accrual — and calls into `KingdomLedger` to actually
 move resources. Modules don't call each other directly; coordination happens through the
 event bus, except for reads that legitimately need the shared Ledger (e.g. Cities checking
@@ -194,6 +310,18 @@ system computes `elapsed = now - lastUpdatedUtc` **once** and fast-forwards stat
 accordingly (capped where a cap applies). This must not be simulated tick-by-tick — a
 player who was away 10 hours shouldn't cause 10 hours of simulated frames.
 
+**The Manager owns its timer; the View only displays it.** A timer must never be advanced from a
+View's `Update()` — that couples the mechanic's progress to a UI object being alive and to which tab
+the player happens to be on. Drive accrual from a VContainer entry point (`ITickable`) plus an
+application-focus/pause hook, and persist the timestamp so the timer survives the app closing. A
+Presenter may read remaining time to render a countdown; it must not be what makes the countdown
+advance.
+
+Pump these at a coarse interval (a few times a second), not every frame — these are minute-scale
+timers and per-frame work on them is wasted battery. Note also that a UI *sound* tied to a timer
+firing (a law card arriving, say) should only play when that screen is actually open; the state
+change itself still happens either way, so the screen is correct when the player returns to it.
+
 ## 5. Save system
 
 - `ISaveService` with `Save(GameStateDto)` / `Load() -> GameStateDto?`.
@@ -204,9 +332,13 @@ player who was away 10 hours shouldn't cause 10 hours of simulated frames.
   Mono/CoreCLR, not IL2CPP). Ship a `link.xml` preserving the Newtonsoft.Json assembly, and
   test save/load on an actual device build early — don't discover this the week before
   submission.
-- **DTOs are versioned from day one** (`{ "schemaVersion": 1, ... }`) even though there's
-  only one version right now. The day the save shape changes, write a migration step keyed
-  off `schemaVersion` instead of breaking existing saves.
+- **DTOs are versioned from day one** (`{ "schemaVersion": N, ... }`), and `GameStateDto` keeps a
+  schema history comment recording what changed at each bump.
+- **Migration is deliberately deferred.** No real player saves exist yet, so an unreadable save is
+  discarded and a fresh one started rather than migrated. Keep bumping `schemaVersion` and recording
+  what changed — that history is what the first real migration will be written from. Write that
+  migration when there is player data worth preserving, which is **before the first external build**,
+  not before.
 - Domain objects are not serialized directly — map to/from plain DTOs at the save boundary,
   so `Domain/` and Manager classes stay free to evolve without fighting a serializer.
 - Cloud save later (per the GDD, intentionally deferred) is a second `ISaveService`
@@ -232,7 +364,7 @@ Per module, two distinct kinds of ScriptableObject, kept separate on purpose:
   caps, timer durations, cost-curve coefficients, crystal-cost formulas. This is what
   changes when someone is balancing the game.
 - **`ScriptableObjects/Data/`** — one asset **per content item** (one city, one business,
-  one law card, one event). This is what changes when someone is adding content.
+  one law card, one random occurrence). This is what changes when someone is adding content.
 
 Keeping these separate means adding a city doesn't touch the same file another city's edit
 touched (git-friendly, parallel-editing-friendly), and tuning a curve doesn't require
@@ -241,7 +373,9 @@ scrolling past 40 content entries to find the one number that matters.
 ## 8. Testing strategy
 
 - **EditMode tests are the default and the bulk of coverage**, mirroring `Modules/` under
-  `Tests/EditMode/Modules/`. Cover: leveling math and the permanent-floor rule, offer
+  `Tests/EditMode/Modules/`. Cover: leveling math (including that every mechanic awarding
+  characteristic points levels at the same rate, and that points clamp at 0 within a level rather
+  than dropping it — §4.3), offer
   generation ratio (statistically, across many generated batches), cost curves, offline
   accrual math, city afford-checks. Presenters are plain C# and testable directly; VContainer's
   constructor injection makes it easy to hand a Presenter a fake Manager or fake Ledger in a

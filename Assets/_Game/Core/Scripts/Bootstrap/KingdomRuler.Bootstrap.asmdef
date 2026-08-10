@@ -8,7 +8,7 @@
         "KingdomRuler.Modules.Trade",
         "KingdomRuler.Modules.Economy",
         "KingdomRuler.Modules.Cities",
-        "KingdomRuler.Modules.Events",
+        "KingdomRuler.Modules.RandomOccurrences",
         "KingdomRuler.Modules.Shop",
         "VContainer"
     ],

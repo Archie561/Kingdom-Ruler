@@ -1,0 +1,21 @@
+<!--
+  IL2CPP managed-code stripping directives.
+
+  Newtonsoft.Json resolves DTO properties by reflection, which the IL2CPP stripper cannot
+  see. Without this, save/load works perfectly in the Editor (Mono) and fails on a device
+  build with empty or partially-populated objects — see ARCHITECTURE.md §5.
+
+  The save DTOs themselves are preserved too: they are only ever constructed by the
+  deserializer, so from the stripper's point of view their setters are unused code.
+
+  NOTE: this file makes a device build *plausible*, not verified. Save/load still has to be
+  exercised on an actual IL2CPP build before it can be called done.
+-->
+<linker>
+  <assembly fullname="Newtonsoft.Json" preserve="all" />
+
+  <!-- Save DTOs: populated purely through reflection during deserialization. -->
+  <assembly fullname="KingdomRuler.Shared">
+    <namespace fullname="KingdomRuler.Shared.Services" preserve="all" />
+  </assembly>
+</linker>

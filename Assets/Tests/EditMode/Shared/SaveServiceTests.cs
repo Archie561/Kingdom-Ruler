@@ -30,10 +30,10 @@ namespace KingdomRuler.Tests.EditMode.Shared
         }
 
         [Test]
-        public void GameStateDto_SchemaVersionDefaultsToOne()
+        public void GameStateDto_SchemaVersionDefaultsToCurrent()
         {
             var dto = new GameStateDto();
-            Assert.AreEqual(1, dto.SchemaVersion);
+            Assert.AreEqual(GameStateDto.CurrentSchemaVersion, dto.SchemaVersion);
         }
 
         [Test]
@@ -45,7 +45,29 @@ namespace KingdomRuler.Tests.EditMode.Shared
             var loaded = JsonConvert.DeserializeObject<GameStateDto>(json);
 
             Assert.IsNotNull(loaded);
-            Assert.AreEqual(1, loaded.SchemaVersion);
+            Assert.AreEqual(1, loaded.SchemaVersion,
+                "An older save's version must survive the round trip so a migration can key off it.");
+        }
+
+        /// <summary>
+        /// v2 dropped CharacteristicStateDto.permanentFloor. A v1 save still carries that
+        /// key, so loading one must not throw — the value is simply ignored, and the floor
+        /// it described is recoverable from `level` (they were always equal).
+        /// </summary>
+        [Test]
+        public void CharacteristicStateDto_LoadsV1Json_IgnoringRemovedPermanentFloor()
+        {
+            var json = "{\"level\": 4, \"pointsIntoCurrentLevel\": 25.0, \"permanentFloor\": 4}";
+            CharacteristicStateDto loaded = null;
+
+            Assert.DoesNotThrow(() =>
+            {
+                loaded = JsonConvert.DeserializeObject<CharacteristicStateDto>(json);
+            });
+
+            Assert.IsNotNull(loaded);
+            Assert.AreEqual(4, loaded.Level);
+            Assert.AreEqual(25f, loaded.PointsIntoCurrentLevel);
         }
 
         [Test]

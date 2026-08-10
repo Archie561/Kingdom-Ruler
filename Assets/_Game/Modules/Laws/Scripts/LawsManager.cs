@@ -1,241 +1,266 @@
 using System;
-using System.Collections.Generic;
-using KingdomRuler.Core;
 using KingdomRuler.Shared.Ledger;
 using KingdomRuler.Shared.Services;
 using KingdomRuler.Modules.Laws.Domain;
+using UnityEngine;
 
 namespace KingdomRuler.Modules.Laws
 {
     /// <summary>
-    /// Model layer for the Laws mechanic. Manages card queue, replenishment
-    /// timers, card resolution, crystal refill, and crystal buy-up.
+    /// Model layer for the Laws mechanic: owns the card queue and coordinates the
+    /// domain pieces that make it work.
     /// </summary>
+    /// <remarks>
+    /// <para>The mechanics themselves live in <c>Domain/</c> and are pure C#:
+    /// <see cref="ShuffleBagDeck"/> decides draw order, <see cref="ReplenishmentSlots"/>
+    /// owns the timers, and <see cref="LawCardEffectApplier"/> translates a card's effects
+    /// into Ledger calls. This class holds only the state that spans them — which card is
+    /// active — plus the Ledger and config wiring.</para>
+    ///
+    /// <para><b>Queue model (single active card).</b> The player "holds" up to
+    /// <c>MaxHeldCards</c>, but only one is ever shown, so the rest are tracked as counts
+    /// rather than identities — there is one <see cref="ActiveCard"/>, not a list. Cards
+    /// are drawn at the moment they are shown, which keeps the save to one active id plus
+    /// the remaining cycle:</para>
+    /// <code>
+    ///   active (0 or 1)  +  ready  +  replenishing  ==  MaxHeldCards
+    ///   ready = MaxHeldCards - active - replenishing     (derived, never stored)
+    /// </code>
+    /// <para>"Ready" slots have finished their timer and are waiting for the active slot
+    /// to free up. If a future design really does show several cards at once, this is the
+    /// field that becomes a collection again.</para>
+    /// </remarks>
     public sealed class LawsManager
     {
-        private readonly KingdomLedger _ledger;
-        private readonly EventBus _eventBus;
-        private readonly IClock _clock;
-        private readonly LawsConfig _config;
+        private readonly KingdomLedger      _ledger;
+        private readonly IClock             _clock;
+        private readonly LawsConfig         _config;
+        private readonly ShuffleBagDeck     _deck;
+        private readonly ReplenishmentSlots _slots;
 
-        private readonly List<LawCardDefinition> _heldCards = new();
-        private readonly Queue<LawCardDefinition> _cardPool = new();
-        private DateTime _lastReplenishCheckUtc;
-        private int _cardsReplenishing;
+        /// <summary>
+        /// Raised when the card queue changes structurally: a card arrived, a card was
+        /// resolved, a slot finished replenishing, or an instant refill completed.
+        ///
+        /// A plain event rather than an event-bus message, per ARCHITECTURE.md §4.2:
+        /// the only subscriber is this module's own Presenter, which already holds a
+        /// direct reference here. If something outside Laws ever needs to observe the
+        /// queue (a bottom-nav badge, say), that's the signal to promote it to a
+        /// cross-module bus event instead.
+        /// </summary>
+        public event Action QueueChanged;
 
-        public IReadOnlyList<LawCardDefinition> HeldCards => _heldCards;
-        public int CardsReplenishing => _cardsReplenishing;
-        public DateTime LastReplenishCheckUtc => _lastReplenishCheckUtc;
+        /// <summary>The one card currently presented to the player; null when none is.</summary>
+        private LawCardDefinition _activeCard;
 
-        public LawsManager(
-            KingdomLedger ledger,
-            EventBus eventBus,
-            IClock clock,
-            LawsConfig config)
+        // ── Public read-only surface ──────────────────────────────────────────────
+
+        /// <summary>The card the player is looking at, or null.</summary>
+        public LawCardDefinition ActiveCard            => _activeCard;
+        public bool              HasActiveCard         => _activeCard != null;
+        public int               CardsReplenishing     => _slots.Count;
+        public DateTime          LastReplenishCheckUtc => _slots.LastCheckUtc;
+
+        /// <summary>Slots the active card and the running timers occupy between them.</summary>
+        private int OccupiedSlots => (HasActiveCard ? 1 : 0) + _slots.Count;
+
+        /// <summary>
+        /// Slots whose timers have finished but which have not drawn a card yet,
+        /// because the active slot was occupied when they matured.
+        /// </summary>
+        public int ReadyCardCount => Math.Max(0, _config.MaxHeldCards - OccupiedSlots);
+
+        // ── Constructor ───────────────────────────────────────────────────────────
+
+        public LawsManager(KingdomLedger ledger, IClock clock, LawsConfig config)
+            : this(ledger, clock, config, rng: null) { }
+
+        /// <summary>Overload taking an explicit RNG so draw order is reproducible in tests.</summary>
+        public LawsManager(KingdomLedger ledger, IClock clock, LawsConfig config, System.Random rng)
         {
             _ledger = ledger ?? throw new ArgumentNullException(nameof(ledger));
-            _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
-            _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+            _clock  = clock  ?? throw new ArgumentNullException(nameof(clock));
             _config = config ?? throw new ArgumentNullException(nameof(config));
-            _lastReplenishCheckUtc = _clock.UtcNow;
-            _cardsReplenishing = 0;
+
+            _deck  = new ShuffleBagDeck(rng);
+            _slots = new ReplenishmentSlots(_clock.UtcNow);
         }
 
+        // ── Initialization ────────────────────────────────────────────────────────
+
         /// <summary>
-        /// Initialize the card pool from available card definitions.
-        /// Called during game setup after content is loaded.
-        /// Starts replenishment for any empty card slots.
+        /// Start a fresh game: shuffle the full card set and begin replenishing every
+        /// slot. For resuming a saved game use <see cref="LoadFromDto"/> instead.
         /// </summary>
-        public void InitializeCardPool(IEnumerable<LawCardDefinition> allCards)
+        public void InitializeCardPool()
         {
-            _cardPool.Clear();
-            foreach (var card in allCards)
-                _cardPool.Enqueue(card);
-
-            // Begin replenishing any empty card slots
-            int emptySlots = _config.MaxHeldCards - _heldCards.Count;
-            if (emptySlots > 0 && _cardsReplenishing == 0)
-            {
-                _cardsReplenishing = emptySlots;
-                _lastReplenishCheckUtc = _clock.UtcNow;
-            }
+            _deck.SetContents(_config.AllCards);
+            _slots.StartAll(_config.MaxHeldCards - OccupiedSlots, _clock.UtcNow);
         }
 
+        // ── Replenishment ─────────────────────────────────────────────────────────
+
         /// <summary>
-        /// Process offline/idle accrual for card replenishment.
-        /// Called on app resume or save load.
+        /// Settle the replenishment timers against the clock. Driven by
+        /// <see cref="LawsTickDriver"/>; cheap to call repeatedly.
         /// </summary>
         public void ProcessReplenishment()
         {
-            if (_cardsReplenishing <= 0) return;
+            int matured = _slots.Advance(_clock.UtcNow, _config.CardReplenishTimeSeconds);
+            if (matured <= 0) return;
 
-            var now = _clock.UtcNow;
-            var elapsedSeconds = (float)(now - _lastReplenishCheckUtc).TotalSeconds;
-            if (elapsedSeconds <= 0) return;
+            // At most one card can be shown, so however many slots matured, only the
+            // active slot can be filled here; the rest become "ready".
+            TryFillActiveSlot();
 
-            var secondsPerCard = _config.CardReplenishTimeSeconds;
-            if (secondsPerCard <= 0) return;
-
-            while (elapsedSeconds >= secondsPerCard && _cardsReplenishing > 0)
-            {
-                elapsedSeconds -= secondsPerCard;
-                _cardsReplenishing--;
-
-                if (_heldCards.Count < _config.MaxHeldCards && _cardPool.Count > 0)
-                {
-                    var card = _cardPool.Dequeue();
-                    _heldCards.Add(card);
-                    // Recycle to back of pool for infinite replay
-                    _cardPool.Enqueue(card);
-                }
-            }
-
-            _lastReplenishCheckUtc = now - TimeSpan.FromSeconds(elapsedSeconds);
+            // Every matured slot is player-visible even without a draw: the "+N" badge
+            // rises and the countdown may stop entirely.
+            QueueChanged?.Invoke();
         }
 
+        // ── Card resolution ───────────────────────────────────────────────────────
+
         /// <summary>
-        /// Resolve a held card by accepting or rejecting it.
-        /// Applies effects to characteristics via the Ledger.
+        /// Accept or reject the active card, identified by id to avoid acting on a
+        /// different card than the player saw. Effects hit the Ledger immediately.
         /// </summary>
-        public bool ResolveCard(int cardIndex, bool accept)
+        public bool ResolveCard(string cardId, bool accept)
         {
-            if (cardIndex < 0 || cardIndex >= _heldCards.Count)
+            if (_activeCard == null || _activeCard.CardId != cardId)
                 return false;
 
-            var card = _heldCards[cardIndex];
-            var effects = accept ? card.AcceptEffects : card.RejectEffects;
+            var card = _activeCard;
+            LawCardEffectApplier.Apply(_ledger, accept ? card.AcceptEffects : card.RejectEffects);
 
-            if (effects != null)
-            {
-                foreach (var effect in effects)
-                {
-                    Func<int, float> pointsRequired = level =>
-                        LevelingMath.PointsRequiredFromCurve(level, _config.LevelingCurve);
+            _activeCard = null;
 
-                    if (effect.Points >= 0)
-                    {
-                        _ledger.AddCharacteristicPoints(
-                            effect.Characteristic, effect.Points, pointsRequired);
-                    }
-                    else
-                    {
-                        _ledger.ReduceCharacteristicPoints(
-                            effect.Characteristic, -effect.Points, pointsRequired);
-                    }
-                }
-            }
+            // Open the freed slot BEFORE reading ReadyCardCount: that count is derived
+            // from the occupied slots, so measuring it first would overcount by one and
+            // hand the player a card the queue hasn't actually produced.
+            if (OccupiedSlots < _config.MaxHeldCards)
+                _slots.AddOne(_clock.UtcNow);
 
-            _heldCards.RemoveAt(cardIndex);
+            TryFillActiveSlot();
 
-            // Start replenishing if below cap
-            if (_heldCards.Count + _cardsReplenishing < _config.MaxHeldCards)
-            {
-                _cardsReplenishing++;
-                if (_cardsReplenishing == 1)
-                    _lastReplenishCheckUtc = _clock.UtcNow;
-            }
-
+            QueueChanged?.Invoke();
             return true;
         }
 
+        // ── Crystal spends ────────────────────────────────────────────────────────
+
+        // Prices live here, next to the transactions that charge them. A Presenter that
+        // derived its own display price from the same config would be a second
+        // implementation of the same formula — and a price shown that drifts from the
+        // price charged is a monetization bug, not a cosmetic one.
+
         /// <summary>
-        /// Instantly refill held cards to the cap by spending crystals.
-        /// Cost: CrystalCostPerRefill per missing card.
-        /// Replaces the replenishment queue — you pay to skip the wait.
+        /// Crystals to instantly mature every pending timer
+        /// (GDD §6: <c>CrystalCostPerRefill</c> per missing card). 0 when nothing is running.
         /// </summary>
+        public int RefillCost => _slots.Count * _config.CrystalCostPerRefill;
+
+        /// <summary>
+        /// Crystals to finish this characteristic's current level.
+        /// 0 when there is nothing left to buy, so callers can gate the offer on it.
+        /// </summary>
+        public int GetBuyUpCost(CharacteristicType type) =>
+            CrystalBuyUpCalculator.CalculateCost(
+                _ledger.PointsRemainingForNextLevel(type), _config.CrystalBuyUpDivisor);
+
+        /// <summary>Instantly mature every pending timer for crystals.</summary>
         public bool RefillWithCrystals()
         {
-            int totalMissing = _config.MaxHeldCards - _heldCards.Count;
-            if (totalMissing <= 0) return false;
+            if (!_slots.IsRunning) return false;
 
-            int cost = totalMissing * _config.CrystalCostPerRefill;
-            if (!_ledger.SpendCrystals(cost)) return false;
+            if (!_ledger.SpendCrystals(RefillCost)) return false;
 
-            // Cancel pending replenishment and immediately add cards
-            _cardsReplenishing = 0;
-            while (_heldCards.Count < _config.MaxHeldCards && _cardPool.Count > 0)
-            {
-                var card = _cardPool.Dequeue();
-                _heldCards.Add(card);
-                _cardPool.Enqueue(card);
-            }
+            _slots.CancelAll(_clock.UtcNow);
+            TryFillActiveSlot();
 
+            QueueChanged?.Invoke();
             return true;
         }
 
-        /// <summary>
-        /// Buy up a characteristic to the next level using crystals.
-        /// </summary>
+        /// <summary>Spend crystals to finish the current level of a characteristic.</summary>
         public bool BuyUpCharacteristic(CharacteristicType type)
         {
-            var state = _ledger.GetCharacteristic(type);
-            Func<int, float> pointsRequired = level =>
-                LevelingMath.PointsRequiredFromCurve(level, _config.LevelingCurve);
+            int crystalCost = GetBuyUpCost(type);
 
-            float required = pointsRequired(state.Level);
-            float remaining = required - state.PointsIntoCurrentLevel;
-            if (remaining <= 0) remaining = 0.01f; // edge case: exactly at threshold
+            if (crystalCost <= 0)
+            {
+                // A zero price means nothing is left to buy. The Ledger rolls a
+                // characteristic over the moment it has enough points, so reaching here
+                // means that invariant is broken — say so rather than charging the player
+                // for a purchase that would do nothing.
+                Debug.LogError(
+                    $"[LawsManager] BuyUpCharacteristic: nothing remaining for {type}. " +
+                    "Ledger rollover invariant may be violated — refusing to charge crystals.");
+                return false;
+            }
 
-            int crystalCost = CrystalBuyUpCalculator.CalculateCost(remaining, _config.CrystalBuyUpDivisor);
             if (!_ledger.SpendCrystals(crystalCost)) return false;
 
-            _ledger.AddCharacteristicPoints(type, remaining, pointsRequired);
+            _ledger.AddCharacteristicPoints(type, _ledger.PointsRemainingForNextLevel(type));
             return true;
         }
 
+        // ── Timer query ───────────────────────────────────────────────────────────
+
+        /// <summary>Seconds until the next card matures; 0 when nothing is replenishing.</summary>
+        public float GetSecondsUntilNextCard() =>
+            _slots.SecondsUntilNext(_clock.UtcNow, _config.CardReplenishTimeSeconds);
+
+        // ── Save / Load ───────────────────────────────────────────────────────────
+
         /// <summary>
-        /// Get the number of seconds until the next card finishes replenishing.
-        /// Returns 0 if no cards are replenishing.
+        /// Restore from save data, then immediately settle whatever elapsed while the
+        /// game was closed (ARCHITECTURE.md §4.5).
         /// </summary>
-        public float GetSecondsUntilNextCard()
+        public void LoadFromDto(LawsStateDto dto)
         {
-            if (_cardsReplenishing <= 0) return 0f;
-            var elapsed = (float)(_clock.UtcNow - _lastReplenishCheckUtc).TotalSeconds;
-            return Math.Max(0f, _config.CardReplenishTimeSeconds - elapsed);
+            if (dto == null)
+            {
+                InitializeCardPool();
+                return;
+            }
+
+            _deck.SetContents(_config.AllCards);
+            _deck.RestoreCycle(dto.RemainingDeckCardIds, dto.LastDrawnCardId);
+
+            _activeCard = _deck.FindById(dto.ActiveCardId);
+
+            _slots.Restore(dto.CardsReplenishing, ParseUtcOr(dto.LastReplenishCheckUtc, _clock.UtcNow));
+
+            ProcessReplenishment();
         }
 
-        // --- Save/Load Hydration ---
-
-        /// <summary>Load state from save DTO.</summary>
-        public void LoadFromDto(LawsStateDto dto, IEnumerable<LawCardDefinition> allCards)
+        /// <summary>Capture current state for saving.</summary>
+        public LawsStateDto ToDto() => new LawsStateDto
         {
-            // Build lookup
-            var cardLookup = new Dictionary<string, LawCardDefinition>();
-            foreach (var card in allCards)
-            {
-                if (card != null && !string.IsNullOrEmpty(card.CardId))
-                    cardLookup[card.CardId] = card;
-            }
+            ActiveCardId          = _activeCard != null ? _activeCard.CardId : null,
+            LastDrawnCardId       = _deck.LastDrawnCardId,
+            RemainingDeckCardIds  = _deck.RemainingCardIds(),
+            CardsReplenishing     = _slots.Count,
+            LastReplenishCheckUtc = _slots.LastCheckUtc.ToString("O")
+        };
 
-            _heldCards.Clear();
-            if (dto.HeldCardIds != null)
-            {
-                foreach (var id in dto.HeldCardIds)
-                {
-                    if (cardLookup.TryGetValue(id, out var card))
-                        _heldCards.Add(card);
-                }
-            }
+        // ── Private ───────────────────────────────────────────────────────────────
 
-            _cardsReplenishing = dto.CardsReplenishing;
-            _lastReplenishCheckUtc = DateTime.TryParse(dto.LastReplenishCheckUtc, null,
+        /// <summary>
+        /// Draw into the active slot if it is empty and a matured slot is waiting.
+        /// </summary>
+        private void TryFillActiveSlot()
+        {
+            if (HasActiveCard) return;
+            if (ReadyCardCount <= 0) return;
+
+            _activeCard = _deck.Draw();
+        }
+
+        private static DateTime ParseUtcOr(string iso, DateTime fallback) =>
+            DateTime.TryParse(iso, null,
                 System.Globalization.DateTimeStyles.RoundtripKind, out var parsed)
                 ? parsed
-                : _clock.UtcNow;
-
-            InitializeCardPool(cardLookup.Values);
-        }
-
-        /// <summary>Save current state to DTO.</summary>
-        public LawsStateDto ToDto()
-        {
-            var dto = new LawsStateDto();
-            dto.HeldCardIds = new List<string>();
-            foreach (var card in _heldCards)
-                dto.HeldCardIds.Add(card.CardId);
-            dto.CardsReplenishing = _cardsReplenishing;
-            dto.LastReplenishCheckUtc = _lastReplenishCheckUtc.ToString("O");
-            return dto;
-        }
+                : fallback;
     }
 }

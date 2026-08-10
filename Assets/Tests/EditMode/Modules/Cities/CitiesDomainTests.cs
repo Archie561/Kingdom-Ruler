@@ -26,7 +26,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Cities
         public void Check_AllRequirementsMet_ReturnsTrue()
         {
             _ledger.AddGold(100);
-            _ledger.AddCharacteristicPoints(CharacteristicType.Army, 100, _ => 50);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Army, 100);
             _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 20000f);
             _ledger.AddTradeResource(TradeResourceType.Wood, 50);
 

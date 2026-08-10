@@ -93,5 +93,76 @@ namespace KingdomRuler.Tests.EditMode.Shared
 
             Assert.DoesNotThrow(() => _bus.Publish(new GoldChanged(100, 50)));
         }
+
+        /// <summary>
+        /// A throwing subscriber must not swallow the event for everyone behind it.
+        /// The Ledger publishes immediately after mutating, so one bad Presenter would
+        /// otherwise leave every other listener with a stale view of the game state.
+        /// </summary>
+        [Test]
+        public void Publish_OneSubscriberThrows_OthersStillReceiveTheEvent()
+        {
+            bool beforeRan = false, afterRan = false;
+
+            _bus.Subscribe<GoldChanged>(_ => beforeRan = true);
+            _bus.Subscribe<GoldChanged>(_ => throw new InvalidOperationException("boom"));
+            _bus.Subscribe<GoldChanged>(_ => afterRan = true);
+
+            Assert.Throws<InvalidOperationException>(() => _bus.Publish(new GoldChanged(100, 50)));
+
+            Assert.IsTrue(beforeRan, "Subscriber registered before the thrower must still run.");
+            Assert.IsTrue(afterRan, "Subscriber registered after the thrower must still run.");
+        }
+
+        [Test]
+        public void Publish_MultipleSubscribersThrow_AggregatesThemAll()
+        {
+            _bus.Subscribe<GoldChanged>(_ => throw new InvalidOperationException("one"));
+            _bus.Subscribe<GoldChanged>(_ => throw new InvalidOperationException("two"));
+
+            var ex = Assert.Throws<AggregateException>(() => _bus.Publish(new GoldChanged(1, 1)));
+            Assert.AreEqual(2, ex.InnerExceptions.Count);
+        }
+
+        [Test]
+        public void Publish_HandlerUnsubscribedByAnEarlierHandler_DoesNotRun()
+        {
+            bool secondRan = false;
+            Action<GoldChanged> second = _ => secondRan = true;
+
+            _bus.Subscribe<GoldChanged>(_ => _bus.Unsubscribe(second));
+            _bus.Subscribe(second);
+
+            _bus.Publish(new GoldChanged(100, 50));
+
+            Assert.IsFalse(secondRan,
+                "A handler removed during delivery must not be invoked from the snapshot.");
+        }
+
+        [Test]
+        public void Publish_HandlerSubscribedByAnEarlierHandler_DoesNotRunThisDelivery()
+        {
+            int lateRuns = 0;
+
+            _bus.Subscribe<GoldChanged>(_ => _bus.Subscribe<GoldChanged>(__ => lateRuns++));
+
+            _bus.Publish(new GoldChanged(100, 50));
+            Assert.AreEqual(0, lateRuns, "A handler added mid-delivery joins from the next publish.");
+
+            _bus.Publish(new GoldChanged(100, 50));
+            Assert.AreEqual(1, lateRuns);
+        }
+
+        [Test]
+        public void Clear_RemovesAllSubscribers()
+        {
+            bool ran = false;
+            _bus.Subscribe<GoldChanged>(_ => ran = true);
+
+            _bus.Clear();
+            _bus.Publish(new GoldChanged(100, 50));
+
+            Assert.IsFalse(ran);
+        }
     }
 }

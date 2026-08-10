@@ -10,367 +10,574 @@ using UnityEngine;
 
 namespace KingdomRuler.Tests.EditMode.Modules.Laws
 {
-    // Test helper: fake clock for deterministic time control
+    // ── Shared test helper (used by both domain and presenter tests) ───────────────
     public class FakeClock : IClock
     {
         public DateTime UtcNow { get; set; } = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         public void Advance(TimeSpan duration) => UtcNow += duration;
     }
 
-    [TestFixture]
-    public sealed class LevelingMathTests
-    {
-        [Test]
-        public void DefaultPointsRequired_Level1_Returns100()
-        {
-            Assert.AreEqual(100f, LevelingMath.DefaultPointsRequired(1));
-        }
+    // ── LevelingMath tests now live in Tests/EditMode/Shared/Ledger/ ──────────────
+    // (Moved alongside the class to KingdomRuler.Tests.EditMode.Shared.Ledger.)
 
-        [Test]
-        public void DefaultPointsRequired_Level2_Returns140()
-        {
-            Assert.AreEqual(140f, LevelingMath.DefaultPointsRequired(2));
-        }
-
-        [Test]
-        public void DefaultPointsRequired_Level3_Returns180()
-        {
-            Assert.AreEqual(180f, LevelingMath.DefaultPointsRequired(3));
-        }
-
-        [TestCase(0)]
-        [TestCase(-1)]
-        public void DefaultPointsRequired_Level0OrNegative_ThrowsArgumentException(int level)
-        {
-            Assert.Throws<ArgumentException>(() => LevelingMath.DefaultPointsRequired(level));
-        }
-
-        [Test]
-        public void PointsRequiredFromCurve_WithinBounds_ReturnsArrayValue()
-        {
-            var curve = new float[] { 50f, 150f, 300f };
-            // Level 1 = index 0
-            Assert.AreEqual(50f, LevelingMath.PointsRequiredFromCurve(1, curve));
-            Assert.AreEqual(150f, LevelingMath.PointsRequiredFromCurve(2, curve));
-            Assert.AreEqual(300f, LevelingMath.PointsRequiredFromCurve(3, curve));
-        }
-
-        [Test]
-        public void PointsRequiredFromCurve_BeyondBounds_FallsBackToDefault()
-        {
-            var curve = new float[] { 50f };
-            // Level 2 is beyond array, uses default: 140
-            Assert.AreEqual(140f, LevelingMath.PointsRequiredFromCurve(2, curve));
-        }
-
-        [Test]
-        public void PointsRequiredFromCurve_NullArray_FallsBackToDefault()
-        {
-            Assert.AreEqual(100f, LevelingMath.PointsRequiredFromCurve(1, null));
-        }
-
-        [Test]
-        public void PointsRequiredFromCurve_Level0_ThrowsArgumentException()
-        {
-            Assert.Throws<ArgumentException>(() => LevelingMath.PointsRequiredFromCurve(0, new float[0]));
-        }
-    }
-
-    [TestFixture]
-    public sealed class CrystalBuyUpCalculatorTests
-    {
-        [TestCase(100f, 20f, 5)]
-        [TestCase(95f, 20f, 5)]
-        [TestCase(101f, 20f, 6)]
-        [TestCase(1f, 20f, 1)]
-        [TestCase(0f, 20f, 1)]
-        [TestCase(-10f, 20f, 1)]
-        public void CalculateCost_ReturnsExpectedCost(float remaining, float divisor, int expected)
-        {
-            Assert.AreEqual(expected, CrystalBuyUpCalculator.CalculateCost(remaining, divisor));
-        }
-
-        [Test]
-        public void CalculateCost_DivisorZero_ThrowsArgumentException()
-        {
-            Assert.Throws<ArgumentException>(() => CrystalBuyUpCalculator.CalculateCost(100f, 0f));
-        }
-    }
+    // ── LawsManagerTests ──────────────────────────────────────────────────────────
 
     [TestFixture]
     public sealed class LawsManagerTests
     {
-        private FakeClock _clock;
-        private EventBus _eventBus;
-        private KingdomLedger _ledger;
-        private LawsConfig _config;
-        private LawsManager _manager;
-        private List<ScriptableObject> _createdAssets;
+        private FakeClock      _clock;
+        private EventBus       _eventBus;
+        private KingdomLedger  _ledger;
+        private LawsConfig     _config;
+        private LawsManager    _manager;
+        private readonly List<ScriptableObject> _createdAssets = new();
 
         [SetUp]
         public void SetUp()
         {
-            _createdAssets = new List<ScriptableObject>();
-            _clock = new FakeClock();
+            _clock    = new FakeClock();
             _eventBus = new EventBus();
-            _ledger = new KingdomLedger(_eventBus);
+            _ledger   = new KingdomLedger(_eventBus);
+
             _config = ScriptableObject.CreateInstance<LawsConfig>();
-            _config.MaxHeldCards = 8;
-            _config.CardReplenishTimeSeconds = 120;
-            _config.CrystalCostPerRefill = 2;
+            _config.MaxHeldCards              = 8;
+            _config.CardReplenishTimeSeconds  = 120f;
+            _config.CrystalCostPerRefill      = 2;
             _createdAssets.Add(_config);
-            
-            _manager = new LawsManager(_ledger, _eventBus, _clock, _config);
+
+            _manager = new LawsManager(_ledger, _clock, _config);
         }
 
         [TearDown]
         public void TearDown()
         {
-            foreach (var asset in _createdAssets)
-            {
-                if (asset != null)
-                {
-                    UnityEngine.Object.DestroyImmediate(asset);
-                }
-            }
+            foreach (var a in _createdAssets)
+                if (a != null) UnityEngine.Object.DestroyImmediate(a);
             _createdAssets.Clear();
         }
 
-        private LawCardDefinition CreateTestCard(string id, LawCardEffect[] accept, LawCardEffect[] reject)
+        private LawCardDefinition CreateCard(string id,
+            LawCardEffect[] accept = null, LawCardEffect[] reject = null)
         {
             var card = ScriptableObject.CreateInstance<LawCardDefinition>();
-            card.CardId = id;
+            card.CardId        = id;
             card.AcceptEffects = accept;
             card.RejectEffects = reject;
             _createdAssets.Add(card);
             return card;
         }
 
+        /// Advance the clock and pump replenishment until the active slot is filled.
+        private LawCardDefinition PushOneCardToActive(string id = "card_a",
+            LawCardEffect[] accept = null, LawCardEffect[] reject = null)
+        {
+            var card = CreateCard(id, accept, reject);
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+            _clock.Advance(TimeSpan.FromSeconds(120));
+            _manager.ProcessReplenishment();
+            return card;
+        }
+
+        // ── ResolveCard ───────────────────────────────────────────────────────────
+
         [Test]
         public void ResolveCard_Accept_AppliesAcceptEffects()
         {
-            var acceptEffect = new LawCardEffect { Characteristic = CharacteristicType.Army, Points = 10f };
-            var card = CreateTestCard("test_card", new[] { acceptEffect }, null);
-            _manager.InitializeCardPool(new[] { card });
-            
-            _manager.ProcessReplenishment(); // Start process
-            _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment(); 
+            var effect = new LawCardEffect { Characteristic = CharacteristicType.Army, Points = 10f };
+            var card   = PushOneCardToActive("card_a", accept: new[] { effect });
 
-            float initialMilitary = _ledger.GetCharacteristic(CharacteristicType.Army).PointsIntoCurrentLevel;
-            
-            bool resolved = _manager.ResolveCard(0, true);
-            Assert.IsTrue(resolved);
-            Assert.AreEqual(initialMilitary + 10f, _ledger.GetCharacteristic(CharacteristicType.Army).PointsIntoCurrentLevel);
+            float before = _ledger.GetCharacteristic(CharacteristicType.Army).PointsIntoCurrentLevel;
+            bool result  = _manager.ResolveCard(card.CardId, accept: true);
+
+            Assert.IsTrue(result);
+            Assert.AreEqual(before + 10f,
+                _ledger.GetCharacteristic(CharacteristicType.Army).PointsIntoCurrentLevel);
         }
 
         [Test]
         public void ResolveCard_Reject_AppliesRejectEffects()
         {
-            var rejectEffect = new LawCardEffect { Characteristic = CharacteristicType.Infrastructure, Points = 5f };
-            var card = CreateTestCard("test_card", null, new[] { rejectEffect });
-            _manager.InitializeCardPool(new[] { card });
-            
-            _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment(); 
+            var effect = new LawCardEffect { Characteristic = CharacteristicType.Infrastructure, Points = 5f };
+            var card   = PushOneCardToActive("card_a", reject: new[] { effect });
 
-            float initialEconomy = _ledger.GetCharacteristic(CharacteristicType.Infrastructure).PointsIntoCurrentLevel;
-            
-            bool resolved = _manager.ResolveCard(0, false);
-            Assert.IsTrue(resolved);
-            Assert.AreEqual(initialEconomy + 5f, _ledger.GetCharacteristic(CharacteristicType.Infrastructure).PointsIntoCurrentLevel);
+            float before = _ledger.GetCharacteristic(CharacteristicType.Infrastructure).PointsIntoCurrentLevel;
+            bool result  = _manager.ResolveCard(card.CardId, accept: false);
+
+            Assert.IsTrue(result);
+            Assert.AreEqual(before + 5f,
+                _ledger.GetCharacteristic(CharacteristicType.Infrastructure).PointsIntoCurrentLevel);
         }
 
         [Test]
-        public void ResolveCard_RemovesCardFromHeldList()
+        public void ResolveCard_RemovesActiveCard()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment(); 
+            var card = PushOneCardToActive();
+            Assert.IsTrue(_manager.HasActiveCard);
 
-            Assert.AreEqual(1, _manager.HeldCards.Count);
-            _manager.ResolveCard(0, true);
-            Assert.AreEqual(0, _manager.HeldCards.Count);
+            _manager.ResolveCard(card.CardId, true);
+
+            Assert.IsFalse(_manager.HasActiveCard);
         }
 
         [Test]
-        public void ResolveCard_InvalidIndex_ReturnsFalse()
+        public void ResolveCard_WrongCardId_ReturnsFalse()
         {
-            Assert.IsFalse(_manager.ResolveCard(0, true));
-            Assert.IsFalse(_manager.ResolveCard(-1, true));
+            PushOneCardToActive();
+            Assert.IsFalse(_manager.ResolveCard("wrong_id", true));
+        }
+
+        [Test]
+        public void ResolveCard_NoActiveCard_ReturnsFalse()
+        {
+            Assert.IsFalse(_manager.ResolveCard("any_id", true));
         }
 
         [Test]
         public void ResolveCard_StartsReplenishmentTimer()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            
-            // Fill completely
-            for(int i = 0; i < 8; i++) 
-            {
-                _clock.Advance(TimeSpan.FromSeconds(120));
-                _manager.ProcessReplenishment();
-            }
-            Assert.AreEqual(8, _manager.HeldCards.Count);
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            // Advance enough for all 8 slots to fill.
+            _clock.Advance(TimeSpan.FromSeconds(120 * 8));
+            _manager.ProcessReplenishment();
+
+            // 1 active, 7 ready, 0 replenishing.
+            Assert.IsTrue(_manager.HasActiveCard);
             Assert.AreEqual(0, _manager.CardsReplenishing);
 
-            // Resolve one, should start replenishing
-            _manager.ResolveCard(0, true);
-            Assert.AreEqual(7, _manager.HeldCards.Count);
-            Assert.AreEqual(1, _manager.CardsReplenishing);
-            Assert.AreEqual(120f, _manager.GetSecondsUntilNextCard());
+            _manager.ResolveCard(card.CardId, true);
+
+            // Active slot consumed → new replenishment slot opened,
+            // but a ready card immediately fills the active slot.
+            Assert.IsTrue(_manager.HasActiveCard);  // ready card drawn
+            Assert.AreEqual(1, _manager.CardsReplenishing); // one slot replenishing
         }
 
         [Test]
-        public void ProcessReplenishment_AddsCardAfterEnoughTime()
+        public void ResolveCard_WhenNoReadySlots_ActiveSlotBecomesEmpty()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            
-            Assert.AreEqual(0, _manager.HeldCards.Count);
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            // Only one replenishment cycle — 1 active, 0 ready, 7 replenishing.
+            _clock.Advance(TimeSpan.FromSeconds(120));
+            _manager.ProcessReplenishment();
+            Assert.IsTrue(_manager.HasActiveCard);
+            Assert.AreEqual(7, _manager.CardsReplenishing);
+
+            _manager.ResolveCard(card.CardId, true);
+
+            // No ready cards → active slot becomes empty, replenishing goes to 8.
+            Assert.IsFalse(_manager.HasActiveCard);
+            Assert.AreEqual(8, _manager.CardsReplenishing);
+        }
+
+        // ── ProcessReplenishment ──────────────────────────────────────────────────
+
+        [Test]
+        public void ProcessReplenishment_AddsActiveCardAfterEnoughTime()
+        {
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            Assert.IsFalse(_manager.HasActiveCard);
+
             _clock.Advance(TimeSpan.FromSeconds(119));
             _manager.ProcessReplenishment();
-            Assert.AreEqual(0, _manager.HeldCards.Count);
+            Assert.IsFalse(_manager.HasActiveCard);
 
             _clock.Advance(TimeSpan.FromSeconds(1));
             _manager.ProcessReplenishment();
-            Assert.AreEqual(1, _manager.HeldCards.Count);
+            Assert.IsTrue(_manager.HasActiveCard);
+        }
+
+        /// <summary>
+        /// Regression: a slot finishing while the active slot is already occupied is the
+        /// COMMON case, and it changes two things the player can see — ReadyCardCount (the
+        /// "+N" badge) goes up and CardsReplenishing (the countdown) goes down. The manager
+        /// used to publish only when a card was actually drawn, leaving the badge and timer
+        /// stale until the player's next swipe.
+        /// </summary>
+        [Test]
+        public void ProcessReplenishment_SlotCompletesWhileCardHeld_RaisesQueueChanged()
+        {
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            // Fill the active slot first.
+            _clock.Advance(TimeSpan.FromSeconds(120));
+            _manager.ProcessReplenishment();
+            Assert.IsTrue(_manager.HasActiveCard, "Precondition: a card is active.");
+            Assert.AreEqual(0, _manager.ReadyCardCount,  "Precondition: nothing ready yet.");
+
+            // Now subscribe and let one more slot mature. No card can be drawn — the
+            // active slot is taken — but the ready count must change and be announced.
+            int published = 0;
+            _manager.QueueChanged += () => published++;
+
+            _clock.Advance(TimeSpan.FromSeconds(120));
+            _manager.ProcessReplenishment();
+
+            Assert.AreEqual(1, _manager.ReadyCardCount, "A slot matured into a ready card.");
+            Assert.IsTrue(_manager.HasActiveCard, "The active card is unchanged.");
+            Assert.AreEqual(1, published,
+                "A completed slot changes the queue badge and countdown, so it must publish.");
         }
 
         [Test]
-        public void ProcessReplenishment_HandlesMultipleCardsWorthOfElapsedTime()
+        public void ProcessReplenishment_LastSlotCompletes_AnnouncesTimerStopped()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            
-            _clock.Advance(TimeSpan.FromSeconds(360)); // 3 cards worth
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            // Draw the active card, then let 6 of the remaining 7 slots mature.
+            _clock.Advance(TimeSpan.FromSeconds(120 * 7));
             _manager.ProcessReplenishment();
-            Assert.AreEqual(3, _manager.HeldCards.Count);
+            Assert.AreEqual(1, _manager.CardsReplenishing, "Precondition: one slot still running.");
+
+            int published = 0;
+            _manager.QueueChanged += () => published++;
+
+            _clock.Advance(TimeSpan.FromSeconds(120));
+            _manager.ProcessReplenishment();
+
+            Assert.AreEqual(0, _manager.CardsReplenishing,
+                "The countdown has stopped — the timer label should hide.");
+            Assert.AreEqual(1, published,
+                "The View can only learn the countdown stopped if this is published.");
         }
 
         [Test]
-        public void ProcessReplenishment_CapsAtMaxHeldCards()
+        public void ProcessReplenishment_NothingMatured_DoesNotPublish()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            
-            _clock.Advance(TimeSpan.FromSeconds(12000)); // Plenty of time
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            int published = 0;
+            _manager.QueueChanged += () => published++;
+
+            _clock.Advance(TimeSpan.FromSeconds(30)); // well short of one slot
             _manager.ProcessReplenishment();
-            Assert.AreEqual(8, _manager.HeldCards.Count); // Max is 8
+
+            Assert.AreEqual(0, published, "No slot completed, so there is nothing to announce.");
+        }
+
+        [Test]
+        public void ProcessReplenishment_MultipleElapsedCycles_OnlyDrawsOneActiveCard()
+        {
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            // 3 slots worth of time — but only 1 active card can be shown.
+            _clock.Advance(TimeSpan.FromSeconds(360));
+            _manager.ProcessReplenishment();
+            Assert.IsTrue(_manager.HasActiveCard);
+            Assert.AreEqual(5, _manager.CardsReplenishing); // 8 - 1 active - 2 ready = 5 replenishing
+        }
+
+        [Test]
+        public void ProcessReplenishment_CapsAtMaxReplenishingSlots()
+        {
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            _clock.Advance(TimeSpan.FromSeconds(12000));
+            _manager.ProcessReplenishment();
+
+            // All 8 slots done: 1 active, 7 ready, 0 replenishing.
+            Assert.IsTrue(_manager.HasActiveCard);
+            Assert.AreEqual(0, _manager.CardsReplenishing);
+            Assert.AreEqual(7, _manager.ReadyCardCount);
         }
 
         [Test]
         public void ProcessReplenishment_NoCardsReplenishing_DoesNothing()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            
-            // Fill completely
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
             _clock.Advance(TimeSpan.FromSeconds(1200));
-            _manager.ProcessReplenishment();
-            Assert.AreEqual(8, _manager.HeldCards.Count);
-            
+            _manager.ProcessReplenishment(); // fills all slots
+
+            bool hadCardBefore = _manager.HasActiveCard;
+            int repBefore  = _manager.CardsReplenishing;
+
             _clock.Advance(TimeSpan.FromSeconds(120));
             _manager.ProcessReplenishment();
-            Assert.AreEqual(8, _manager.HeldCards.Count);
+
+            Assert.AreEqual(hadCardBefore, _manager.HasActiveCard);
+            Assert.AreEqual(repBefore,  _manager.CardsReplenishing);
         }
 
+        // ── RefillWithCrystals ────────────────────────────────────────────────────
+
         [Test]
-        public void RefillWithCrystals_FillsToCapAndSpendsCrystals()
+        public void RefillWithCrystals_SpendsCrystalsAndCancelsTimers()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            
-            // Cost = 8 missing × 2 crystals/card = 16
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool(); // 8 replenishing
+
+            // Cost = 8 × 2 = 16
             _ledger.AddCrystals(20);
-            
-            Assert.AreEqual(0, _manager.HeldCards.Count);
-            
             bool result = _manager.RefillWithCrystals();
+
             Assert.IsTrue(result);
-            Assert.AreEqual(8, _manager.HeldCards.Count);
-            Assert.AreEqual(4, _ledger.Crystals); // 20 - 16 = 4
+            Assert.AreEqual(0,  _manager.CardsReplenishing); // all timers cancelled
+            Assert.IsTrue(_manager.HasActiveCard);          // 1 active card drawn
+            Assert.AreEqual(4,  _ledger.Crystals);           // 20 - 16
         }
 
         [Test]
         public void RefillWithCrystals_FailsIfNotEnoughCrystals()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            
-            _ledger.AddCrystals(1); 
-            
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            _ledger.AddCrystals(1);
             bool result = _manager.RefillWithCrystals();
+
             Assert.IsFalse(result);
-            Assert.AreEqual(0, _manager.HeldCards.Count);
+            Assert.AreEqual(8, _manager.CardsReplenishing);
             Assert.AreEqual(1, _ledger.Crystals);
         }
 
         [Test]
-        public void RefillWithCrystals_AlreadyFull_ReturnsFalse()
+        public void RefillWithCrystals_WhenNoSlotsReplenishing_ReturnsFalse()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
             _clock.Advance(TimeSpan.FromSeconds(1200));
-            _manager.ProcessReplenishment();
-            
-            _ledger.AddCrystals(10);
-            
-            bool result = _manager.RefillWithCrystals();
-            Assert.IsFalse(result);
-            Assert.AreEqual(10, _ledger.Crystals);
+            _manager.ProcessReplenishment(); // all slots filled
+
+            _ledger.AddCrystals(100);
+            Assert.IsFalse(_manager.RefillWithCrystals());
+            Assert.AreEqual(100, _ledger.Crystals);
         }
+
+        // ── BuyUpCharacteristic ───────────────────────────────────────────────────
 
         [Test]
         public void BuyUpCharacteristic_SpendsCrystalsAndLevelsUp()
         {
             _ledger.AddCrystals(100);
-            int initialLevel = _ledger.GetCharacteristic(CharacteristicType.Army).Level;
-            
+            int levelBefore = _ledger.GetCharacteristic(CharacteristicType.Army).Level;
+
             bool result = _manager.BuyUpCharacteristic(CharacteristicType.Army);
-            
+
             Assert.IsTrue(result);
-            Assert.AreEqual(initialLevel + 1, _ledger.GetCharacteristic(CharacteristicType.Army).Level);
-            Assert.Less(_ledger.Crystals, 100); // verify spent
+            Assert.AreEqual(levelBefore + 1, _ledger.GetCharacteristic(CharacteristicType.Army).Level);
+            Assert.Less(_ledger.Crystals, 100);
         }
 
         [Test]
         public void BuyUpCharacteristic_FailsIfNotEnoughCrystals()
         {
-            _ledger.AddCrystals(0);
-            int initialLevel = _ledger.GetCharacteristic(CharacteristicType.Army).Level;
-            
-            bool result = _manager.BuyUpCharacteristic(CharacteristicType.Army);
-            
+            int levelBefore = _ledger.GetCharacteristic(CharacteristicType.Army).Level;
+            bool result     = _manager.BuyUpCharacteristic(CharacteristicType.Army);
+
             Assert.IsFalse(result);
-            Assert.AreEqual(initialLevel, _ledger.GetCharacteristic(CharacteristicType.Army).Level);
+            Assert.AreEqual(levelBefore, _ledger.GetCharacteristic(CharacteristicType.Army).Level);
         }
+
+        // ── GetSecondsUntilNextCard ───────────────────────────────────────────────
 
         [Test]
         public void GetSecondsUntilNextCard_ReturnsCorrectRemainingTime()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
             _clock.Advance(TimeSpan.FromSeconds(20));
             _manager.ProcessReplenishment();
-            
+
             Assert.AreEqual(100f, _manager.GetSecondsUntilNextCard(), 0.01f);
         }
 
         [Test]
         public void GetSecondsUntilNextCard_ReturnsZeroWhenNoReplenishment()
         {
-            var card = CreateTestCard("test_card", null, null);
-            _manager.InitializeCardPool(new[] { card });
-            
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
             _clock.Advance(TimeSpan.FromSeconds(1200));
-            _manager.ProcessReplenishment(); // Full capacity
-            
+            _manager.ProcessReplenishment();
+
             Assert.AreEqual(0f, _manager.GetSecondsUntilNextCard());
+        }
+
+        // ── Shuffle-bag tests ─────────────────────────────────────────────────────
+
+        [Test]
+        public void ShuffleBag_AllCardsDrawnBeforeRepeat_OneFullCycle()
+        {
+            // Five distinct cards — each must appear exactly once per cycle.
+            int n = 5;
+            var cards = new LawCardDefinition[n];
+            for (int i = 0; i < n; i++)
+                cards[i] = CreateCard($"card_{i}");
+            _config.AllCards = cards;
+            _manager.InitializeCardPool();
+
+            var seen = new HashSet<string>();
+            for (int i = 0; i < n; i++)
+            {
+                // Advance one slot per iteration to get cards one-by-one.
+                _clock.Advance(TimeSpan.FromSeconds(120));
+                _manager.ProcessReplenishment();
+
+                // Resolve the active card to make room for the next.
+                var active = _manager.ActiveCard;
+                if (active != null)
+                {
+                    Assert.IsFalse(seen.Contains(active.CardId),
+                        $"Card '{active.CardId}' appeared twice in the same cycle.");
+                    seen.Add(active.CardId);
+                    _manager.ResolveCard(active.CardId, true);
+                }
+            }
+
+            Assert.AreEqual(n, seen.Count, "Not all cards appeared in the first cycle.");
+        }
+
+        [Test]
+        public void ShuffleBag_NoBackToBackOnCycleBoundary()
+        {
+            // Two cards: exhausting the full cycle forces a reshuffle where the
+            // first card of the new cycle is guaranteed ≠ the last of the old.
+            var cardA = CreateCard("A");
+            var cardB = CreateCard("B");
+            _config.AllCards = new[] { cardA, cardB };
+            _manager.InitializeCardPool();
+
+            // Draw all 2 cards in the first cycle.
+            string lastDrawn = null;
+            for (int i = 0; i < 2; i++)
+            {
+                _clock.Advance(TimeSpan.FromSeconds(120));
+                _manager.ProcessReplenishment();
+                var active = _manager.ActiveCard;
+                if (active != null)
+                {
+                    lastDrawn = active.CardId;
+                    _manager.ResolveCard(active.CardId, true);
+                }
+            }
+
+            Assert.IsNotNull(lastDrawn, "No cards were drawn.");
+
+            // Draw the first card of the new cycle (cycle 2).
+            _clock.Advance(TimeSpan.FromSeconds(120));
+            _manager.ProcessReplenishment();
+            var firstOfNewCycle = _manager.ActiveCard;
+
+            Assert.IsNotNull(firstOfNewCycle, "First card of new cycle was null.");
+            Assert.AreNotEqual(lastDrawn, firstOfNewCycle.CardId,
+                $"Back-to-back repeat: '{lastDrawn}' was last of cycle 1 AND first of cycle 2.");
+        }
+
+        [Test]
+        public void ShuffleBag_CycleRestarts_WhenDeckExhausted()
+        {
+            // 3-card set. Exhaust full cycle then verify we can draw again.
+            int n = 3;
+            var cards = new LawCardDefinition[n];
+            for (int i = 0; i < n; i++) cards[i] = CreateCard($"c_{i}");
+            _config.AllCards = cards;
+            _manager.InitializeCardPool();
+
+            // Exhaust first cycle.
+            for (int i = 0; i < n; i++)
+            {
+                _clock.Advance(TimeSpan.FromSeconds(120));
+                _manager.ProcessReplenishment();
+                var active = _manager.ActiveCard;
+                if (active != null) _manager.ResolveCard(active.CardId, true);
+            }
+
+            // Second cycle: can still draw.
+            _clock.Advance(TimeSpan.FromSeconds(120));
+            _manager.ProcessReplenishment();
+            Assert.IsNotNull(_manager.ActiveCard,
+                "No card available after deck exhaustion and reshuffle.");
+        }
+
+        // ── Save / Load ───────────────────────────────────────────────────────────
+
+        [Test]
+        public void LoadFromDto_RestoresActiveCard()
+        {
+            var card = PushOneCardToActive();
+            var dto  = _manager.ToDto();
+
+            var manager2 = new LawsManager(_ledger, new FakeClock(), _config);
+            manager2.LoadFromDto(dto);
+
+            Assert.IsTrue(manager2.HasActiveCard);
+            Assert.AreEqual(card.CardId, manager2.ActiveCard.CardId);
+        }
+
+        [Test]
+        public void LoadFromDto_ProcessesOfflineCatchUp()
+        {
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool(); // 8 replenishing
+
+            var dto = _manager.ToDto();
+
+            // Simulate offline time: 2 card replenishments elapsed.
+            var futureClock = new FakeClock();
+            futureClock.Advance(TimeSpan.FromSeconds(240));
+
+            var manager2 = new LawsManager(_ledger, futureClock, _config);
+            manager2.LoadFromDto(dto);
+
+            // 2 slots should have completed offline → 1 active, 1 ready, 6 replenishing.
+            Assert.IsTrue(manager2.HasActiveCard);
+            Assert.AreEqual(6, manager2.CardsReplenishing);
+        }
+
+        [Test]
+        public void LoadFromDto_RestoresRemainingDeck()
+        {
+            var cardA = CreateCard("A");
+            var cardB = CreateCard("B");
+            var cardC = CreateCard("C");
+            _config.AllCards = new[] { cardA, cardB, cardC };
+            _manager.InitializeCardPool();
+
+            // Draw one card.
+            _clock.Advance(TimeSpan.FromSeconds(120));
+            _manager.ProcessReplenishment();
+            _manager.ResolveCard(_manager.ActiveCard.CardId, true);
+
+            var dto = _manager.ToDto();
+            Assert.AreEqual(2, dto.RemainingDeckCardIds.Count,
+                "Two cards should remain in deck after one draw.");
+
+            var manager2 = new LawsManager(_ledger, _clock, _config);
+            manager2.LoadFromDto(dto);
+
+            // Remaining deck count should match.
+            var dto2 = manager2.ToDto();
+            Assert.AreEqual(dto.RemainingDeckCardIds.Count, dto2.RemainingDeckCardIds.Count);
         }
     }
 }

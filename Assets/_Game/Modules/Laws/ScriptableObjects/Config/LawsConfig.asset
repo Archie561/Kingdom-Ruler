@@ -16,14 +16,7 @@ MonoBehaviour:
   CardReplenishTimeSeconds: 120
   CrystalCostPerRefill: 2
   CrystalBuyUpDivisor: 20
-  LevelingCurve:
-  - 100
-  - 140
-  - 180
-  - 250
-  - 330
-  - 450
-  - 600
-  - 810
-  - 1100
-  - 1480
+  AllCards:
+  - {fileID: 11400000, guid: 69d2c17b6d794944ba0e4cf3b19179c8, type: 2}
+  - {fileID: 11400000, guid: ffd879c209c3ea445ab0c2d5593e0a9a, type: 2}
+  - {fileID: 11400000, guid: 1fe1ab0c49a18394c940a6dfb79e9d09, type: 2}

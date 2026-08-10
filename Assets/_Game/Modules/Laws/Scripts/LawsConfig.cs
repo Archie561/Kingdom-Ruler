@@ -23,20 +23,15 @@ namespace KingdomRuler.Modules.Laws
         [Tooltip("Divisor for crystal buy-up cost. Cost = ceil(pointsRemaining / this value), min 1.")]
         public float CrystalBuyUpDivisor = 20f;
 
-        [Header("Leveling Curve")]
-        [Tooltip("Points required per level. Index 0 = level 1. Falls back to formula for levels beyond the array.")]
-        public float[] LevelingCurve = new float[]
-        {
-            100f,   // Level 1
-            140f,   // Level 2 (100 × 1.35^1 ≈ 135 → rounded to 140)
-            180f,   // Level 3 (100 × 1.35^2 ≈ 182 → 180)
-            250f,   // Level 4 (100 × 1.35^3 ≈ 246 → 250)
-            330f,   // Level 5
-            450f,   // Level 6
-            600f,   // Level 7
-            810f,   // Level 8
-            1100f,  // Level 9
-            1480f,  // Level 10
-        };
+        // NOTE: the characteristic leveling curve deliberately does NOT live here.
+        // It is Ledger-owned (LevelingConfig in Shared/Ledger) because Laws is not the
+        // only mechanic that awards characteristic points — see ARCHITECTURE.md §4.3.
+
+        [Header("Card Content")]
+        [Tooltip(
+            "All LawCardDefinition assets that can appear in the queue. " +
+            "Each card is still a separate asset in ScriptableObjects/Data/ — " +
+            "this list is only the registry the manager uses to build the pool.")]
+        public LawCardDefinition[] AllCards;
     }
 }

@@ -13,6 +13,9 @@ namespace KingdomRuler.Modules.Laws
         [Tooltip("Unique identifier for this card (used in save data).")]
         public string CardId;
 
+        [Tooltip("Localization key for the card's title (short name shown at the top of the card).")]
+        public string TitleKey;
+
         [Tooltip("Localization key for the card's flavor text.")]
         public string FlavorTextKey;
 
