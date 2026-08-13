@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using KingdomRuler.Core;
@@ -8,6 +9,7 @@ using KingdomRuler.Shared.Services;
 using KingdomRuler.Modules.Laws;
 using KingdomRuler.Modules.Laws.Domain;
 using KingdomRuler.Modules.Laws.Presenters;
+using KingdomRuler.Tests.EditMode.Shared.Ledger;
 
 namespace KingdomRuler.Tests.EditMode.Modules.Laws
 {
@@ -30,6 +32,54 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         public void TriggerMedium() => MediumTriggerCount++;
     }
 
+    /// <summary>
+    /// Returns "table:key" so tests can assert exactly which entry the Presenter asked for,
+    /// without booting Unity Localization. Overrides let a test pin real text where the
+    /// wording matters.
+    /// </summary>
+    public sealed class FakeLocalizationService : ILocalizationService
+    {
+        public readonly System.Collections.Generic.List<string> Requested = new();
+        public readonly System.Collections.Generic.Dictionary<string, string> Overrides = new();
+
+        public bool IsReady { get; set; } = true;
+        public event Action LocaleChanged;
+
+        public string Resolve(string table, string key) => Resolve(table, key, null);
+
+        public string Resolve(string table, string key, params object[] args)
+        {
+            string id = table + ":" + key;
+            Requested.Add(id);
+            if (Overrides.TryGetValue(id, out var text)) return text;
+            // Smart String stand-in: append the args so composition is still observable.
+            if (args != null && args.Length > 0) return id + "(" + string.Join(",", args) + ")";
+            return id;
+        }
+
+        public void WhenReady(Action onReady)
+        {
+            if (onReady == null) return;
+            if (IsReady) onReady();
+            else _pendingReady += onReady;
+        }
+
+        private Action _pendingReady;
+
+        /// <summary>Simulate localization finishing its asynchronous startup.</summary>
+        public void BecomeReady()
+        {
+            IsReady = true;
+            var callbacks = _pendingReady;
+            _pendingReady = null;
+            callbacks?.Invoke();
+            LocaleChanged?.Invoke();
+        }
+
+        /// <summary>Simulate the player switching language.</summary>
+        public void RaiseLocaleChanged() => LocaleChanged?.Invoke();
+    }
+
     // ── Tests ─────────────────────────────────────────────────────────────────────
 
     [TestFixture]
@@ -42,9 +92,12 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         private LawsManager       _manager;
         private FakeAudioService  _audio;
         private FakeHapticService _haptics;
+        private FakeLocalizationService _localization;
+        private CharacteristicRegistry  _characteristics;
         private LawsPresenter     _presenter;
 
         private readonly List<ScriptableObject> _createdAssets = new();
+        private readonly List<UnityEngine.Object> _createdObjects = new();
 
         [SetUp]
         public void SetUp()
@@ -63,7 +116,10 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _manager   = new LawsManager(_ledger, _clock, _config);
             _audio     = new FakeAudioService();
             _haptics   = new FakeHapticService();
-            _presenter = new LawsPresenter(_manager, _ledger, _eventBus, _audio, _haptics);
+            _localization = new FakeLocalizationService();
+            _characteristics = TestCharacteristics.Complete(_createdObjects);
+            _presenter = new LawsPresenter(
+                _manager, _ledger, _eventBus, _audio, _haptics, _localization, _characteristics);
         }
 
         [TearDown]
@@ -73,6 +129,10 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             foreach (var asset in _createdAssets)
                 if (asset != null) UnityEngine.Object.DestroyImmediate(asset);
             _createdAssets.Clear();
+
+            foreach (var obj in _createdObjects)
+                if (obj != null) UnityEngine.Object.DestroyImmediate(obj);
+            _createdObjects.Clear();
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────────
@@ -101,7 +161,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             return card;
         }
 
-        // ── ActiveCard / QueuedCardCount ──────────────────────────────────────────
+        // ── ActiveCard / held-card readout ────────────────────────────────────────
 
         [Test]
         public void ActiveCardDisplay_WhenNoCardHeld_IsUnavailable()
@@ -119,26 +179,184 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             Assert.AreEqual(card.CardId, display.CardId);
         }
 
+        // ── Localization ──────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Card text is keyed off CardId, so there is nothing on the asset to wire and
+        /// nothing to mistype. This pins the derivation.
+        /// </summary>
         [Test]
-        public void QueuedCardCount_WithOneActiveAndNoReady_ReturnsZero()
+        public void ActiveCardDisplay_ResolvesTitleAndFlavorFromTheCardId()
         {
-            PushOneCardToHeld();
-            // 1 active, 7 replenishing, 0 ready
-            Assert.AreEqual(0, _presenter.QueuedCardCount);
+            var card = PushOneCardToHeld("law_conscription");
+
+            Assert.IsTrue(_presenter.TryGetActiveCardDisplay(out var display));
+            Assert.AreEqual("LawCardsTable:law_conscription.title",  display.Title);
+            Assert.AreEqual("LawCardsTable:law_conscription.flavor", display.FlavorText);
+        }
+
+        /// <summary>
+        /// The Presenter resolves through <c>card.TitleKey</c> and the Editor validator checks
+        /// the table through the same properties. If they ever diverged, the validator would
+        /// confirm entries the game never asks for — a green menu item and blank text on
+        /// screen. This pins them together.
+        /// </summary>
+        [Test]
+        public void CardKeys_ComeFromTheDefinitionsOwnDerivation()
+        {
+            var card = PushOneCardToHeld("law_conscription");
+
+            Assert.AreEqual(LawCardDefinition.BuildTitleKey("law_conscription"),  card.TitleKey);
+            Assert.AreEqual(LawCardDefinition.BuildFlavorKey("law_conscription"), card.FlavorKey);
+
+            Assert.IsTrue(_presenter.TryGetActiveCardDisplay(out var display));
+            Assert.AreEqual(
+                LawCardDefinition.StringTable + ":" + card.TitleKey,  display.Title,
+                "The Presenter must resolve the table and key the definition declares.");
+            Assert.AreEqual(
+                LawCardDefinition.StringTable + ":" + card.FlavorKey, display.FlavorText);
         }
 
         [Test]
-        public void QueuedCardCount_WithReadySlotsAvailable_ReturnsReadyCount()
+        public void CharacteristicDisplay_ResolvesItsNameFromTheSharedTable()
+        {
+            // Shared, not Laws-owned: Cities and Random Occurrences need the same strings.
+            var data = _presenter.GetCharacteristicDisplay(CharacteristicType.Army);
+            Assert.AreEqual("SharedTable:characteristic.army", data.Name);
+        }
+
+        [Test]
+        public void CharacteristicDisplay_CarriesTheIconFromTheSharedRegistry()
+        {
+            var texture = new Texture2D(4, 4);
+            _createdObjects.Add(texture);
+            var sprite = Sprite.Create(texture, new Rect(0, 0, 4, 4), Vector2.one * 0.5f);
+            _createdObjects.Add(sprite);
+
+            // Rebuild against a registry where exactly one characteristic has art, so this
+            // proves the icon is looked up per row rather than shared across every bar.
+            var definitions = new List<CharacteristicDefinition>();
+            foreach (CharacteristicType type in Enum.GetValues(typeof(CharacteristicType)))
+                definitions.Add(TestCharacteristics.Definition(
+                    type, type == CharacteristicType.Science ? sprite : null, _createdObjects));
+
+            _presenter.Dispose();
+            _presenter = new LawsPresenter(
+                _manager, _ledger, _eventBus, _audio, _haptics, _localization,
+                TestCharacteristics.Registry(definitions, _createdObjects));
+
+            Assert.That(_presenter.GetCharacteristicDisplay(CharacteristicType.Science).Icon,
+                Is.SameAs(sprite));
+            Assert.That(_presenter.GetCharacteristicDisplay(CharacteristicType.Army).Icon,
+                Is.Null, "A characteristic with no art must not inherit another's icon.");
+        }
+
+        /// <summary>
+        /// A law must not reveal what it does before the player commits (GDD §6) — inferring
+        /// it from the writing is the mechanic. This guards the shape of the display struct,
+        /// not just today's values: every field on it is rendered *before* the swipe, so a
+        /// re-added summary would silently give the answer away.
+        /// </summary>
+        [Test]
+        public void CardDisplay_RevealsNothingAboutItsEffects_BeforeTheSwipe()
+        {
+            PushOneCardToHeld("card_x", accept: new[]
+            {
+                new LawCardEffect(CharacteristicType.Army, 10f)
+            });
+
+            Assert.IsTrue(_presenter.TryGetActiveCardDisplay(out var display));
+
+            var fields = typeof(LawCardDisplayData)
+                .GetFields(System.Reflection.BindingFlags.Public |
+                           System.Reflection.BindingFlags.Instance)
+                .Select(f => f.Name)
+                .ToArray();
+
+            Assert.That(fields, Is.EquivalentTo(new[] { "CardId", "Title", "FlavorText" }),
+                "A new field on LawCardDisplayData is shown before the player decides. If it " +
+                "names a characteristic or a point value, the guess is no longer a guess.");
+
+            foreach (var text in new[] { display.Title, display.FlavorText })
+            {
+                StringAssert.DoesNotContain("army", text.ToLowerInvariant());
+                StringAssert.DoesNotContain("10", text);
+            }
+        }
+
+        /// <summary>
+        /// LocalizeStringEvent components refresh themselves; Presenter-built strings do not.
+        /// Without this the chrome would switch language and every card title would not.
+        /// </summary>
+        [Test]
+        public void LocaleChange_TriggersAFullRefresh()
+        {
+            PushOneCardToHeld();
+
+            bool refreshed = false;
+            _presenter.OnStateChanged += () => refreshed = true;
+
+            _localization.RaiseLocaleChanged();
+
+            Assert.IsTrue(refreshed, "A locale change must re-render everything the Presenter resolved.");
+        }
+
+        [Test]
+        public void Dispose_StopsListeningForLocaleChanges()
+        {
+            bool refreshed = false;
+            _presenter.OnStateChanged += () => refreshed = true;
+
+            _presenter.Dispose();
+            _localization.RaiseLocaleChanged();
+
+            Assert.IsFalse(refreshed, "A disposed Presenter must not be kept alive by the locale event.");
+
+            // TearDown disposes again; that must stay safe.
+            _characteristics = TestCharacteristics.Complete(_createdObjects);
+            _presenter = new LawsPresenter(
+                _manager, _ledger, _eventBus, _audio, _haptics, _localization, _characteristics);
+        }
+
+        [Test]
+        public void AvailableCardCount_WithOneActiveAndNoReady_IsOne()
+        {
+            PushOneCardToHeld();
+            // 1 active + 0 ready + 7 replenishing = the "1/8" readout
+            Assert.AreEqual(1, _presenter.AvailableCardCount);
+            Assert.AreEqual(8, _presenter.MaxCardCount);
+        }
+
+        [Test]
+        public void AvailableCardCount_CountsTheActiveCardAndReadyOnes()
         {
             var card = CreateCard("card");
             _config.AllCards = new[] { card };
             _manager.InitializeCardPool();
 
-            // Advance 3 cycles: 1 active, 2 ready, 5 replenishing
+            // Advance 3 intervals: 1 active, 2 ready, 5 replenishing → "3/8".
             _clock.Advance(TimeSpan.FromSeconds(360));
             _manager.ProcessReplenishment();
 
-            Assert.AreEqual(2, _presenter.QueuedCardCount);
+            Assert.AreEqual(3, _presenter.AvailableCardCount);
+        }
+
+        [Test]
+        public void AvailableCardCount_PlusReplenishing_AlwaysEqualsTheCap()
+        {
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            // Check the invariant holds at several points along the refill.
+            for (int step = 0; step < 5; step++)
+            {
+                Assert.AreEqual(_presenter.MaxCardCount,
+                    _presenter.AvailableCardCount + _manager.CardsReplenishing,
+                    "available + replenishing must always equal the cap.");
+                _clock.Advance(TimeSpan.FromSeconds(120));
+                _manager.ProcessReplenishment();
+            }
         }
 
         // ── IsWaiting / IsReplenishing ────────────────────────────────────────────

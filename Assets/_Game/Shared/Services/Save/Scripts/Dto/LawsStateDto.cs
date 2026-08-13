@@ -4,11 +4,12 @@ using Newtonsoft.Json;
 namespace KingdomRuler.Shared.Services
 {
     /// <summary>
-    /// Save data for the Laws module (schema v2).
+    /// Save data for the Laws module.
     ///
-    /// Only the active card and the remaining shuffle-bag deck are persisted.
-    /// The "virtual queue" behind the active card is recovered from CardsReplenishing
-    /// and LastReplenishCheckUtc on load; ProcessReplenishment() handles offline catch-up.
+    /// Only the active card and the remaining shuffle-bag deck are persisted. The queue
+    /// behind the active card has no card identities — cards are drawn when shown, not
+    /// when their timer matures — so it is recovered from a count plus a deadline, and
+    /// ProcessReplenishment() handles offline catch-up on load.
     /// </summary>
     public sealed class LawsStateDto
     {
@@ -34,8 +35,17 @@ namespace KingdomRuler.Shared.Services
         [JsonProperty("cardsReplenishing")]
         public int CardsReplenishing { get; set; }
 
-        /// <summary>ISO-8601 UTC timestamp of the last replenishment check.</summary>
-        [JsonProperty("lastReplenishCheckUtc")]
-        public string LastReplenishCheckUtc { get; set; }
+        /// <summary>
+        /// ISO-8601 UTC wall-clock time at which the next card matures. Null/empty when
+        /// nothing is replenishing.
+        /// </summary>
+        /// <remarks>
+        /// A deadline rather than a remaining duration, so it stays correct across the app
+        /// being closed for any length of time. It is also directly readable in the save
+        /// file — "the next card lands at 20:58" — where a last-checked stamp only means
+        /// something if you also know the configured interval.
+        /// </remarks>
+        [JsonProperty("nextReplenishDueUtc")]
+        public string NextReplenishDueUtc { get; set; }
     }
 }

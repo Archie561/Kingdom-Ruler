@@ -28,8 +28,6 @@ namespace KingdomRuler.Modules.Laws.Views
         [Header("Card Content")]
         [SerializeField] private TextMeshProUGUI _titleLabel;
         [SerializeField] private TextMeshProUGUI _flavorLabel;
-        [SerializeField] private TextMeshProUGUI _acceptEffectsSummary;
-        [SerializeField] private TextMeshProUGUI _rejectEffectsSummary;
 
         [Header("Visual Feedback")]
         [SerializeField] private CanvasGroup _acceptIndicator;  // "✓ Accept" stamp
@@ -126,12 +124,15 @@ namespace KingdomRuler.Modules.Laws.Views
         /// Safe to call at any time, including while a swipe animation is playing
         /// (Populate only updates text — it never touches DOTween or position).
         /// </summary>
+        /// <remarks>
+        /// Title and flavor are the whole card. There is no effects readout by design: the
+        /// player is meant to infer what a law does from how it reads, and only find out for
+        /// certain once it is enacted (GDD §6).
+        /// </remarks>
         public void Populate(LawCardDisplayData data)
         {
-            _titleLabel.SetText(data.TitleKey);
-            _flavorLabel.SetText(data.FlavorTextKey);
-            _acceptEffectsSummary.SetText(data.AcceptSummary);
-            _rejectEffectsSummary.SetText(data.RejectSummary);
+            _titleLabel.SetText(data.Title);
+            _flavorLabel.SetText(data.FlavorText);
         }
 
         /// <summary>Scale-in animation when a new card enters the play area.</summary>

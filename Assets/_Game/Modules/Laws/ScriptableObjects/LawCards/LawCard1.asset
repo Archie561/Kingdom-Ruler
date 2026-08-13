@@ -13,11 +13,11 @@ MonoBehaviour:
   m_Name: LawCard1
   m_EditorClassIdentifier: KingdomRuler.Modules.Laws::KingdomRuler.Modules.Laws.LawCardDefinition
   CardId: 1
-  TitleKey: Law 1
-  FlavorTextKey: This is law 1 description
   AcceptEffects:
   - Characteristic: 0
     Points: 10
+  - Characteristic: 2
+    Points: 5
   RejectEffects:
   - Characteristic: 0
     Points: -10

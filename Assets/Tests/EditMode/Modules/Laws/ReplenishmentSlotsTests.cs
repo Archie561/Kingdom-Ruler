@@ -16,8 +16,8 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
         private static ReplenishmentSlots WithRunning(int count)
         {
-            var slots = new ReplenishmentSlots(T0);
-            slots.StartAll(count, T0);
+            var slots = new ReplenishmentSlots();
+            slots.StartAll(count, T0, Interval);
             return slots;
         }
 
@@ -26,7 +26,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         [Test]
         public void Advance_WithNothingRunning_MaturesNothing()
         {
-            var slots = new ReplenishmentSlots(T0);
+            var slots = new ReplenishmentSlots();
             Assert.AreEqual(0, slots.Advance(T0.AddHours(5), Interval));
         }
 
@@ -91,7 +91,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             // 10 seconds of the next interval are already served.
             Assert.AreEqual(Interval - 10f,
-                slots.SecondsUntilNext(T0.AddSeconds(Interval * 2 + 10), Interval), 0.01f);
+                slots.SecondsUntilNext(T0.AddSeconds(Interval * 2 + 10)), 0.01f);
         }
 
         [Test]
@@ -122,7 +122,8 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             slots.Advance(now, Interval);
 
             Assert.AreEqual(0, slots.Count);
-            Assert.AreEqual(now, slots.LastCheckUtc);
+            Assert.IsFalse(slots.NextDueUtc.HasValue,
+                "Nothing is running, so there is no deadline to hold.");
         }
 
         /// <summary>
@@ -138,12 +139,12 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             Assert.AreEqual(8, slots.Advance(now, Interval));
             Assert.AreEqual(0, slots.Count);
-            Assert.AreEqual(now, slots.LastCheckUtc,
-                "No countdown is running, so there is no remainder to carry.");
+            Assert.IsFalse(slots.NextDueUtc.HasValue,
+                "No countdown is running, so there is no deadline to hold.");
 
             // A slot queued after the absence must get a full, correct interval.
-            slots.AddOne(now);
-            Assert.AreEqual(Interval, slots.SecondsUntilNext(now, Interval), 0.01f);
+            slots.AddOne(now, Interval);
+            Assert.AreEqual(Interval, slots.SecondsUntilNext(now), 0.01f);
         }
 
         [Test]
@@ -155,7 +156,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             Assert.AreEqual(3, slots.Advance(now, Interval));
             Assert.AreEqual(5, slots.Count);
-            Assert.AreEqual(Interval - 37f, slots.SecondsUntilNext(now, Interval), 0.01f);
+            Assert.AreEqual(Interval - 37f, slots.SecondsUntilNext(now), 0.01f);
         }
 
         // ── StartAll / AddOne ─────────────────────────────────────────────────────
@@ -166,31 +167,31 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             var slots = WithRunning(8);
             slots.Advance(T0.AddSeconds(60), Interval);          // 60s of progress
 
-            slots.StartAll(8, T0.AddSeconds(60));
+            slots.StartAll(8, T0.AddSeconds(60), Interval);
 
             Assert.AreEqual(Interval - 60f,
-                slots.SecondsUntilNext(T0.AddSeconds(60), Interval), 0.01f,
+                slots.SecondsUntilNext(T0.AddSeconds(60)), 0.01f,
                 "A redundant fresh start must not discard progress the player already waited out.");
         }
 
         [Test]
         public void StartAll_WithNonPositiveCount_DoesNothing()
         {
-            var slots = new ReplenishmentSlots(T0);
-            slots.StartAll(0, T0);
+            var slots = new ReplenishmentSlots();
+            slots.StartAll(0, T0, Interval);
             Assert.IsFalse(slots.IsRunning);
         }
 
         [Test]
         public void AddOne_WhenIdle_StartsTheCountdownFromNow()
         {
-            var slots = new ReplenishmentSlots(T0);
+            var slots = new ReplenishmentSlots();
             var now = T0.AddHours(3);
 
-            slots.AddOne(now);
+            slots.AddOne(now, Interval);
 
             Assert.AreEqual(1, slots.Count);
-            Assert.AreEqual(Interval, slots.SecondsUntilNext(now, Interval), 0.01f);
+            Assert.AreEqual(Interval, slots.SecondsUntilNext(now), 0.01f);
         }
 
         [Test]
@@ -199,10 +200,10 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             var slots = WithRunning(2);
             var now = T0.AddSeconds(60);
 
-            slots.AddOne(now);
+            slots.AddOne(now, Interval);
 
             Assert.AreEqual(3, slots.Count);
-            Assert.AreEqual(Interval - 60f, slots.SecondsUntilNext(now, Interval), 0.01f,
+            Assert.AreEqual(Interval - 60f, slots.SecondsUntilNext(now), 0.01f,
                 "Queuing another slot must not reset the countdown already in progress.");
         }
 
@@ -213,7 +214,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         {
             var slots = WithRunning(6);
 
-            Assert.AreEqual(6, slots.CancelAll(T0));
+            Assert.AreEqual(6, slots.CancelAll());
             Assert.AreEqual(0, slots.Count);
             Assert.IsFalse(slots.IsRunning);
         }
@@ -221,34 +222,52 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         [Test]
         public void SecondsUntilNext_WithNothingRunning_IsZero()
         {
-            Assert.AreEqual(0f, new ReplenishmentSlots(T0).SecondsUntilNext(T0.AddDays(1), Interval));
+            Assert.AreEqual(0f, new ReplenishmentSlots().SecondsUntilNext(T0.AddDays(1)));
         }
 
         [Test]
         public void SecondsUntilNext_NeverGoesNegative()
         {
             var slots = WithRunning(2);
-            Assert.AreEqual(0f, slots.SecondsUntilNext(T0.AddSeconds(Interval * 10), Interval));
+            Assert.AreEqual(0f, slots.SecondsUntilNext(T0.AddSeconds(Interval * 10)));
         }
 
         [Test]
         public void Restore_ClampsNegativeCountToZero()
         {
-            var slots = new ReplenishmentSlots(T0);
+            var slots = new ReplenishmentSlots();
             slots.Restore(-5, T0);
             Assert.AreEqual(0, slots.Count);
         }
 
         [Test]
-        public void Restore_RoundTripsCountAndTimestamp()
+        public void Restore_RoundTripsCountAndDeadline()
         {
-            var slots = new ReplenishmentSlots(T0);
-            var stamp = T0.AddMinutes(17);
+            var slots = new ReplenishmentSlots();
+            var due = T0.AddMinutes(17);
 
-            slots.Restore(4, stamp);
+            slots.Restore(4, due);
 
             Assert.AreEqual(4, slots.Count);
-            Assert.AreEqual(stamp, slots.LastCheckUtc);
+            Assert.AreEqual(due, slots.NextDueUtc);
+        }
+
+        [Test]
+        public void Restore_WithZeroCount_DropsTheDeadlineToo()
+        {
+            var slots = new ReplenishmentSlots();
+            slots.Restore(0, T0.AddMinutes(5));
+
+            Assert.AreEqual(0, slots.Count);
+            Assert.IsFalse(slots.NextDueUtc.HasValue,
+                "A deadline with nothing pending is a contradiction.");
+        }
+
+        [Test]
+        public void NextDueUtc_IsExactlyOneIntervalAfterStart()
+        {
+            var slots = WithRunning(3);
+            Assert.AreEqual(T0.AddSeconds(Interval), slots.NextDueUtc);
         }
     }
 }

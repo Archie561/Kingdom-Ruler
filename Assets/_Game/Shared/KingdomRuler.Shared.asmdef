@@ -5,6 +5,7 @@
         "KingdomRuler.Core",
         "VContainer",
         "Unity.Localization",
+        "Unity.ResourceManager",
         "Unity.TextMeshPro"
     ],
     "includePlatforms": [],

@@ -20,10 +20,14 @@ namespace KingdomRuler.Shared.Services
     ///       "pendingEventIds" to "pendingOccurrenceIds" (the mechanic was renamed —
     ///       GDD §10). Older saves deserialize that section as null, so the mailbox
     ///       starts empty.
+    ///   v4: laws."lastReplenishCheckUtc" became "nextReplenishDueUtc" — the replenish
+    ///       timer now stores the deadline itself rather than the moment it was last
+    ///       settled. An older save's key is ignored, so the queue restarts one interval
+    ///       from load.
     /// </summary>
     public sealed class GameStateDto
     {
-        public const int CurrentSchemaVersion = 3;
+        public const int CurrentSchemaVersion = 4;
 
         [JsonProperty("schemaVersion")]
         public int SchemaVersion { get; set; } = CurrentSchemaVersion;

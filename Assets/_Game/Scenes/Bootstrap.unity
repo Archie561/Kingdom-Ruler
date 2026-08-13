@@ -153,6 +153,7 @@ MonoBehaviour:
   autoRun: 1
   autoInjectGameObjects: []
   _levelingConfig: {fileID: 11400000, guid: 1d54498b5f557fa4c85c1dacde41e6ec, type: 2}
+  _characteristicRegistry: {fileID: 11400000, guid: 3906ac30e45d8eb49b4064f71d9b483f, type: 2}
   _lawsConfig: {fileID: 11400000, guid: 91e175909c436974ab57bb45f3f44a33, type: 2}
   _tradeConfig: {fileID: 11400000, guid: 73e2f9f5a7e53384bb49ec0859a65de1, type: 2}
   _economyConfig: {fileID: 11400000, guid: fd4516f61851f4c42bfbfa369dd12ca5, type: 2}

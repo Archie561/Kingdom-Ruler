@@ -2,7 +2,6 @@ using System;
 using KingdomRuler.Core;
 using KingdomRuler.Shared.Ledger;
 using KingdomRuler.Shared.Services;
-using KingdomRuler.Modules.Laws.Domain;
 
 namespace KingdomRuler.Modules.Laws.Presenters
 {
@@ -10,14 +9,28 @@ namespace KingdomRuler.Modules.Laws.Presenters
     /// Mediates between LawsManager (Model) and LawsView (View).
     /// Plain C# — no MonoBehaviour, no DOTween, fully unit-testable.
     ///
-    /// Lifecycle:
+    /// Everything the View draws is prepared here as plain values
+    /// (<see cref="LawCardDisplayData"/>, <see cref="CharacteristicDisplayData"/>), so the
+    /// View never touches a LawCardDefinition asset or a Domain type.
+    ///
+    /// Flow:
     ///   1. LawsView subscribes to OnStateChanged / OnCharacteristicLeveledUp.
     ///   2. LawsManager raises QueueChanged → Presenter fires OnStateChanged.
-    ///   3. LawsView calls Tick() every Update frame for the countdown label only.
-    ///   4. LawsView forwards user interactions via OnSwipeAccepted / etc.
+    ///   3. LawsView forwards user interactions via OnSwipeAccepted / etc.
+    ///   4. LawsView reports visibility via SetScreenVisible, which gates audio only.
     /// </summary>
     public sealed class LawsPresenter : IDisposable
     {
+        // ── String Tables ──────────────────────────────────────────────────────────
+        // No table names are declared here, deliberately. Each one is owned by the type whose
+        // text it holds — LawCardDefinition for card content, CharacteristicRegistry for
+        // characteristic names — together with the key derivation, so the Presenter and the
+        // Editor validators resolve through one definition instead of matching copies.
+        // See ARCHITECTURE.md §2.
+        //
+        // LawsUITable appears nowhere in code: this screen's chrome is resolved by
+        // LocalizeStringEvent components in the prefab.
+
         // ── SFX identifiers ────────────────────────────────────────────────────────
         private static class SfxIds
         {
@@ -33,6 +46,8 @@ namespace KingdomRuler.Modules.Laws.Presenters
         private readonly EventBus       _eventBus;
         private readonly IAudioService  _audio;
         private readonly IHapticService _haptics;
+        private readonly ILocalizationService   _localization;
+        private readonly CharacteristicRegistry _characteristics;
 
         /// <summary>Whether a card was active as of the last notification, to spot arrivals.</summary>
         private bool _hadActiveCard;
@@ -65,7 +80,7 @@ namespace KingdomRuler.Modules.Laws.Presenters
         /// </summary>
         /// <remarks>
         /// The View deliberately never sees the LawCardDefinition asset — everything it
-        /// draws is turned into strings here, which is where localization will hook in.
+        /// draws is resolved into localized strings here, keyed off the card's id.
         /// </remarks>
         public bool TryGetActiveCardDisplay(out LawCardDisplayData display)
         {
@@ -78,18 +93,18 @@ namespace KingdomRuler.Modules.Laws.Presenters
 
             display = new LawCardDisplayData(
                 card.CardId,
-                card.TitleKey,
-                card.FlavorTextKey,
-                BuildEffectsSummary(card.AcceptEffects),
-                BuildEffectsSummary(card.RejectEffects));
+                _localization.Resolve(LawCardDefinition.StringTable, card.TitleKey),
+                _localization.Resolve(LawCardDefinition.StringTable, card.FlavorKey));
             return true;
         }
 
         /// <summary>
-        /// How many slots have completed their replenishment timer but haven't
-        /// drawn a card yet (active slot was occupied). Shows as "+N" badge in the UI.
+        /// Cards the player holds, the active one included — the "N" in the "N/8" readout.
         /// </summary>
-        public int QueuedCardCount => _manager.ReadyCardCount;
+        public int AvailableCardCount => _manager.AvailableCardCount;
+
+        /// <summary>The cap — the "8" in the "N/8" readout.</summary>
+        public int MaxCardCount => _manager.MaxCardCount;
 
         /// <summary>True when no card is shown and nothing is replenishing.</summary>
         public bool IsWaiting => !_manager.HasActiveCard && _manager.CardsReplenishing == 0;
@@ -107,8 +122,12 @@ namespace KingdomRuler.Modules.Laws.Presenters
         /// </summary>
         public int RefillCost => _manager.RefillCost;
 
-        /// <summary>True if at least one slot is replenishing AND the player can afford it.</summary>
-        public bool CanAffordRefill => _manager.CardsReplenishing > 0 && _ledger.Crystals >= RefillCost;
+        /// <summary>
+        /// True when there is something to refill AND the player can pay for it.
+        /// A zero cost means nothing is pending, not that it is free — same gate the
+        /// buy-up button uses.
+        /// </summary>
+        public bool CanAffordRefill => RefillCost > 0 && _ledger.Crystals >= RefillCost;
 
         // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -117,13 +136,22 @@ namespace KingdomRuler.Modules.Laws.Presenters
             KingdomLedger  ledger,
             EventBus       eventBus,
             IAudioService  audio,
-            IHapticService haptics)
+            IHapticService haptics,
+            ILocalizationService   localization,
+            CharacteristicRegistry characteristics)
         {
             _manager  = manager  ?? throw new ArgumentNullException(nameof(manager));
             _ledger   = ledger   ?? throw new ArgumentNullException(nameof(ledger));
             _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
             _audio    = audio    ?? throw new ArgumentNullException(nameof(audio));
             _haptics  = haptics  ?? throw new ArgumentNullException(nameof(haptics));
+            _localization = localization ?? throw new ArgumentNullException(nameof(localization));
+
+            // Explicit == null rather than ??, because CharacteristicRegistry is a
+            // UnityEngine.Object: ?? skips Unity's overloaded equality, so a destroyed asset
+            // would pass this check and then fail on first use.
+            if (characteristics == null) throw new ArgumentNullException(nameof(characteristics));
+            _characteristics = characteristics;
 
             _hadActiveCard = _manager.HasActiveCard;
 
@@ -132,12 +160,18 @@ namespace KingdomRuler.Modules.Laws.Presenters
             // this Presenter already holds (ARCHITECTURE.md §4.2).
             _eventBus.Subscribe<CharacteristicLeveledUp>(HandleCharacteristicLeveledUp);
             _manager.QueueChanged += HandleQueueChanged;
+
+            // Everything handed to the View is resolved text, so a locale change — or
+            // localization finishing its async startup — invalidates all of it. The
+            // LocalizeStringEvent components refresh themselves; these strings do not.
+            _localization.LocaleChanged += NotifyStateChanged;
         }
 
         public void Dispose()
         {
             _eventBus.Unsubscribe<CharacteristicLeveledUp>(HandleCharacteristicLeveledUp);
             _manager.QueueChanged -= HandleQueueChanged;
+            _localization.LocaleChanged -= NotifyStateChanged;
         }
 
         // ── Screen visibility ─────────────────────────────────────────────────────
@@ -229,7 +263,11 @@ namespace KingdomRuler.Modules.Laws.Presenters
             // button disabled so the View never offers a purchase the Manager would refuse.
             bool canAfford = buyUpCost > 0 && _ledger.Crystals >= buyUpCost;
 
-            return new CharacteristicDisplayData(type, state.Level, progress, buyUpCost, canAfford);
+            return new CharacteristicDisplayData(
+                type,
+                ResolveCharacteristicName(type),
+                _characteristics.IconFor(type),
+                state.Level, progress, buyUpCost, canAfford);
         }
 
         // ── Private ────────────────────────────────────────────────────────────────
@@ -259,28 +297,18 @@ namespace KingdomRuler.Modules.Laws.Presenters
         private void NotifyStateChanged() => OnStateChanged?.Invoke();
 
         /// <summary>
-        /// Render a card's effects as the short, legible readout GDD §6 requires — the
-        /// player should never be surprised by the outcome of a swipe.
+        /// Characteristic names come from the shared table via
+        /// <see cref="CharacteristicRegistry"/>, not from a Laws-owned key.
         /// </summary>
         /// <remarks>
-        /// Characteristic names come out as the raw enum today. That is the same
-        /// placeholder the card's title and flavor use, and this is the single place
-        /// localization will replace once String Tables exist (ARCHITECTURE.md §2).
+        /// Laws is simply the first consumer: Cities needs the same names for purchase
+        /// requirements and Random Occurrences for outcome text. Keeping both the table and
+        /// the key derivation on the registry means those modules inject one object and get
+        /// the identical strings, instead of each re-deriving a convention that would then
+        /// drift the first time it changed (<c>ARCHITECTURE.md</c> §4.3).
         /// </remarks>
-        private static string BuildEffectsSummary(LawCardEffect[] effects)
-        {
-            if (effects == null || effects.Length == 0) return string.Empty;
-
-            var builder = new System.Text.StringBuilder();
-            for (int i = 0; i < effects.Length; i++)
-            {
-                if (i > 0) builder.Append('\n');
-                var effect = effects[i];
-                string sign = effect.Points >= 0f ? "+" : string.Empty;
-                builder.Append(effect.Characteristic).Append(": ").Append(sign)
-                       .Append(effect.Points.ToString("0"));
-            }
-            return builder.ToString();
-        }
+        private string ResolveCharacteristicName(CharacteristicType type) =>
+            _localization.Resolve(
+                CharacteristicDefinition.StringTable, _characteristics.NameKeyFor(type));
     }
 }

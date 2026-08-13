@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9620f8c34305754d8cc9a7e49e852d9, type: 3}
+  m_Name: LawCardsTable_uk
+  m_EditorClassIdentifier: Unity.Localization::UnityEngine.Localization.Tables.StringTable
+  m_LocaleId:
+    m_Code: uk
+  m_SharedData: {fileID: 11400000, guid: 3146326f9f29d6e409c804203b922145, type: 2}
+  m_Metadata:
+    m_Items: []
+  m_TableData:
+  - m_Id: 762347520
+    m_Localized: "\u0417\u0430\u043A\u043E\u043D 1"
+    m_Metadata:
+      m_Items: []
+  - m_Id: 808484864
+    m_Localized: "\u0426\u0435 \u043E\u043F\u0438\u0441 \u0437\u0430\u043A\u043E\u043D\u0443
+      1"
+    m_Metadata:
+      m_Items: []
+  - m_Id: 808484865
+    m_Localized: "\u0417\u0430\u043A\u043E\u043D 2"
+    m_Metadata:
+      m_Items: []
+  - m_Id: 808484866
+    m_Localized: "\u0426\u0435 \u043E\u043F\u0438\u0441 \u0437\u0430\u043A\u043E\u043D\u0443
+      2"
+    m_Metadata:
+      m_Items: []
+  - m_Id: 808484867
+    m_Localized: "\u0417\u0430\u043A\u043E\u043D 3"
+    m_Metadata:
+      m_Items: []
+  - m_Id: 808484868
+    m_Localized: "\u0426\u0435 \u043E\u043F\u0438\u0441 \u0437\u0430\u043A\u043E\u043D\u0443
+      3"
+    m_Metadata:
+      m_Items: []
+  references:
+    version: 2
+    RefIds: []

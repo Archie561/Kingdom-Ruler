@@ -71,9 +71,16 @@ passive bonus, encouraging regional completion over random purchases.
 **Screen:** Law tab. Shows the current law card (Tinder-style swipe: right = accept,
 left = reject) plus a compact readout of all 6 characteristic bars/levels.
 
-- Player holds up to **8 law cards** at once. Each card is short flavor text plus a small,
-  legible summary of which characteristics it affects and by how much (player should never
-  be surprised by the outcome of a swipe).
+- Player holds up to **8 law cards** at once. A card is **short flavor text and nothing else** —
+  no readout of which characteristics it affects, and no numbers.
+- **The player is not told what a law does before deciding.** Reading the writing and inferring
+  the likely consequence *is* the mechanic; a printed summary would reduce every swipe to
+  arithmetic. The player learns the actual outcome only once the law is enacted, from the
+  characteristic bars moving.
+  - This means **card copy carries the whole gameplay signal.** A law whose text gives no hint
+    of its domain is a bad card, not a hard one. Writing it is a design task, not flavor.
+  - *Planned, not built:* particles rising from the enacted card carrying the icons of the
+    characteristics that went up or down — feedback **after** the decision, never before.
 - **Draw order:** cards are drawn at random from the full card pool, with no repeats until
   every card has appeared once (a "shuffle bag") — then the pool reshuffles and the cycle
   continues. Plain sequential or fixed-order cycling is explicitly not the intended feel.

@@ -241,29 +241,25 @@ namespace KingdomRuler.Tests.EditMode.Modules.RandomOccurrences
             _eventA = ScriptableObject.CreateInstance<RandomOccurrenceDefinition>();
             _eventA.OccurrenceId = "OccurrenceA";
             _eventA.Weight = 100;
-            _eventA.ChoiceA = new RandomOccurrenceChoice 
-            { 
-                ChoiceTextKey = "ChoiceA1", 
-                Effects = new[] { RandomOccurrenceOutcomeEffect.GoldEffect(100f) } 
+            _eventA.ChoiceA = new RandomOccurrenceChoice
+            {
+                Effects = new[] { RandomOccurrenceOutcomeEffect.GoldEffect(100f) }
             };
-            _eventA.ChoiceB = new RandomOccurrenceChoice 
-            { 
-                ChoiceTextKey = "ChoiceA2", 
-                Effects = new[] { RandomOccurrenceOutcomeEffect.GoldEffect(200f) } 
+            _eventA.ChoiceB = new RandomOccurrenceChoice
+            {
+                Effects = new[] { RandomOccurrenceOutcomeEffect.GoldEffect(200f) }
             };
 
             _eventB = ScriptableObject.CreateInstance<RandomOccurrenceDefinition>();
             _eventB.OccurrenceId = "OccurrenceB";
             _eventB.Weight = 100;
-            _eventB.ChoiceA = new RandomOccurrenceChoice 
-            { 
-                ChoiceTextKey = "ChoiceB1", 
-                Effects = new[] { RandomOccurrenceOutcomeEffect.GoldEffect(-50f) } 
+            _eventB.ChoiceA = new RandomOccurrenceChoice
+            {
+                Effects = new[] { RandomOccurrenceOutcomeEffect.GoldEffect(-50f) }
             };
-            _eventB.ChoiceB = new RandomOccurrenceChoice 
-            { 
-                ChoiceTextKey = "ChoiceB2", 
-                Effects = new[] { RandomOccurrenceOutcomeEffect.GoldEffect(0f) } 
+            _eventB.ChoiceB = new RandomOccurrenceChoice
+            {
+                Effects = new[] { RandomOccurrenceOutcomeEffect.GoldEffect(0f) }
             };
 
             _manager.InitializeOccurrencePool(new[] { _eventA, _eventB });

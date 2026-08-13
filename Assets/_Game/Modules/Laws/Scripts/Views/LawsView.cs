@@ -15,8 +15,9 @@ namespace KingdomRuler.Modules.Laws.Views
     ///   - Receives LawsPresenter via VContainer [Inject] method injection.
     ///   - Subscribes to presenter events; drives sub-views on state changes.
     ///   - Forwards user intents (swipe, buttons) to the Presenter.
-    ///   - Calls Presenter.Tick() in Update for the replenishment loop.
-    ///   - Updates the countdown label every frame via direct polling.
+    ///   - Renders the countdown. It does NOT advance it: the replenishment timer is
+    ///     driven by LawsTickDriver so the mechanic keeps running whether or not this
+    ///     screen exists (ARCHITECTURE.md §4.5). This View is display-only.
     ///
     /// Animation contract (CRITICAL — no business logic gated on animations):
     ///   LawCardView.OnSwiped      → immediately forwarded to Presenter (logic happens now).
@@ -24,11 +25,11 @@ namespace KingdomRuler.Modules.Laws.Views
     ///   Refresh() always updates all non-card state. The card visual is updated either
     ///   from Refresh() (when no swipe is in flight) or from OnSwipeAnimationComplete.
     ///
-    /// Canvas layout (set up in prefab):
-    ///   LawsCanvas  — static panel: characteristics, timer row, refill button
+    /// Canvas layout (LawsScreen.prefab):
+    ///   LawsScreen  — static panel: characteristics, timer row, refill button
     ///   ├── CardCanvas (nested Canvas, Override Sorting) — isolates card animation redraws
-    ///   │   └── LawCardView
-    ///   └── WaitingOverlay — "Council is preparing new decrees"
+    ///   │   └── LawCard (LawCardView)
+    ///   └── WaitingOverlay — "The council is preparing new decrees"
     /// </summary>
     [RequireComponent(typeof(Canvas))]
     public sealed class LawsView : MonoBehaviour
@@ -39,11 +40,12 @@ namespace KingdomRuler.Modules.Laws.Views
         [Tooltip("The active law card view (sits on its own nested Canvas).")]
         [SerializeField] private LawCardView _cardView;
 
-        [Tooltip("Small badge showing how many cards are ready behind the active one.")]
-        [SerializeField] private TextMeshProUGUI _queueCountLabel;
+        [Tooltip("Held-card readout, e.g. \"6/8\" — counts the active card too.")]
+        [SerializeField] private TextMeshProUGUI _cardCountLabel;
 
         [Header("Characteristic Bars")]
-        [Tooltip("All 6 CharacteristicBarView instances, ordered to match CharacteristicType enum.")]
+        [Tooltip("All 6 CharacteristicBarView instances. Order does not matter — each bar " +
+                 "declares which characteristic it renders, and they are bound by that.")]
         [SerializeField] private CharacteristicBarView[] _characteristicBars;
 
         [Header("Timer & Refill")]
@@ -69,9 +71,9 @@ namespace KingdomRuler.Modules.Laws.Views
 
         // Last values pushed to the labels, so a refresh triggered by an unrelated change
         // doesn't re-issue identical strings and dirty the canvas for nothing.
-        private int _shownTimerSeconds = -1;
-        private int _shownQueuedCount  = -1;
-        private int _shownRefillCost   = -1;
+        private int _shownTimerSeconds   = -1;
+        private int _shownAvailableCount = -1;
+        private int _shownRefillCost     = -1;
 
         [Inject]
         public void Construct(LawsPresenter presenter)
@@ -83,6 +85,20 @@ namespace KingdomRuler.Modules.Laws.Views
 
         private void Start()
         {
+            // Nothing injected us. Overwhelmingly this means the game was started from
+            // Main instead of Bootstrap, so the root LifetimeScope never existed. Say so
+            // once and switch off, rather than throwing a NullReferenceException here and
+            // then again from Update() on every frame, which buries the actual cause.
+            if (_presenter == null)
+            {
+                Debug.LogError(
+                    "[LawsView] No LawsPresenter was injected — the Laws screen is disabled. " +
+                    "Enter Play mode from the Bootstrap scene; Main is loaded additively from " +
+                    "there and only then do its Views get injected.", this);
+                enabled = false;
+                return;
+            }
+
             BuildBarLookup();
             ValidateSubViews();
             WireSubViewEvents();
@@ -132,7 +148,7 @@ namespace KingdomRuler.Modules.Laws.Views
 
             // The countdown only ever shows whole seconds, so writing it every frame
             // rewrites the same string ~60×/second. Each write dirties the TMP mesh and
-            // forces a rebuild of the *static* LawsCanvas — the very canvas the nested
+            // forces a rebuild of the *static* LawsScreen canvas — the very canvas the nested
             // CardCanvas was split off to protect (ARCHITECTURE.md §2, §9).
             int secondsRemaining = Mathf.CeilToInt(_presenter.SecondsUntilNextCard);
             if (secondsRemaining == _shownTimerSeconds) return;
@@ -145,12 +161,13 @@ namespace KingdomRuler.Modules.Laws.Views
 
         private void Refresh()
         {
-            // ── Queue badge ──────────────────────────────────────────────────────
-            int queued = _presenter.QueuedCardCount;
-            _queueCountLabel.gameObject.SetActive(queued > 0);
-            if (queued > 0 && queued != _shownQueuedCount)
-                _queueCountLabel.SetText($"+{queued}");
-            _shownQueuedCount = queued;
+            // ── Held-card readout ────────────────────────────────────────────────
+            int available = _presenter.AvailableCardCount;
+            if (available != _shownAvailableCount)
+            {
+                _shownAvailableCount = available;
+                _cardCountLabel.SetText($"{available}/{_presenter.MaxCardCount}");
+            }
 
             // ── Timer label ──────────────────────────────────────────────────────
             bool replenishing = _presenter.IsReplenishing;
@@ -304,8 +321,8 @@ namespace KingdomRuler.Modules.Laws.Views
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (_cardView == null)
                 Debug.LogError("[LawsView] _cardView is not assigned.", this);
-            if (_queueCountLabel == null)
-                Debug.LogError("[LawsView] _queueCountLabel is not assigned.", this);
+            if (_cardCountLabel == null)
+                Debug.LogError("[LawsView] _cardCountLabel is not assigned.", this);
             if (_timerLabel == null)
                 Debug.LogError("[LawsView] _timerLabel is not assigned.", this);
             if (_refillButton == null)

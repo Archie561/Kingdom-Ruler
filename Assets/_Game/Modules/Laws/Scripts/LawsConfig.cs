@@ -29,9 +29,9 @@ namespace KingdomRuler.Modules.Laws
 
         [Header("Card Content")]
         [Tooltip(
-            "All LawCardDefinition assets that can appear in the queue. " +
-            "Each card is still a separate asset in ScriptableObjects/Data/ — " +
-            "this list is only the registry the manager uses to build the pool.")]
+            "Every LawCardDefinition that can appear in the queue. Each card remains a " +
+            "separate asset in ScriptableObjects/LawCards/ (ARCHITECTURE.md §7); this is " +
+            "only the registry the manager builds its shuffle bag from.")]
         public LawCardDefinition[] AllCards;
     }
 }

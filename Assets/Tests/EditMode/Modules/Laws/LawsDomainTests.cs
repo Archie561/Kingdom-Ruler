@@ -17,9 +17,6 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         public void Advance(TimeSpan duration) => UtcNow += duration;
     }
 
-    // ── LevelingMath tests now live in Tests/EditMode/Shared/Ledger/ ──────────────
-    // (Moved alongside the class to KingdomRuler.Tests.EditMode.Shared.Ledger.)
-
     // ── LawsManagerTests ──────────────────────────────────────────────────────────
 
     [TestFixture]
@@ -198,10 +195,10 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
         /// <summary>
         /// Regression: a slot finishing while the active slot is already occupied is the
-        /// COMMON case, and it changes two things the player can see — ReadyCardCount (the
-        /// "+N" badge) goes up and CardsReplenishing (the countdown) goes down. The manager
-        /// used to publish only when a card was actually drawn, leaving the badge and timer
-        /// stale until the player's next swipe.
+        /// COMMON case, and it changes two things the player can see — AvailableCardCount
+        /// (the "N/8" readout) goes up and CardsReplenishing (the countdown) goes down. The
+        /// manager used to publish only when a card was actually drawn, leaving the readout
+        /// and timer stale until the player's next swipe.
         /// </summary>
         [Test]
         public void ProcessReplenishment_SlotCompletesWhileCardHeld_RaisesQueueChanged()
@@ -214,20 +211,20 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _clock.Advance(TimeSpan.FromSeconds(120));
             _manager.ProcessReplenishment();
             Assert.IsTrue(_manager.HasActiveCard, "Precondition: a card is active.");
-            Assert.AreEqual(0, _manager.ReadyCardCount,  "Precondition: nothing ready yet.");
+            Assert.AreEqual(1, _manager.AvailableCardCount, "Precondition: only the active card.");
 
             // Now subscribe and let one more slot mature. No card can be drawn — the
-            // active slot is taken — but the ready count must change and be announced.
+            // active slot is taken — but the readout must change and be announced.
             int published = 0;
             _manager.QueueChanged += () => published++;
 
             _clock.Advance(TimeSpan.FromSeconds(120));
             _manager.ProcessReplenishment();
 
-            Assert.AreEqual(1, _manager.ReadyCardCount, "A slot matured into a ready card.");
+            Assert.AreEqual(2, _manager.AvailableCardCount, "A slot matured into a held card.");
             Assert.IsTrue(_manager.HasActiveCard, "The active card is unchanged.");
             Assert.AreEqual(1, published,
-                "A completed slot changes the queue badge and countdown, so it must publish.");
+                "A completed slot changes the readout and countdown, so it must publish.");
         }
 
         [Test]
@@ -294,10 +291,10 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _clock.Advance(TimeSpan.FromSeconds(12000));
             _manager.ProcessReplenishment();
 
-            // All 8 slots done: 1 active, 7 ready, 0 replenishing.
+            // All 8 slots done: the player holds the full 8 (1 active + 7 behind it).
             Assert.IsTrue(_manager.HasActiveCard);
             Assert.AreEqual(0, _manager.CardsReplenishing);
-            Assert.AreEqual(7, _manager.ReadyCardCount);
+            Assert.AreEqual(8, _manager.AvailableCardCount);
         }
 
         [Test]

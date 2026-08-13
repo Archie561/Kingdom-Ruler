@@ -20,6 +20,7 @@ namespace KingdomRuler.Modules.Laws.Views
         [SerializeField] private CharacteristicType _type;
 
         [Header("Display")]
+        [SerializeField] private Image           _icon;
         [SerializeField] private TextMeshProUGUI _nameLabel;
         [SerializeField] private TextMeshProUGUI _levelLabel;
         [SerializeField] private Image           _fillBar;
@@ -44,8 +45,10 @@ namespace KingdomRuler.Modules.Laws.Views
 
         // Last rendered values, so a refresh triggered by something unrelated doesn't
         // restart six bar tweens and rewrite six labels that did not change.
-        private bool  _hasRendered;
-        private int   _renderedLevel;
+        private bool   _hasRendered;
+        private string _renderedName;
+        private Sprite _renderedIcon;
+        private int    _renderedLevel;
         private float _renderedProgress;
         private int   _renderedBuyUpCost;
         private bool  _renderedCanAfford;
@@ -72,14 +75,25 @@ namespace KingdomRuler.Modules.Laws.Views
 
         // ── Public API called by LawsView ─────────────────────────────────────────
 
-        /// <summary>
-        /// Set the row's display name. Will be called with a localized string once
-        /// Unity Localization is wired (ARCHITECTURE.md §2); until then the bar falls
-        /// back to the characteristic's own name so the screen is readable.
-        /// </summary>
-        public void SetNameLabel(string localizedName)
+        private void SetNameLabel(string displayName)
         {
-            if (_nameLabel != null) _nameLabel.SetText(localizedName);
+            if (_nameLabel != null) _nameLabel.SetText(displayName);
+        }
+
+        /// <summary>
+        /// Show the characteristic's icon, or hide the slot entirely when there isn't one.
+        /// </summary>
+        /// <remarks>
+        /// Disabling the Image rather than leaving it with a null sprite matters: a UGUI
+        /// Image with no sprite still draws a filled white rectangle, which reads as a
+        /// missing-art bug rather than as a row that simply has no icon yet.
+        /// </remarks>
+        private void SetIcon(Sprite icon)
+        {
+            if (_icon == null) return;
+
+            _icon.sprite = icon;
+            _icon.enabled = icon != null;
         }
 
         /// <summary>Render new display data, animating only what actually changed.</summary>
@@ -88,8 +102,12 @@ namespace KingdomRuler.Modules.Laws.Views
             bool firstRender = !_hasRendered;
             bool leveledUp   = !firstRender && data.Level > _renderedLevel;
 
-            if (firstRender)
-                SetNameLabel(_type.ToString());     // placeholder until localization
+            // The name is localized, so it changes with the locale, not just on first render.
+            if (firstRender || data.Name != _renderedName)
+                SetNameLabel(data.Name);
+
+            if (firstRender || data.Icon != _renderedIcon)
+                SetIcon(data.Icon);
 
             if (firstRender || data.Level != _renderedLevel)
                 _levelLabel.SetText(data.Level.ToString());
@@ -108,6 +126,8 @@ namespace KingdomRuler.Modules.Laws.Views
                 _buyUpCostLabel.SetText(data.BuyUpCost.ToString());
 
             _hasRendered       = true;
+            _renderedName      = data.Name;
+            _renderedIcon      = data.Icon;
             _renderedLevel     = data.Level;
             _renderedProgress  = data.ProgressFraction;
             _renderedBuyUpCost = data.BuyUpCost;

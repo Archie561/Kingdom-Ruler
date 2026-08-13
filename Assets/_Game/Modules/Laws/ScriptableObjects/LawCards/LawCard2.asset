@@ -13,11 +13,9 @@ MonoBehaviour:
   m_Name: LawCard2
   m_EditorClassIdentifier: KingdomRuler.Modules.Laws::KingdomRuler.Modules.Laws.LawCardDefinition
   CardId: 2
-  TitleKey: Law 2
-  FlavorTextKey: This is law 2 description
   AcceptEffects:
   - Characteristic: 0
-    Points: 10
+    Points: 160
   RejectEffects:
   - Characteristic: 0
     Points: -10

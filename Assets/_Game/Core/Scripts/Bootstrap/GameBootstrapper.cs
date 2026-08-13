@@ -20,6 +20,10 @@ namespace KingdomRuler.Core
                  "that awards characteristic points — see ARCHITECTURE.md §4.3.")]
         [SerializeField] private LevelingConfig _levelingConfig;
 
+        [Tooltip("Icons and name keys for the 6 characteristics. Ledger-owned for the same " +
+                 "reason as the curve — Laws, Cities and Random Occurrences all display them.")]
+        [SerializeField] private CharacteristicRegistry _characteristicRegistry;
+
         [Header("Modules")]
         [SerializeField] private LawsConfig    _lawsConfig;
         [SerializeField] private TradeConfig   _tradeConfig;
@@ -41,6 +45,8 @@ namespace KingdomRuler.Core
             // dependencies and directly unit-testable.
             builder.Register(c => new KingdomLedger(c.Resolve<EventBus>(), ResolveLevelingCurve()),
                 Lifetime.Singleton);
+
+            builder.RegisterInstance(ResolveCharacteristicRegistry());
 
             // Laws module.
             // Explicit factory: LawsManager has a second constructor taking a System.Random
@@ -78,6 +84,7 @@ namespace KingdomRuler.Core
             builder.Register<MockPurchasingService>(Lifetime.Singleton).As<IPurchasingService>();
             builder.Register<StubAudioService>(Lifetime.Singleton).As<IAudioService>();
             builder.Register<StubHapticService>(Lifetime.Singleton).As<IHapticService>();
+            builder.Register<UnityLocalizationService>(Lifetime.Singleton).As<ILocalizationService>();
 
             // Save lifecycle — knows every module, so it lives with the composition root.
             builder.Register<GameStateCoordinator>(Lifetime.Singleton);
@@ -100,6 +107,26 @@ namespace KingdomRuler.Core
                 "[GameBootstrapper] No LevelingConfig assigned — falling back to the default " +
                 "curve. Assign the asset on the Bootstrap scene's GameBootstrapper.", this);
             return LevelingCurve.Default;
+        }
+
+        /// <summary>
+        /// The wired registry, or an empty one if the asset isn't assigned yet.
+        /// </summary>
+        /// <remarks>
+        /// Never null: registering a null instance would fail every resolve downstream, and
+        /// an unassigned registry is a wiring mistake, not a reason for the game to refuse to
+        /// start. An empty one degrades honestly — <c>NameKeyFor</c> still derives the right
+        /// key, so text keeps working and only the icons are missing.
+        /// </remarks>
+        private CharacteristicRegistry ResolveCharacteristicRegistry()
+        {
+            if (_characteristicRegistry != null) return _characteristicRegistry;
+
+            Debug.LogWarning(
+                "[GameBootstrapper] No CharacteristicRegistry assigned — characteristic icons " +
+                "will be missing. Assign the asset on the Bootstrap scene's GameBootstrapper.",
+                this);
+            return ScriptableObject.CreateInstance<CharacteristicRegistry>();
         }
     }
 }

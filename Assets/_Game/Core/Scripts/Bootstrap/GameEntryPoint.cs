@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using VContainer;
 using VContainer.Unity;
+using KingdomRuler.Shared.Services;
 
 namespace KingdomRuler.Core
 {
@@ -10,25 +11,39 @@ namespace KingdomRuler.Core
     /// Root startup entry point. Registered as IStartable in the Bootstrap scope.
     /// Responsibilities, in order:
     ///   1. Hydrate every system from the save file (or start a fresh game).
-    ///   2. Load the Main scene additively.
-    ///   3. Inject the Views it brought with it.
+    ///   2. Wait for localization to finish loading.
+    ///   3. Load the Main scene additively.
+    ///   4. Inject the Views it brought with it.
     /// </summary>
     /// <remarks>
-    /// Step 1 must finish before step 2: the Views render whatever state they find on
+    /// <para>Step 1 must finish before step 3: the Views render whatever state they find on
     /// Start, and a module initialised after its View has already rendered would show a
     /// blank screen until the next change. The dependency on GameStateCoordinator is
-    /// explicit rather than relying on entry-point registration order.
+    /// explicit rather than relying on entry-point registration order.</para>
+    ///
+    /// <para>Step 2 must also finish before step 3, and this was verified by removing it:
+    /// with the scene loaded before localization finished, the ACCEPT/REJECT chrome kept the
+    /// English baked into the prefab and every Presenter-built string stayed on its
+    /// "[key]" placeholder — permanently, long after initialisation had completed.
+    /// <b>Neither path recovers on its own</b>, so do not assume the placeholders are a
+    /// transient first-frame flash that will resolve itself. Loading the scene into an
+    /// already-initialised localization system is what makes the text correct, and it costs
+    /// a few frames at boot, once.</para>
     /// </remarks>
     public sealed class GameEntryPoint : IStartable, IDisposable
     {
         private const string MainSceneName = "Main";
 
         private readonly GameStateCoordinator _stateCoordinator;
+        private readonly ILocalizationService _localization;
         private readonly IObjectResolver      _resolver;
 
-        public GameEntryPoint(GameStateCoordinator stateCoordinator, IObjectResolver resolver)
+        public GameEntryPoint(GameStateCoordinator stateCoordinator,
+                              ILocalizationService localization,
+                              IObjectResolver      resolver)
         {
             _stateCoordinator = stateCoordinator;
+            _localization     = localization;
             _resolver         = resolver;
         }
 
@@ -36,6 +51,13 @@ namespace KingdomRuler.Core
         {
             _stateCoordinator.LoadOrInitialize();
 
+            // Runs synchronously if localization is already up, so this is not automatically
+            // a deferred path — see the class remarks for why the wait exists at all.
+            _localization.WhenReady(LoadMainScene);
+        }
+
+        private void LoadMainScene()
+        {
             // Subscribe before loading: a non-async LoadScene still completes at the end
             // of the frame, so the roots are not queryable at the point the call returns.
             SceneManager.sceneLoaded += OnSceneLoaded;

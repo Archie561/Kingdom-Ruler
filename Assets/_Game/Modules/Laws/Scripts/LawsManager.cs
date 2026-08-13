@@ -18,17 +18,19 @@ namespace KingdomRuler.Modules.Laws
     /// active — plus the Ledger and config wiring.</para>
     ///
     /// <para><b>Queue model (single active card).</b> The player "holds" up to
-    /// <c>MaxHeldCards</c>, but only one is ever shown, so the rest are tracked as counts
-    /// rather than identities — there is one <see cref="ActiveCard"/>, not a list. Cards
-    /// are drawn at the moment they are shown, which keeps the save to one active id plus
-    /// the remaining cycle:</para>
+    /// <see cref="MaxCardCount"/> cards, but only one is ever shown — so the rest are a
+    /// count, not identities. Cards are drawn at the moment they are shown, which is what
+    /// keeps the save down to one active id plus the remaining shuffle-bag cycle.</para>
     /// <code>
-    ///   active (0 or 1)  +  ready  +  replenishing  ==  MaxHeldCards
-    ///   ready = MaxHeldCards - active - replenishing     (derived, never stored)
+    ///   AvailableCardCount  +  CardsReplenishing  ==  MaxCardCount
     /// </code>
-    /// <para>"Ready" slots have finished their timer and are waiting for the active slot
-    /// to free up. If a future design really does show several cards at once, this is the
-    /// field that becomes a collection again.</para>
+    /// <para>Those two are complements and between them describe the queue completely:
+    /// one counts what the player has (including the active card), the other counts the
+    /// timers still running. Only the second is stored — as
+    /// <see cref="ReplenishmentSlots.Count"/> — so the invariant cannot drift.</para>
+    ///
+    /// <para>If a future design really does show several cards at once,
+    /// <see cref="ActiveCard"/> is the field that becomes a collection again.</para>
     /// </remarks>
     public sealed class LawsManager
     {
@@ -56,19 +58,18 @@ namespace KingdomRuler.Modules.Laws
         // ── Public read-only surface ──────────────────────────────────────────────
 
         /// <summary>The card the player is looking at, or null.</summary>
-        public LawCardDefinition ActiveCard            => _activeCard;
-        public bool              HasActiveCard         => _activeCard != null;
-        public int               CardsReplenishing     => _slots.Count;
-        public DateTime          LastReplenishCheckUtc => _slots.LastCheckUtc;
+        public LawCardDefinition ActiveCard        => _activeCard;
+        public bool              HasActiveCard     => _activeCard != null;
+        public int               CardsReplenishing => _slots.Count;
 
-        /// <summary>Slots the active card and the running timers occupy between them.</summary>
-        private int OccupiedSlots => (HasActiveCard ? 1 : 0) + _slots.Count;
+        /// <summary>The cap from config — the "8" in a "6/8" readout.</summary>
+        public int MaxCardCount => _config.MaxHeldCards;
 
         /// <summary>
-        /// Slots whose timers have finished but which have not drawn a card yet,
-        /// because the active slot was occupied when they matured.
+        /// Cards the player holds right now, the active one included — the number the
+        /// UI shows as "N/8" and the one the player thinks in.
         /// </summary>
-        public int ReadyCardCount => Math.Max(0, _config.MaxHeldCards - OccupiedSlots);
+        public int AvailableCardCount => Math.Max(0, _config.MaxHeldCards - _slots.Count);
 
         // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -83,7 +84,7 @@ namespace KingdomRuler.Modules.Laws
             _config = config ?? throw new ArgumentNullException(nameof(config));
 
             _deck  = new ShuffleBagDeck(rng);
-            _slots = new ReplenishmentSlots(_clock.UtcNow);
+            _slots = new ReplenishmentSlots();
         }
 
         // ── Initialization ────────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ namespace KingdomRuler.Modules.Laws
         public void InitializeCardPool()
         {
             _deck.SetContents(_config.AllCards);
-            _slots.StartAll(_config.MaxHeldCards - OccupiedSlots, _clock.UtcNow);
+            _slots.StartAll(_config.MaxHeldCards, _clock.UtcNow, _config.CardReplenishTimeSeconds);
         }
 
         // ── Replenishment ─────────────────────────────────────────────────────────
@@ -109,12 +110,12 @@ namespace KingdomRuler.Modules.Laws
             int matured = _slots.Advance(_clock.UtcNow, _config.CardReplenishTimeSeconds);
             if (matured <= 0) return;
 
-            // At most one card can be shown, so however many slots matured, only the
-            // active slot can be filled here; the rest become "ready".
+            // Only one card is ever displayed, so however many timers matured, at most one
+            // can become the active card here. The rest simply raise AvailableCardCount.
             TryFillActiveSlot();
 
-            // Every matured slot is player-visible even without a draw: the "+N" badge
-            // rises and the countdown may stop entirely.
+            // Every matured slot is player-visible even without a draw: the held-card
+            // readout rises and the countdown may stop entirely.
             QueueChanged?.Invoke();
         }
 
@@ -134,11 +135,10 @@ namespace KingdomRuler.Modules.Laws
 
             _activeCard = null;
 
-            // Open the freed slot BEFORE reading ReadyCardCount: that count is derived
-            // from the occupied slots, so measuring it first would overcount by one and
-            // hand the player a card the queue hasn't actually produced.
-            if (OccupiedSlots < _config.MaxHeldCards)
-                _slots.AddOne(_clock.UtcNow);
+            // The slot this card occupied is now free, so put a timer on it — capped so
+            // the queue can never hold more than MaxHeldCards.
+            if (_slots.Count < _config.MaxHeldCards)
+                _slots.AddOne(_clock.UtcNow, _config.CardReplenishTimeSeconds);
 
             TryFillActiveSlot();
 
@@ -174,7 +174,7 @@ namespace KingdomRuler.Modules.Laws
 
             if (!_ledger.SpendCrystals(RefillCost)) return false;
 
-            _slots.CancelAll(_clock.UtcNow);
+            _slots.CancelAll();
             TryFillActiveSlot();
 
             QueueChanged?.Invoke();
@@ -208,7 +208,7 @@ namespace KingdomRuler.Modules.Laws
 
         /// <summary>Seconds until the next card matures; 0 when nothing is replenishing.</summary>
         public float GetSecondsUntilNextCard() =>
-            _slots.SecondsUntilNext(_clock.UtcNow, _config.CardReplenishTimeSeconds);
+            _slots.SecondsUntilNext(_clock.UtcNow);
 
         // ── Save / Load ───────────────────────────────────────────────────────────
 
@@ -229,7 +229,12 @@ namespace KingdomRuler.Modules.Laws
 
             _activeCard = _deck.FindById(dto.ActiveCardId);
 
-            _slots.Restore(dto.CardsReplenishing, ParseUtcOr(dto.LastReplenishCheckUtc, _clock.UtcNow));
+            // If the deadline is missing or unparsable (an older save, or a damaged file),
+            // fall back to one fresh interval from now rather than dropping the queue.
+            _slots.Restore(
+                dto.CardsReplenishing,
+                ParseUtcOr(dto.NextReplenishDueUtc,
+                           _clock.UtcNow.AddSeconds(_config.CardReplenishTimeSeconds)));
 
             ProcessReplenishment();
         }
@@ -241,18 +246,25 @@ namespace KingdomRuler.Modules.Laws
             LastDrawnCardId       = _deck.LastDrawnCardId,
             RemainingDeckCardIds  = _deck.RemainingCardIds(),
             CardsReplenishing     = _slots.Count,
-            LastReplenishCheckUtc = _slots.LastCheckUtc.ToString("O")
+            NextReplenishDueUtc   = _slots.NextDueUtc.HasValue
+                                        ? _slots.NextDueUtc.Value.ToString("O")
+                                        : null
         };
 
         // ── Private ───────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Draw into the active slot if it is empty and a matured slot is waiting.
+        /// Draw into the active slot if it is empty and a matured card is waiting.
         /// </summary>
+        /// <remarks>
+        /// Past the first guard there is no active card, so every available card is by
+        /// definition one that has matured and is waiting — which is why this needs only
+        /// <see cref="AvailableCardCount"/> and not a separate "ready" count.
+        /// </remarks>
         private void TryFillActiveSlot()
         {
             if (HasActiveCard) return;
-            if (ReadyCardCount <= 0) return;
+            if (AvailableCardCount <= 0) return;
 
             _activeCard = _deck.Draw();
         }

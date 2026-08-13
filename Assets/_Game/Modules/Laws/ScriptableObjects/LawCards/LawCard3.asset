@@ -13,8 +13,6 @@ MonoBehaviour:
   m_Name: LawCard3
   m_EditorClassIdentifier: KingdomRuler.Modules.Laws::KingdomRuler.Modules.Laws.LawCardDefinition
   CardId: 3
-  TitleKey: Law 3
-  FlavorTextKey: This is law 3 description
   AcceptEffects:
   - Characteristic: 0
     Points: 10

@@ -59,15 +59,123 @@
   (Managers, Presenters) get constructor injection; MonoBehaviours (Views) can't be
   constructor-injected in Unity, so they get method injection via `[Inject]`, registered
   with `RegisterComponentInHierarchy`/`RegisterComponentInNewPrefab` as appropriate.
-- **Unity Localization** — every user-facing string (law card text, city descriptions, UI
-  labels, occurrence flavor text) goes through a String Table key. Retrofitting localization onto
-  hardcoded strings later is expensive; routing through tables is nearly free.
-  **Current status: deliberately deferred.** Content assets already carry key *fields*
-  (`TitleKey`, `FlavorTextKey`), but the Views render those keys as literal text rather than
-  resolving them through a String Table, and no tables exist yet. This is a known, accepted
-  shortcut until the main mechanics are built — the localization pass happens in one go afterwards,
-  which is cheap precisely because the key fields are already in the data model. Keep authoring new
-  user-facing text as a key field; don't hardcode display strings into content assets.
+- **Unity Localization** — every user-facing string goes through a String Table.
+  **Status: live for Laws** (locales `en` + `uk`); the other four modules have no content or
+  Views yet and adopt the same rules when they do.
+
+  ### How it works, in short
+
+  A String Table is a spreadsheet of `key → text`, one column per language. To show text you
+  need two things: **which table**, and **which key**.
+
+  `ILocalizationService.Resolve(table, key)` returns the text in the player's language.
+  Missing entries come back as `[key]` — visible, never blank, never an exception. There is a
+  `Resolve(table, key, args)` overload for text with numbers in it.
+
+  **You never type a table name or a key at the call site.** Both come from the type that owns
+  the text, so there is exactly one place to change and nothing can quietly disagree:
+
+  | The text you need | Where its table + key come from | Example |
+  |---|---|---|
+  | Belongs to a data asset (a card, a characteristic) | that asset's `*Definition` type | `LawCardDefinition.StringTable` + `card.TitleKey` |
+  | Fixed label on a screen, never changes at runtime | nowhere in code — a `LocalizeStringEvent` component on the prefab | the ACCEPT / REJECT stamps |
+  | Built in code but has no data asset (a popup, a toast) | a small `<Module>UIText` class in that module | `LawsUIText.StringTable` + `LawsUIText.RefillConfirm` |
+
+  **When the player changes language**, the `LocalizeStringEvent` components update themselves.
+  Text built in code does **not** — a Presenter must subscribe to
+  `ILocalizationService.LocaleChanged` and re-render. `LawsPresenter` does this in its
+  constructor and unsubscribes in `Dispose`; every new Presenter that resolves text must do the
+  same, or its labels will sit in the old language while the chrome around them switches.
+
+  **Nothing renders before localization has loaded** — `GameEntryPoint` waits (see below).
+  Do not remove that wait: neither path recovers from starting too early.
+
+  The rest of this section is the reasoning behind those rules and the traps that produced them.
+
+  ---
+
+  **Keys are derived from data, never authored as fields.** A law card's text lives at
+  `{CardId}.title` / `{CardId}.flavor`; a characteristic's name at
+  `characteristic.{enumname}`. Content assets therefore carry *no* `TitleKey`-style fields —
+  the id already is the key. Nothing to wire, nothing to mistype, nothing to drift. The cost
+  is that a missing *table* entry only shows up at runtime, which is what the Editor
+  validators exist to catch (`Kingdom Ruler/Validate Shared Data` for anything Ledger-owned,
+  `Validate Laws Localization` for Laws' own keys).
+
+  **A table name and its key derivation are owned by the type whose text they address** —
+  together, on the same type, and never re-declared by the code that reads them.
+  `LawCardDefinition` owns `StringTable` + `TitleKey`/`FlavorKey` +
+  `BuildTitleKey`/`BuildFlavorKey`; `CharacteristicDefinition` owns `StringTable` + `NameKey`
+  + `BuildNameKey`. Presenters and Editor validators both resolve *through those members*.
+
+  A **registry is an index, not an owner**: `CharacteristicRegistry` maps an enum to its
+  definition and offers convenience lookups, but declares no table name of its own. Splitting
+  the table onto the registry and the key onto the definition makes it ambiguous which type
+  owns the convention — they are one fact and belong together.
+
+  This matters more than it looks. A validator that re-spells `id + ".title"` locally still
+  passes while the game asks for something else — a green menu item and blank text on screen,
+  which is the exact failure the validator exists to prevent. Resolving through one definition
+  makes that divergence impossible rather than merely unlikely.
+
+  **Text with no data asset behind it** — a confirmation popup, an error toast, "Upgrade
+  warehouse for {0} gold?" — has no `*Definition` to own it, but still needs resolving in code
+  because it takes arguments or is chosen at runtime. It gets a small static **text-keys
+  type** in the module that owns the screen, holding the table name and the key constants
+  together:
+
+  ```csharp
+  public static class LawsUIText            // Modules/Laws/Scripts/
+  {
+      public const string StringTable   = "LawsUITable";
+      public const string RefillConfirm = "ui.refill_confirm";
+  }
+  ```
+
+  **`public`, and a type of its own — not `internal`, and not nested inside the Presenter.**
+  The module's validator lives in a *separate* assembly (`…Modules.Laws.Editor`), so an
+  `internal` or privately-nested holder is invisible to it, and the validator would be forced
+  back into re-typing the literals — which is the entire failure this rule prevents. The old
+  `LawsPresenter.Tables` class was privately nested for exactly that reason and had to be
+  replaced.
+
+  Same rule, same shape as a `*Definition` — one declaration, imported by both the Presenter
+  and the module's validator (whose `RequiredUIKeys` then reads from it instead of repeating
+  literals). Put it beside the Presenter that uses it; promote it to `Shared/UI/` only if the
+  popup itself becomes a shared UI atom, by the usual ownership test.
+
+  Until such a type exists, a table resolved **only** by `LocalizeStringEvent` components in a
+  prefab — `LawsUITable` today — may name itself in the module's validator, since that is its
+  single code reference rather than a duplicate of one. The moment the first line of that
+  table is resolved from code, introduce the keys type and move the name into it.
+
+  **Which table** — same ownership test as the leveling curve (§4.3): *would a second
+  mechanic need the identical string?*
+
+  | Table | Holds | Because |
+  |---|---|---|
+  | `Shared/Localization/SharedTable` | characteristic names, cross-cutting words | Cities and Random Occurrences need the identical strings |
+  | `Modules/<X>/Localization/<X>UITable` | that screen's fixed chrome | small, stable, changes with the screen |
+  | `Modules/<X>/Localization/<X>…Table` | that module's content, keyed by id | grows with authored content; what a translator is handed in bulk |
+
+  **Who resolves it** — two paths, and the split is not stylistic:
+
+  - **Static chrome** (fixed at author time, one GameObject: ACCEPT, REJECT, an empty-state
+    line) → a `LocalizeStringEvent` component in the prefab. No code.
+  - **Dynamic content** (derived from data, composed, or inflected: card title and flavor,
+    characteristic name, anything with a count in it) → resolved in the **Presenter** via
+    `ILocalizationService` and delivered through the existing display structs. It cannot use
+    the component: the entry to fetch isn't known until runtime, a composed or pluralized
+    string is not a single entry, and pointing a component at a card title would hand the
+    View back the data reference the MVP split exists to remove.
+
+  **Two hazards, both found the hard way — see `docs/modules/Laws.md` §6:**
+  1. Localization initialises **asynchronously**, and neither path recovers from rendering
+     too early. `GameEntryPoint` therefore waits on `ILocalizationService.WhenReady` before
+     loading a scene. Don't remove that gate on the theory that placeholders are a
+     transient first-frame flash — they are permanent.
+  2. Subscribe to `SelectedLocaleChanged` **after** initialisation completes. A handler
+     attached before it is silently never invoked.
 - **DOTween** — UI animation. Lives in the **View** layer only. A Presenter tells a View
   "show accepted state"; the View decides *how*, including which DOTween sequence plays.
   Presenters and Managers should never construct a `Tween` directly — that's presentation
@@ -109,6 +217,9 @@ Assets/
           Scripts/
         Clock/
           Scripts/          # IClock abstraction — makes time-based logic testable
+        Localization/
+          Scripts/          # ILocalizationService, UnityLocalizationService
+      Localization/         # SharedTable — strings more than one module needs (§2)
       Ledger/
         Scripts/            # KingdomLedger (the one source of truth) + state types +
                             # leveling math (the points-required formula) — shared by any
@@ -116,6 +227,10 @@ Assets/
                             # Occurrences later)
           Events/           # cross-module ledger events — see §4.2 tier 2
         ScriptableObjects/  # starting-values config + leveling-curve coefficients
+          Characteristics/  # one CharacteristicDefinition per characteristic, plus the
+                            # CharacteristicRegistry that indexes them — see §4.4
+      Editor/               # editor-only tooling for shared data, own Editor asmdef
+                            # (SharedLocalizationValidator)
     Modules/
       Laws/
         Scripts/
@@ -128,6 +243,11 @@ Assets/
           LawsManager.cs    # Model: orchestrates Domain + Ledger + queue timers
           Presenters/
           Views/
+        Editor/             # editor-only tooling for this module, with its own Editor
+                            # asmdef — e.g. LawsLocalizationValidator. Optional: add it
+                            # when a module has tooling, don't stub it empty.
+        Localization/       # this module's String Tables: one for UI chrome, one per
+                            # content type keyed by id (§2)
         ScriptableObjects/
           Config/           # LawsConfig.asset — queue cap, replenish time, crystal costs
           Data/             # one LawCardDefinition asset per card
@@ -150,6 +270,8 @@ Assets/
 docs/
   GDD.md
   ARCHITECTURE.md
+  modules/
+    Laws.md              # per-module architecture — see note below
 CLAUDE.md
 ```
 
@@ -161,19 +283,47 @@ consistently, all the way down.
 
 **This tree is the recommended shape, not an exhaustive whitelist.** A module may add asset folders
 the tree doesn't list — `Images/` for that mechanic's sprites and textures, `Audio/`, `Fonts/` —
-whenever it keeps the mechanic's assets next to the mechanic. What the tree *is* strict about is the
-`Scripts/` role split and the `Config/` vs. `Data/` split (§7), because those two carry real
-architectural meaning. Adding a sprite folder does not need a doc update; adding a new **script
-role** or a new top-level folder under `_Game/` does.
+whenever it keeps the mechanic's assets next to the mechanic. It may also name its content folder
+for what it holds (Laws uses `ScriptableObjects/LawCards/` rather than a generic `Data/`). What the
+tree *is* strict about is the `Scripts/` role split and the `Config/` vs. content split (§7),
+because those two carry real architectural meaning. Adding a sprite folder does not need a doc
+update; adding a new **script role** or a new top-level folder under `_Game/` does.
+
+### Per-module architecture docs (`docs/modules/`)
+
+This document covers rules that apply to *every* module. Once a module grows past a handful of
+classes, it gets its own file under `docs/modules/` describing its layers, its state model, its data
+flows, and — most importantly — the decisions inside it that look arbitrary from the outside and
+would otherwise be undone by accident. `docs/modules/Laws.md` is the worked example and the template
+to follow; write the equivalent for a module when someone other than its author needs to extend it.
 
 ## 4. Core systems
 
 ### 4.1 Composition root (`Core/Bootstrap`)
 
 The Bootstrap scene holds the root `LifetimeScope`. It registers, in order: shared services
-(Clock, Save, Purchasing, Audio, Haptics), the Ledger, then each module's Manager. This is
-the only place that constructs top-level services — everything downstream receives what it
-needs through injection, it doesn't look anything up itself. Bootstrap then loads `Main`.
+(Clock, Save, Purchasing, Audio, Haptics, Localization), the Ledger, then each module's
+Manager. This is the only place that constructs top-level services — everything downstream
+receives what it needs through injection, it doesn't look anything up itself.
+
+`GameEntryPoint` then runs, in this order, and the order is load-bearing:
+
+1. **Hydrate** state from the save (`GameStateCoordinator.LoadOrInitialize`). Views render
+   whatever they find on `Start`, so a module initialised after its View has already
+   rendered shows a blank screen until the next change.
+2. **Wait** for localization (`ILocalizationService.WhenReady`). Verified by removing it:
+   the scene loaded first, and the chrome kept its authored English while every
+   Presenter-built string sat on a `[key]` placeholder — permanently, long after
+   initialisation finished. Neither path self-heals.
+3. **Load** `Main` additively.
+4. **Inject** each root of the loaded scene. The root scope lives in Bootstrap and
+   VContainer only wires MonoBehaviours it can see in its own scene, so Views in an
+   additively-loaded scene are invisible to it without this step. Doing it here — rather
+   than giving `Main` a child scope — keeps the single-root-scope rule in §1.6 intact.
+
+A service that needs asynchronous startup hooks into step 2 rather than inventing its own
+gate. If a second one ever appears, that is the point to generalize `WhenReady` into a list
+of awaited services — not before.
 
 ### 4.2 Event bus (`Core/EventBus`) and where event types live
 
@@ -286,6 +436,33 @@ Ledger; they never hand the Ledger a way to compute.
 Every module's Manager queries and mutates state through this one object — nobody holds a
 private copy. `CitiesManager.CanAfford(cost)` is a pure function over a `KingdomLedger`
 snapshot plus a `CityCost` data object.
+
+#### Shared *display* data: the registry pattern
+
+The same ownership test decides where a thing's **presentation** lives, not just its math.
+`CharacteristicRegistry` + `CharacteristicDefinition` (`Shared/Ledger/`) hold the icon and
+name key for each of the 6 characteristics, because Laws draws them on its bars, Cities needs
+them for purchase requirements, and Random Occurrences for outcome text. A module injects the
+registry and asks; it does not re-derive.
+
+**This is the pattern to copy** for any per-thing metadata more than one module displays —
+trade resources are the obvious next one. Three rules make it work:
+
+1. **Name it for what it is, not for whoever needed it first.** `CharacteristicRegistry`, not
+   `LawCharacteristicRegistry`. The name is what grants the next person permission to reach
+   for it.
+2. **Localization keys are computed, never serialized.** `CharacteristicDefinition.NameKey`
+   derives from the enum member. A hand-typed `nameKey` field can be mistyped and can drift
+   from the asset that declares it — the same reason `LawCardDefinition` has no `TitleKey`
+   (§2). Only what genuinely cannot be derived — a sprite reference — is authored.
+3. **A registry of separate assets, not one asset with inline blocks** (`CLAUDE.md` §7), and
+   it validates itself: missing types, duplicate types and unassigned art are all reported by
+   `Kingdom Ruler/Validate Shared Data`. A half-wired registry degrades rather than breaking —
+   `NameKeyFor` falls back to the derivation, so text keeps working and only the icon is
+   absent.
+
+Presenters read the registry and pass the resolved sprite out on their display struct; Views
+never hold the registry themselves, for the same reason they never hold a content asset.
 
 ### 4.4 Per-module Managers, Presenters, Views (`Modules/*`)
 
