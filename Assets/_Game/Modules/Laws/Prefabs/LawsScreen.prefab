@@ -1646,7 +1646,7 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 167026383718922943}
-  m_Father: {fileID: 9121018902003006618}
+  m_Father: {fileID: 6632258691248956408}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
@@ -2352,6 +2352,65 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!1 &3492184479610337683
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6632258691248956408}
+  - component: {fileID: 8344442815410411404}
+  m_Layer: 0
+  m_Name: SafeArea
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &6632258691248956408
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3492184479610337683}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 7984335617086829968}
+  - {fileID: 2801754962428117218}
+  - {fileID: 4012633329731353672}
+  - {fileID: 3662029009197214425}
+  m_Father: {fileID: 9121018902003006618}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0, y: 0.03671706}
+  m_AnchorMax: {x: 1, y: 0.9492441}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &8344442815410411404
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3492184479610337683}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f30ac9bd77756fa4490c701d407b6ed5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: KingdomRuler.Shared::KingdomRuler.Shared.UI.SafeAreaFitter
+  _applyHorizontal: 1
+  _applyVertical: 1
+  _padding:
+    m_Left: 0
+    m_Right: 0
+    m_Top: 0
+    m_Bottom: 160
 --- !u!1 &3675266538687882287
 GameObject:
   m_ObjectHideFlags: 0
@@ -2583,8 +2642,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: KingdomRuler.Modules.Laws::KingdomRuler.Modules.Laws.Views.LawCardView
   _titleLabel: {fileID: 4777068789061262215}
   _flavorLabel: {fileID: 7146181246023313161}
-  _acceptEffectsSummary: {fileID: 0}
-  _rejectEffectsSummary: {fileID: 0}
   _acceptIndicator: {fileID: 6141025571978706944}
   _rejectIndicator: {fileID: 8233895104733745548}
   _swipeThresholdFraction: 0.35
@@ -3965,7 +4022,7 @@ RectTransform:
   - {fileID: 530590193735795111}
   - {fileID: 4686857441653158691}
   - {fileID: 1062353468583802463}
-  m_Father: {fileID: 9121018902003006618}
+  m_Father: {fileID: 6632258691248956408}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 0}
@@ -4080,10 +4137,7 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 6290895766692551304}
-  - {fileID: 7984335617086829968}
-  - {fileID: 2801754962428117218}
-  - {fileID: 4012633329731353672}
-  - {fileID: 3662029009197214425}
+  - {fileID: 6632258691248956408}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -5640,7 +5694,7 @@ RectTransform:
   - {fileID: 4081542546300393873}
   - {fileID: 2068519234247787117}
   - {fileID: 7499899283052585811}
-  m_Father: {fileID: 9121018902003006618}
+  m_Father: {fileID: 6632258691248956408}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
@@ -6466,7 +6520,7 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 635035505187888386}
-  m_Father: {fileID: 9121018902003006618}
+  m_Father: {fileID: 6632258691248956408}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0.25}
   m_AnchorMax: {x: 1, y: 0.72}

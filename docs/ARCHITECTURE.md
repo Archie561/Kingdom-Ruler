@@ -60,8 +60,8 @@
   constructor-injected in Unity, so they get method injection via `[Inject]`, registered
   with `RegisterComponentInHierarchy`/`RegisterComponentInNewPrefab` as appropriate.
 - **Unity Localization** — every user-facing string goes through a String Table.
-  **Status: live for Laws** (locales `en` + `uk`); the other four modules have no content or
-  Views yet and adopt the same rules when they do.
+  **Status: live for Laws and for the bottom nav bar** (locales `en` + `uk`); the other four
+  modules have no content or Views yet and adopt the same rules when they do.
 
   ### How it works, in short
 
@@ -156,6 +156,7 @@
   |---|---|---|
   | `Shared/Localization/SharedTable` | characteristic names, cross-cutting words | Cities and Random Occurrences need the identical strings |
   | `Modules/<X>/Localization/<X>UITable` | that screen's fixed chrome | small, stable, changes with the screen |
+  | `Shared/Navigation/Localization/NavigationUITable` | the bottom bar's tab labels | the middle row's pattern, for a screen that is shared rather than a module (§4.6). Nothing outside the nav bar draws the word "Laws", so these are chrome, not cross-cutting words. Like `LawsUITable`, it is resolved only by `LocalizeStringEvent` components, so it names itself in `SharedLocalizationValidator` |
   | `Modules/<X>/Localization/<X>…Table` | that module's content, keyed by id | grows with authored content; what a translator is handed in bulk |
 
   **Who resolves it** — two paths, and the split is not stylistic:
@@ -203,7 +204,7 @@ Assets/
     Shared/
       Fonts/
       UI/                   # shared UI atoms: buttons, toasts, currency pips, popups
-        Scripts/
+        Scripts/            # SafeAreaFitter — notch/gesture-bar insets (§4.6)
         Prefabs/
       Services/
         Save/
@@ -229,6 +230,10 @@ Assets/
         ScriptableObjects/  # starting-values config + leveling-curve coefficients
           Characteristics/  # one CharacteristicDefinition per characteristic, plus the
                             # CharacteristicRegistry that indexes them — see §4.4
+      Navigation/           # the bottom-nav mini-module — see §4.6. Belongs to no single
+        Scripts/            # module: 4 classes, and it deals only in ScreenId
+        Prefabs/            # BottomNavBar.prefab
+        Localization/       # NavigationUITable — the tab labels
       Editor/               # editor-only tooling for shared data, own Editor asmdef
                             # (SharedLocalizationValidator)
     Modules/
@@ -260,7 +265,8 @@ Assets/
       Shop/                    # same internal shape as Laws
     Scenes/
       Bootstrap.unity        # loads first: root LifetimeScope, services, then loads Main
-      Main.unity              # the 5 screens live here as Views under their own Canvases
+      Main.unity              # the 5 screens live here as Views under their own Canvases,
+                              # plus the BottomNavBar that toggles between them (§4.6)
   Tests/
     EditMode/
       Modules/               # mirrors Modules/ — one test folder per module
@@ -498,6 +504,145 @@ Pump these at a coarse interval (a few times a second), not every frame — thes
 timers and per-frame work on them is wasted battery. Note also that a UI *sound* tied to a timer
 firing (a law card arriving, say) should only play when that screen is actually open; the state
 change itself still happens either way, so the screen is correct when the player returns to it.
+
+### 4.6 Screen navigation (`Shared/Navigation`)
+
+The bottom tab bar from `GDD.md` §13. It lives in `Shared/` rather than in a module because it
+belongs to none of them — and its own folder rather than under `Shared/UI/`, because `UI/` is
+for reusable UI atoms (buttons, toasts, popups, `SafeAreaFitter`) while this is a small system
+with a Model, Views and its own String Table.
+
+**Four classes, and that is the whole system:**
+
+```
+ScreenNavigator (plain C#, root scope)   Model: Current + Show() + CurrentChanged, + SFX/haptic
+   ▲
+BottomNavBarView (MonoBehaviour)         drives the tabs AND toggles the screens
+   │                                     holds ONE array and ONE lookup: the tabs
+NavTabButton ×5                          a ScreenId, the screen it opens, its own select tween
+
+ScreenId                                 the shared vocabulary
+```
+
+**A tab carries the screen it opens, and availability is derived from that.** There is no
+separate "is available" flag and no second list pairing ids to GameObjects — a tab is tappable
+**iff** it has a screen assigned. That is the same reasoning `docs/modules/Laws.md` §4 applies to
+the queue counts: two facts that must agree are two chances to disagree, so store one and derive
+the other. An earlier draft had the flag on the tab and the bindings on the bar, which needed a
+runtime check for "marked available but nothing bound"; that state can no longer be authored, so
+the check is gone. Making a tab live is one action — drag its screen in.
+
+A tab that should be disabled while its screen *does* exist (a progression lock) is a genuinely
+different concept and gets its own `IsUnlocked` rather than being folded into this one.
+
+An earlier draft split this across seven types — a `ScreenRoot` marker component on each screen
+prefab, a separate `ScreenSwitcherView`, and a `NavigationUIText` holding the table name. All
+three were removed as ceremony. Recording why, so they don't come back by reflex:
+
+- **`ScreenRoot`** existed so a screen could declare its own id. But a serialized `GameObject`
+  reference doesn't name a module type either, so the assembly-cycle argument never required it —
+  the reference on each tab does the same job in one place instead of two. Reintroduce it only if
+  something needs to ask a GameObject *which screen it is* at runtime; nothing does.
+- **`ScreenSwitcherView`** did nothing but the `SetActive` loop, and `BottomNavBarView` was
+  already subscribed to the same event. The cost of merging is that the `Shared` nav-bar prefab
+  carries a screens array overridden per scene — acceptable while `Main` is the only scene with a
+  bar. If a second scene ever needs one, splitting it out again is the fix.
+- **`NavigationUIText`** held a table name and a `"nav." + id` concat with **zero runtime
+  callers** — the prefab stores literal keys in its YAML. Its only consumer was the Editor
+  validator, which is exactly the case §2 says should name the table itself, as `LawsUITable`
+  already does.
+
+**`Shared` cannot reference a module.** `KingdomRuler.Shared` is referenced *by* `Modules.*`; for
+the nav bar to hold a `LawsView` the reference would have to run backwards, and Unity rejects the
+cycle. Screens are therefore bound as plain `GameObject`s tagged with a `ScreenId`. The payoff is
+concrete: **adding navigation required no change to `LawsView` at all.**
+
+**Switching is `SetActive`, not a Canvas toggle.** That is what makes a screen's own
+`OnEnable`/`OnDisable` fire, which is how `LawsView` already tells its Presenter to gate audio —
+a card arriving while the player is on another tab updates the queue silently. Disabling only
+the Canvas would keep those callbacks from running and leave each View's `Update()` ticking on a
+screen nobody can see. The mechanic itself is unaffected either way: timers belong to tick
+drivers, not Views (§4.5).
+
+**Screens are authored *active* in `Main` and switched off in `BottomNavBarView.Start()`.** The
+alternative — authoring them inactive — depends on whether VContainer's `InjectGameObject` walks
+inactive children, and a boot sequence that silently leaves a View uninjected is a bad thing to
+build on a maybe.
+
+**The screen switch is a hard cut, and this is a known deviation from `GDD.md` §3**, which lists
+"screen transition" among the animations required on every state change. An earlier version faded
+the incoming screen in via a `CanvasGroup`; it was removed as unnecessary weight for now. The tab
+button still animates on selection, so the tap is not without feedback, but the screens
+themselves cut instantly. Re-adding it means a `CanvasGroup` on each screen root and one tween in
+`ApplyScreens` — deliberately cheap to reverse. Decide before the mechanic is judged on feel.
+
+**The nav bar's Canvas must sort above every screen.** Laws nests a `CardCanvas` at sorting order
+10 with `Override Sorting`, so a nav bar left at the default 0 is drawn *underneath* the law
+card. The prefab ships at 100.
+
+**Safe area: the buttons are inset, the background is not.** `BottomNavBar.prefab` is structured
+so those two are separate, because insetting both leaves the device's gesture-bar strip showing
+the screen behind it as a mismatched band:
+
+```
+BottomNavBar (Canvas, sortingOrder 100)
+└── SafeArea      SafeAreaFitter — vertical only, so the bar stays full-width
+    ├── Background  Image, rect overshoots 500px BELOW the safe area  ← reaches the screen edge
+    └── Bar          HorizontalLayoutGroup + the 5 tabs               ← sits on the safe floor
+```
+
+The overshoot is deliberate, not a mistake to tidy up: UGUI does not clip to the canvas, so the
+excess falls off-screen, and 500 reference px comfortably exceeds any real bottom inset (~80px
+in these 1080×1920 units). The invariant to preserve is that `Background`'s **top edge aligns
+with `Bar`'s top** while its **bottom sits below the safe-area floor** — verified in Play mode on
+a profile with a genuine 102px inset. `SafeAreaFitter` has `_applyHorizontal` off here for the
+same reason: a full-bleed background must not be pulled in from the screen edges.
+
+**Every screen follows the same split, plus one extra inset.** Background full-bleed, UI inset —
+and because the nav bar sits on top of every screen, screen UI must also clear the bar or it ends
+up underneath it (which is exactly where `LawsScreen`'s `TimerRow` was before this was fixed):
+
+```
+<X>Screen (Canvas)
+├── Background     Image, full stretch — covers the notch and the gesture bar
+└── SafeArea       SafeAreaFitter, padding.bottom = 160 (the nav bar's height)
+    └── …all the screen's UI…
+```
+
+`SafeAreaFitter._padding` is a generic extra inset, in **canvas units**, applied on top of the
+safe area. The component deliberately knows nothing about navigation — the 160 is authored per
+screen and visible in the Inspector. Units matter here: the safe area is applied as *anchors*
+(resolution-independent fractions) while the padding is applied as *offsets* (canvas units), so
+the padding scales with the CanvasScaler exactly as the bar's own height does. Expressing the
+padding in screen pixels instead would make the two drift apart on every device.
+
+**If the bar height changes, update `padding.bottom` on every screen.** That duplication is the
+accepted cost of keeping `SafeAreaFitter` a reusable UI atom rather than one that imports the
+navigation module.
+
+**Tabs and screens are both keyed by `ScreenId`, never by array index** — the same rule as the
+Laws characteristic bars (`docs/modules/Laws.md` §6.6). Index binding survives a reorder and then
+quietly shows the wrong screen.
+
+**There is deliberately no Presenter.** It would mediate nothing: tab labels resolve through
+`LocalizeStringEvent` components with no code (§2), a tab's availability is authored on its
+button, and selection state is exactly `ScreenNavigator.Current`. Adding a pass-through layer
+now is the speculative abstraction `CLAUDE.md` §1.4 warns against. **Add one** the moment a tab
+needs derived state — a card-count badge, or availability driven by progression — because that
+is where a View would otherwise start computing. Note that a card-count badge is also the
+trigger named in §4.2 for promoting `LawsManager.QueueChanged` to a tier-2 bus event; the two
+changes arrive together.
+
+**Sound and haptics are raised by `ScreenNavigator`, not the Views**, matching `LawsPresenter`:
+the plain-C# layer owns feel hooks, the View owns only DOTween (§2, §4.4). It also puts them
+behind the same early-out that gates the event, so "tapping the tab you are already on is
+silent" is covered by an EditMode test rather than by a guard each View could forget.
+
+`ScreenId` carries all five screens from `GDD.md` §13 while only Laws and Trade are built; the
+other three tabs simply have no screen assigned, which dims them and switches their Button off,
+so the bar can never be asked for a screen that isn't there. **Active tab is
+not persisted** — no save DTO involvement, no `schemaVersion` bump. The launch screen is a const
+on `ScreenNavigator`, and should become `Kingdom` once that screen exists.
 
 ## 5. Save system
 

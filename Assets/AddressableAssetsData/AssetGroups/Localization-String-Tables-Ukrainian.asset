@@ -15,6 +15,12 @@ MonoBehaviour:
   m_GroupName: Localization-String-Tables-Ukrainian
   m_GUID: 802573e1e0979be48974f6c79fc95973
   m_SerializeEntries:
+  - m_GUID: 1ddaddd40a0c48b49845951eafa6b223
+    m_Address: NavigationUITable_uk
+    m_ReadOnly: 1
+    m_SerializedLabels:
+    - Locale-uk
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 3456df5755f5b3c49a71489a29952e6c
     m_Address: LawCardsTable_uk
     m_ReadOnly: 1

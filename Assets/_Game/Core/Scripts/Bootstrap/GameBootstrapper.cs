@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.Serialization;
 using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Shared.Navigation;
 using KingdomRuler.Shared.Services;
 using KingdomRuler.Modules.Laws;
 using KingdomRuler.Modules.Laws.Presenters;
@@ -47,6 +48,11 @@ namespace KingdomRuler.Core
                 Lifetime.Singleton);
 
             builder.RegisterInstance(ResolveCharacteristicRegistry());
+
+            // Screen navigation (GDD §13). Registered beside the Ledger rather than with a
+            // module, because it belongs to no module: it deals only in ScreenId, and every
+            // screen declares its own via a ScreenRoot component (ARCHITECTURE.md §4.6).
+            builder.Register<ScreenNavigator>(Lifetime.Singleton);
 
             // Laws module.
             // Explicit factory: LawsManager has a second constructor taking a System.Random

@@ -32,7 +32,10 @@ it to expand your kingdom on a region map. ~80 hours to fully complete.
 
 - **Orientation:** Portrait only.
 - **Aspect ratios:** Design and test against 19.5:9 (modern iPhone) down to 16:9 (older
-  Android) — safe area must be respected for notches and gesture bars.
+  Android) — safe area must be respected for notches and gesture bars. Concretely: a screen's
+  **background is full-bleed** and its **UI is inset**, never both the same. Screen UI is also
+  inset above the bottom nav bar. See `ARCHITECTURE.md` §4.6 for the structure every screen
+  follows.
 - **Art style:** Pixel art, cozy medieval-fantasy. Recommend a fixed base resolution (e.g.
   a 1x pixel grid at a defined PPU) with pixel-perfect camera — see `ARCHITECTURE.md`.
 - **Performance budget:** Mid-tier phones from the last ~4 years, 60fps target, low battery
@@ -239,6 +242,22 @@ Bottom navigation, 5 tabs:
 3. **Economy** (§8)
 4. **Kingdom** (home — map + population + Random Occurrences mailbox) (§9, §10)
 5. **Shop** (§11)
+
+Tapping a tab shows that screen and hides the others; there is no back stack and no nested
+navigation. Switching tabs never pauses a mechanic — every timer runs off a tick driver and a
+stored timestamp (`ARCHITECTURE.md` §4.5), so the screen the player returns to is already
+correct. A screen the player is not looking at stays silent, though: passive sounds are gated on
+visibility, so a law card arriving on another tab updates the queue without making a noise.
+
+**Transition.** Screens currently cut instantly rather than animating between tabs — a known
+exception to the §3 rule that every state change is animated. The tab button itself still
+animates on selection. See `ARCHITECTURE.md` §4.6; re-adding a screen transition is a small,
+isolated change if it turns out to be missed.
+
+**Build status.** The bar is built and all five tabs are drawn. Laws is the only complete screen;
+Trade is a greybox placeholder awaiting §7; Economy, Kingdom and Shop are rendered dimmed and are
+not tappable until their screens exist. The app currently launches on **Laws** rather than
+Kingdom, purely because Kingdom does not exist yet — see `ARCHITECTURE.md` §4.6.
 
 ## 14. Explicit non-goals (v1)
 

@@ -4,12 +4,14 @@ using UnityEditor;
 using UnityEditor.Localization;
 using UnityEngine;
 using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Shared.Navigation;
 
 namespace KingdomRuler.Shared.Editor
 {
     /// <summary>
     /// Checks the strings and shared data every module depends on: the characteristic
-    /// registry, and the characteristic names in <see cref="CharacteristicDefinition.StringTable"/>.
+    /// registry, the characteristic names in <see cref="CharacteristicDefinition.StringTable"/>,
+    /// and the bottom nav bar's tab labels.
     /// </summary>
     /// <remarks>
     /// This lives in Shared rather than inside a module because characteristics are
@@ -28,6 +30,7 @@ namespace KingdomRuler.Shared.Editor
 
             ValidateRegistry(problems);
             ValidateCharacteristicNames(problems, ref checkedEntries);
+            ValidateNavigationLabels(problems, ref checkedEntries);
 
             Report(problems, checkedEntries);
         }
@@ -75,34 +78,79 @@ namespace KingdomRuler.Shared.Editor
         private static void ValidateCharacteristicNames(ICollection<string> problems,
                                                         ref int checkedEntries)
         {
-            var collection = LocalizationEditorSettings
-                .GetStringTableCollection(CharacteristicDefinition.StringTable);
-
-            if (collection == null)
-            {
-                problems.Add($"Table '{CharacteristicDefinition.StringTable}' does not exist.");
-                return;
-            }
-
+            var keys = new List<string>();
             foreach (CharacteristicType type in System.Enum.GetValues(typeof(CharacteristicType)))
             {
                 // Deliberately the same derivation the game resolves through, not a copy of
                 // the string pattern — a copy could agree with the table and still disagree
                 // with what actually gets asked for at runtime.
-                string key = CharacteristicDefinition.BuildNameKey(type);
+                keys.Add(CharacteristicDefinition.BuildNameKey(type));
+            }
 
+            ValidateKeys(CharacteristicDefinition.StringTable, keys, problems, ref checkedEntries);
+        }
+
+        /// <summary>Table and key convention for the bottom nav bar's tab labels.</summary>
+        /// <remarks>
+        /// Declared here, and only here. Nothing resolves these keys in code — each tab's label
+        /// is rendered by a <c>LocalizeStringEvent</c> component on the prefab — so this
+        /// validator is the table's single code reference, not a duplicate of one. That is the
+        /// case <c>ARCHITECTURE.md</c> §2 explicitly allows, and the same arrangement
+        /// <c>LawsUITable</c> uses. If a nav label ever has to be resolved from code, move both
+        /// of these onto a <c>NavigationUIText</c> type in <c>Shared/Navigation</c> and import
+        /// it here, so the game and this check can never spell it differently.
+        /// </remarks>
+        private const string NavigationTable = "NavigationUITable";
+
+        private static string BuildNavLabelKey(ScreenId screen) =>
+            "nav." + screen.ToString().ToLowerInvariant();
+
+        /// <summary>
+        /// Every bottom-nav tab label (<c>GDD.md</c> §13) exists in every locale.
+        /// </summary>
+        /// <remarks>
+        /// Checked here rather than in a module because navigation belongs to none of them
+        /// (<c>ARCHITECTURE.md</c> §4.6). A missing entry would otherwise surface only as a
+        /// <c>[nav.x]</c> placeholder in the bar; this turns it into a menu click.
+        /// </remarks>
+        private static void ValidateNavigationLabels(ICollection<string> problems,
+                                                     ref int checkedEntries)
+        {
+            var keys = new List<string>();
+            foreach (ScreenId screen in System.Enum.GetValues(typeof(ScreenId)))
+                keys.Add(BuildNavLabelKey(screen));
+
+            ValidateKeys(NavigationTable, keys, problems, ref checkedEntries);
+        }
+
+        /// <summary>
+        /// Assert that every key in <paramref name="keys"/> has a non-empty entry in every
+        /// locale of <paramref name="tableName"/>.
+        /// </summary>
+        private static void ValidateKeys(string tableName,
+                                         IEnumerable<string> keys,
+                                         ICollection<string> problems,
+                                         ref int checkedEntries)
+        {
+            var collection = LocalizationEditorSettings.GetStringTableCollection(tableName);
+            if (collection == null)
+            {
+                problems.Add($"Table '{tableName}' does not exist.");
+                return;
+            }
+
+            foreach (var key in keys)
+            {
                 foreach (var table in collection.StringTables)
                 {
                     checkedEntries++;
-                    var entry  = table.GetEntry(key);
+                    var entry     = table.GetEntry(key);
                     string locale = table.LocaleIdentifier.Code;
 
                     if (entry == null)
-                        problems.Add($"{CharacteristicDefinition.StringTable} [{locale}] is " +
-                                     $"missing '{key}'.");
+                        problems.Add($"{tableName} [{locale}] is missing '{key}'.");
                     else if (string.IsNullOrWhiteSpace(entry.Value))
-                        problems.Add($"{CharacteristicDefinition.StringTable} [{locale}] has " +
-                                     $"'{key}' but it is empty.");
+                        problems.Add($"{tableName} [{locale}] has '{key}' but it is empty.");
                 }
             }
         }
