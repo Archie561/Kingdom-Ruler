@@ -13,7 +13,7 @@
 The player holds up to 8 law cards but sees exactly one at a time. Swiping right accepts
 it, left rejects it; **both apply effects** to 1–3 of the 6 characteristics — and the card
 **never states which ones**, so the player judges it from the writing and finds out when the
-bars move (§6.9). A resolved card frees a slot, which refills on a 2-minute real-time timer
+bars move (§6.11). A resolved card frees a slot, which refills on a 2-minute real-time timer
 that keeps running while the app is closed. Crystals can instantly refill pending slots, or
 finish a characteristic's current level.
 
@@ -67,7 +67,7 @@ localization hooks into, and it is why `LawCardView` has no dependency on `Domai
 | Class | Responsibility |
 |---|---|
 | `LawsConfig` | Tunable parameters: queue cap, replenish interval, crystal costs. Also carries `AllCards`, the registry the deck is built from. **Not** the leveling curve — see §6.1. |
-| `LawCardDefinition` | One card: its `CardId` and the accept/reject effect arrays. No text and no key fields — the id *is* the localization key (§6.10). One asset per card in `ScriptableObjects/LawCards/`. |
+| `LawCardDefinition` | One card: its `CardId` and the accept/reject effect arrays. No text and no key fields — the id *is* the localization key (§6.12). One asset per card in `ScriptableObjects/LawCards/`. |
 
 ### Domain (pure C#, directly unit-testable)
 
@@ -143,7 +143,7 @@ and would let a *destroyed* asset through.
 |---|---|
 | `LawsView` | Root coordinator. Receives the Presenter via `[Inject]`, subscribes to its events, drives sub-views, forwards intents. Renders the countdown but **never advances it**. |
 | `LawCardView` | One card: text plus the drag-to-swipe gesture and its DOTween animations. |
-| `CharacteristicBarView` | One characteristic row: icon, name, level, fill bar, buy-up button. |
+| `CharacteristicBarView` | One characteristic dial: circular progress ring, icon in the middle, level on a nameplate below. The whole dial is the tap target. |
 
 ---
 
@@ -193,14 +193,14 @@ GameEntryPoint.Start()
   └─ GameStateCoordinator.LoadOrInitialize()
         ├─ save exists → LawsManager.LoadFromDto(dto) → ProcessReplenishment()  (offline catch-up)
         └─ no save     → LawsManager.InitializeCardPool()
-  └─ ILocalizationService.WhenReady(...)        ← waits for the String Tables (§6.10)
+  └─ ILocalizationService.WhenReady(...)        ← waits for the String Tables (§6.12)
         └─ SceneManager.LoadScene("Main", Additive)
               └─ sceneLoaded → resolver.InjectGameObject(root) → LawsView.Construct(presenter)
                     └─ LawsView.Start() → Refresh()
 ```
 
 Hydration **and** localization always complete before any View renders. Both orderings are
-load-bearing and both fail silently if broken — see §6.10.
+load-bearing and both fail silently if broken — see §6.12.
 
 ### A swipe
 ```
@@ -311,7 +311,100 @@ the constructor with the **most** parameters, so left alone it selects that one 
 resolve `System.Random` at startup. The factory in `GameBootstrapper` pins the 3-arg one.
 `KingdomLedger` and `LocalJsonSaveService` are registered the same way for the same reason.
 
-### 6.9 A card shows title and flavor only — never its effects
+### 6.9 The characteristic dials show level, not points
+
+Six dials across the top: a radial ring for progress inside the current level, the
+characteristic's icon in the middle, and the **level** on a nameplate below. Exact point
+totals are deliberately absent — they belong in the detail panel, so six dials stay readable
+at a glance.
+
+**One dial, six instances.** `Prefabs/CharacteristicDial.prefab` is the single source; the
+screen holds six nested instances that override only `_type`. Edit the dial once and all six
+follow. Do not "duplicate and tweak" a dial back into the screen prefab — that was the
+original arrangement and it meant every visual change had to be repeated six times.
+
+**Placement is a `HorizontalLayoutGroup`, not anchors.** The panel lays the dials out and each
+carries a `LayoutElement` with `flexibleWidth = 1`, so they divide the row evenly at any width
+and a seventh characteristic would need no repositioning. `childForceExpandWidth` is
+deliberately **off**: it overrides `flexibleWidth` and splits slack equally among children,
+which is what made the refill button in `TimerRow` balloon to twice its intended size before
+it was caught.
+
+Three things about the prefab that are easy to undo by accident:
+
+- **The ring is three stacked Images** — `RingBg`, `RingFill`, `RingHole` — then `Icon`, then
+  `Nameplate`. The hole is what turns a filled circle into a ring, because the stub sprite is
+  solid; without it the fill covers the icon. If art later supplies a real ring sprite, delete
+  `RingHole` rather than leaving it under the icon.
+- **`CharacteristicBarView` never knows the dial is circular.** It sets `fillAmount`, which
+  behaves identically for a bar or a ring — which is why the fill and level-up animations
+  survived the redesign untouched. Keep it that way: shape is prefab configuration
+  (`type = Filled`, `fillMethod = Radial360`), not code.
+- **There is no name label.** A characteristic is identified by its icon.
+  `CharacteristicDisplayData.Name` is still resolved, for the detail panel and other modules.
+
+A note for whoever builds the next mechanic that awards characteristic points: `LawsPresenter`
+re-renders on `QueueChanged` and `CharacteristicLeveledUp`, so points added without a level-up
+and outside a Laws action will not move these rings on their own. Publish an event when
+Random Occurrences lands and subscribe here — the seam is `NotifyStateChanged`.
+
+All six rings are the same green, by decision. If per-characteristic colour is ever wanted it
+is presentation data *about a characteristic*, so it belongs on `CharacteristicDefinition`
+beside the icon — not as six values scattered across prefab instances.
+
+**The dial is the tap target, and it is deliberately inert.** `CharacteristicBarView` raises
+`OnDialPressed`; `LawsView` does not subscribe. The dial briefly ran the crystal buy-up
+directly, which stopped being acceptable the moment the whole dial became the hit area and the
+price label went away — a large, easy-to-hit control spending a premium currency with nothing
+shown first. The purchase moves into the characteristic detail panel. When that panel exists:
+subscribe to `OnDialPressed` in `LawsView` to open it, and let the panel call
+`LawsPresenter.OnBuyUpRequested` behind its own confirmation.
+
+That leaves `OnBuyUpRequested`, `BuyUpCost` and `CanAffordBuyUp` with no caller in the UI
+today. They are intact and still covered by tests — including "price shown == price charged" —
+because the panel is what will consume them. Do not delete them as dead code.
+
+### 6.10 The screen's vertical layout is anchored top-down, not centre-out
+
+`CharacteristicsPanel` and `TimerRow` are top-anchored at fixed heights; `CardCanvas` then
+**stretches** into whatever is left, from just under the row down to the safe-area floor
+(which coincides with the top of the bottom nav bar).
+
+This replaced a centre-anchored, fixed-height card, and the reason matters. With the header
+top-anchored and the card centre-anchored, the gap between them was
+`safeAreaHeight / 2 − 230` — a *function of screen height* rather than a designed constant.
+Measured across aspect ratios that gave a 49-unit gap on a 3:4 tablet and a 529-unit gap on a
+9:20 phone, with the card's canvas overflowing the safe area by 60 units at the squat end.
+Anchoring everything top-down makes the gap a constant 24 units everywhere and lets the
+leftover space land in one place.
+
+Verified by driving the Game view to 1080×1440, 1080×1920 and 1080×2400 and measuring: header
+and row identical at all three, card region absorbing the difference, nothing overflowing the
+safe area. Those three sizes are saved in the Game view as `KR 3:4`, `KR 9:16`, `KR 9:20` —
+use them when changing this screen.
+
+**Check a layout change from `Bootstrap`, never `Main`.** A pass of this was nearly signed off
+on a screenshot that turned out to be unbound prefab defaults, because the play session had
+started in `Main` and no View had been injected. Transform measurements stay valid either way,
+which is exactly what makes it easy to miss — the layout looks right while the content is
+fake.
+
+**The card scales inside that region** via an `AspectRatioFitter` (FitInParent, 820∶860). It
+grows to whatever the region allows while keeping its shape: height-limited on a 3:4 tablet
+(830×871), width-limited on a 9:20 phone (900×944). The region is inset 90 units horizontally
+so the fitter cannot run the card to the screen edges — without that inset it filled the full
+width on tall screens and read as a slab rather than a card.
+
+**The fitter and the swipe tween share a RectTransform**, which is worth knowing before
+touching either. That looked like a conflict — `AspectRatioFitter` is a layout controller and
+DOTween drives `anchoredPosition` — so it was tested rather than assumed: drag, forced
+`LayoutRebuilder.ForceRebuildLayoutImmediate` mid-drag, threshold crossing, and settle. The
+position survived the rebuild, the swipe committed (card count decremented and the next card
+loaded *before* the animation, per §6.4), and the card returned to rest at (0,0) with rotation
+and scale reset. Note the fitter sets stretch anchors (0,0)–(1,1); `anchoredPosition` still
+behaves, but do not assume a centred-anchor layout when editing this prefab.
+
+### 6.11 A card shows title and flavor only — never its effects
 
 `LawCardDisplayData` carries `CardId`, `Title` and `FlavorText`. It deliberately has **no**
 effect summary, and the card prefab has no label for one. Inferring what a law will do from
@@ -330,7 +423,7 @@ missing feature. Two things guard it:
 The Presenter kept `ResolveCharacteristicName` after this change: the bars still need names.
 Only the per-card summary and its `effect.line` Smart String were removed.
 
-### 6.10 Localization: two paths, and three traps that cost real time
+### 6.12 Localization: two paths, and three traps that cost real time
 
 Card text lives at `{CardId}.title` / `{CardId}.flavor` in `LawCardsTable`. **Keys are derived
 from data — `LawCardDefinition` carries no key fields at all.** Adding a card means adding two
@@ -421,7 +514,7 @@ pointing at a new `LawsUITable` entry, and add the key to
 `LawsLocalizationValidator.RequiredUIKeys` so a missing entry is caught by a menu click rather
 than by a player. If it is data-derived, put the table name and the key derivation on the
 **data type** it belongs to — the way `LawCardDefinition` does — then resolve through those
-members from `LawsPresenter` and carry the result on a display struct (§6.10). Do not spell a
+members from `LawsPresenter` and carry the result on a display struct (§6.12). Do not spell a
 table name or a key suffix in the Presenter or the validator.
 
 **Show several cards at once** — `LawsManager._activeCard` is the field that becomes a
@@ -458,8 +551,9 @@ then are its Views injected. (`LawsView` detects this and says so rather than nu
 | Gap | Status |
 |---|---|
 | Ukrainian card text is placeholder | Structurally complete and verified on screen, but "Закон 1" is a stand-in — the three cards need real copy in both locales. |
-| No characteristic icons yet | The registry, the display struct, the prefab slot and the render path are all wired and tested; the six `CharacteristicDefinition` assets just have no sprite. Rows hide the slot until one lands. |
-| No post-swipe effect feedback | Now that the card states nothing (§6.9), the bars are the *only* signal of what a law did. They animate and celebrate level-ups, but the planned icon particles off the enacted card (GDD §6) are not built — worth doing before the mechanic is judged on feel. |
+| No characteristic icons yet | The registry, the display struct, the prefab slot and the render path are all wired and tested; the six `CharacteristicDefinition` assets just have no sprite. Dials hide the slot until one lands. |
+| No characteristic detail panel | The dials show level only, so point totals and the crystal buy-up have nowhere to live. **Buy-up is currently unreachable from the UI** — `OnDialPressed` is raised but unsubscribed (§6.9). The Presenter API and its tests are intact, waiting for the panel. This is the next piece of the screen. |
+| No post-swipe effect feedback | Now that the card states nothing (§6.11), the bars are the *only* signal of what a law did. They animate and celebrate level-ups, but the planned icon particles off the enacted card (GDD §6) are not built — worth doing before the mechanic is judged on feel. |
 | Card copy carries the gameplay signal | The three placeholder cards read "This is law 1 description", which telegraphs nothing. Real copy is now a design dependency, not flavor polish. |
 | Only Laws is localized | The other four modules have no content or Views yet; they adopt the same rules (`ARCHITECTURE.md` §2) when they do. |
 | No in-game language switcher | Locale follows the OS (`SystemLocaleSelector`), English as fallback. Switching at runtime works and is verified; there is just no UI for it. |

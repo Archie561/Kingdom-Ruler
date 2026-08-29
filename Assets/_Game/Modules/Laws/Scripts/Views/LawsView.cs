@@ -265,13 +265,18 @@ namespace KingdomRuler.Modules.Laws.Views
 
         private void WireSubViewEvents()
         {
+            // Method group, not a lambda: a lambda creates a fresh delegate each time and
+            // could never be unsubscribed in OnDestroy.
             _cardView.OnSwiped                 += OnCardSwiped;
             _cardView.OnSwipeAnimationComplete += OnSwipeAnimationComplete;
 
-            // Method group, not a lambda: a lambda creates a fresh delegate each time and
-            // could never be unsubscribed in OnDestroy.
-            foreach (var bar in _barsByType.Values)
-                bar.OnBuyUpPressed += OnBuyUpPressed;
+            // CharacteristicBarView.OnDialPressed is deliberately not subscribed yet. It used
+            // to run the crystal buy-up directly, which stopped being acceptable when the dial
+            // became the whole tap target and the price label went away — a large, easy-to-hit
+            // control that spends a premium currency with nothing shown first. The buy-up
+            // belongs in the characteristic detail panel; when that exists, subscribe here and
+            // open it, and have the panel call Presenter.OnBuyUpRequested behind its own
+            // confirm. Until then a dial tap intentionally does nothing.
         }
 
         private void UnwireSubViewEvents()
@@ -281,12 +286,7 @@ namespace KingdomRuler.Modules.Laws.Views
                 _cardView.OnSwiped                 -= OnCardSwiped;
                 _cardView.OnSwipeAnimationComplete -= OnSwipeAnimationComplete;
             }
-
-            foreach (var bar in _barsByType.Values)
-                if (bar != null) bar.OnBuyUpPressed -= OnBuyUpPressed;
         }
-
-        private void OnBuyUpPressed(CharacteristicType type) => _presenter.OnBuyUpRequested(type);
 
         private void BuildBarLookup()
         {
