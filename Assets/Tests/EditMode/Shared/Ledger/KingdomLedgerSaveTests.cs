@@ -179,7 +179,7 @@ namespace KingdomRuler.Tests.EditMode.Shared.Ledger
         {
             var dto = new LedgerStateDto();
             dto.TradeResources[TradeResourceType.Stone.ToString()] =
-                new TradeResourceStateDto { Capacity = 0f, Amount = 0f, RegenRatePerSecond = 0f };
+                new TradeResourceStateDto { Capacity = 0f, Amount = 0f };
 
             var ledger = NewLedger();
             ledger.LoadFromDto(dto);
@@ -194,7 +194,7 @@ namespace KingdomRuler.Tests.EditMode.Shared.Ledger
         {
             var dto = new LedgerStateDto();
             dto.TradeResources[TradeResourceType.Metal.ToString()] =
-                new TradeResourceStateDto { Capacity = 100f, Amount = 10_000f, RegenRatePerSecond = 1f };
+                new TradeResourceStateDto { Capacity = 100f, Amount = 10_000f };
 
             var ledger = NewLedger();
             ledger.LoadFromDto(dto);
@@ -222,7 +222,7 @@ namespace KingdomRuler.Tests.EditMode.Shared.Ledger
             var dto = new LedgerStateDto();
             dto.TradeResources[TradeResourceType.Wood.ToString()] = new TradeResourceStateDto
             {
-                Capacity = 100f, Amount = 10f, RegenRatePerSecond = 1f, LastUpdatedUtc = "not-a-date"
+                Capacity = 100f, Amount = 10f, LastUpdatedUtc = "not-a-date"
             };
 
             var ledger = NewLedger();

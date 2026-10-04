@@ -103,7 +103,7 @@ namespace KingdomRuler.Modules.Laws
 
         /// <summary>
         /// Settle the replenishment timers against the clock. Driven by
-        /// <see cref="LawsTickDriver"/>; cheap to call repeatedly.
+        /// <c>AccrualDriver</c>; cheap to call repeatedly.
         /// </summary>
         public void ProcessReplenishment()
         {
@@ -209,6 +209,23 @@ namespace KingdomRuler.Modules.Laws
         /// <summary>Seconds until the next card matures; 0 when nothing is replenishing.</summary>
         public float GetSecondsUntilNextCard() =>
             _slots.SecondsUntilNext(_clock.UtcNow);
+
+        /// <summary>
+        /// Seconds until every replenishing slot has matured — what the refill prompt offers
+        /// to skip. Zero when the queue is already full.
+        /// </summary>
+        /// <remarks>
+        /// The next slot lands after its own remaining time; each one behind it takes a whole
+        /// interval after that. Derived rather than stored, for the same reason the queue
+        /// stores one deadline and not N timers (§6.2).
+        /// </remarks>
+        public float GetSecondsUntilAllCards()
+        {
+            if (_slots.Count == 0) return 0f;
+
+            return _slots.SecondsUntilNext(_clock.UtcNow)
+                 + (_slots.Count - 1) * _config.CardReplenishTimeSeconds;
+        }
 
         // ── Save / Load ───────────────────────────────────────────────────────────
 

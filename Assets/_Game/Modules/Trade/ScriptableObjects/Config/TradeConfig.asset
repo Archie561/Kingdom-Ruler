@@ -16,11 +16,8 @@ MonoBehaviour:
   OfferRefreshTimeSeconds: 1200
   InstantRefreshCrystalCost: 3
   OfferBaseAmount: 50
-  WarehouseCapacityCurve:
-  - 100
-  - 150
-  - 225
-  - 340
-  - 500
-  - 750
-  WarehouseCrystalCostCurve: 05000000080000000c0000001200000019000000
+  CapacityBase: 100
+  CapacityGrowth: 1.5
+  CapacityRoundTo: 10
+  CrystalCostBase: 5
+  CrystalCostGrowth: 1.5

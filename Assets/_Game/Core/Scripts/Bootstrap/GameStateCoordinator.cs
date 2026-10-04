@@ -87,12 +87,19 @@ namespace KingdomRuler.Core
             }
 
             _ledger.LoadFromDto(state.Ledger);
-            _ledger.AccruePassiveResourceRegen(_clock.UtcNow);
+
+            // Resource regen is deliberately NOT accrued here. It used to be, and it ran against
+            // the capacity the ledger DTO happened to carry — which TradeManager.LoadFromDto then
+            // overwrote from the warehouse level moments later, so the two fought. Trade now
+            // settles regen inside its own load, after capacity is final, which makes the
+            // invariant "regen never accrues against a capacity that is about to change"
+            // structural rather than a matter of call order here.
 
             // Each module fast-forwards its own offline progress inside LoadFromDto.
             if (state.Laws              != null) _laws.LoadFromDto(state.Laws);
             else                                 _laws.InitializeCardPool();
             if (state.Trade             != null) _trade.LoadFromDto(state.Trade);
+            else                                 _trade.InitializeNewGame();
             if (state.Economy           != null) _economy.LoadFromDto(state.Economy);
             if (state.Cities            != null) _cities.LoadFromDto(state.Cities);
             if (state.RandomOccurrences != null) _occurrences.LoadFromDto(state.RandomOccurrences);
@@ -152,6 +159,8 @@ namespace KingdomRuler.Core
         private void StartNewGame()
         {
             _laws.InitializeCardPool();
+            // Seeds base warehouse capacities, the first batch of offers, and the regen baseline.
+            _trade.InitializeNewGame();
         }
 
         private void OnFocusChanged(bool hasFocus)

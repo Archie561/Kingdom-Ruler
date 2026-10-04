@@ -21,11 +21,23 @@ namespace KingdomRuler.Shared.Ledger
         }
 
         /// <summary>
-        /// Fast-forward passive regeneration from lastUpdatedUtc to the given time.
+        /// Fast-forward passive regeneration from <see cref="LastUpdatedUtc"/> to the given time.
         /// </summary>
+        /// <remarks>
+        /// A baseline in the future <b>resynchronises</b> rather than being ignored. Returning
+        /// early instead would strand the resource permanently: nothing else ever moves
+        /// <see cref="LastUpdatedUtc"/> backwards, so a device clock that ran ahead and was later
+        /// corrected would stop that warehouse regenerating for good. Resyncing costs the player
+        /// only the drift itself.
+        /// </remarks>
         public void AccruePassiveRegen(DateTime now)
         {
-            if (now <= LastUpdatedUtc) return;
+            if (now <= LastUpdatedUtc)
+            {
+                LastUpdatedUtc = now;
+                return;
+            }
+
             var elapsed = (float)(now - LastUpdatedUtc).TotalSeconds;
             Amount = Math.Min(Amount + elapsed * RegenRatePerSecond, Capacity);
             LastUpdatedUtc = now;

@@ -1,0 +1,16 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36992380f3bfd594fbf1c2fc722d9fb8, type: 3}
+  m_Name: PopupRegistry
+  m_EditorClassIdentifier: KingdomRuler.Shared::KingdomRuler.Shared.Popups.PopupRegistry
+  _prefabs:
+  - {fileID: 7863084233408702507, guid: d886e0d6ac184724e859f9cded48b74a, type: 3}

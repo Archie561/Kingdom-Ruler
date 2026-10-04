@@ -156,6 +156,7 @@
   |---|---|---|
   | `Shared/Localization/SharedTable` | characteristic names, cross-cutting words | Cities and Random Occurrences need the identical strings |
   | `Modules/<X>/Localization/<X>UITable` | that screen's fixed chrome | small, stable, changes with the screen |
+  | `Modules/Trade/Localization/TradeUITable` | Trade's chrome **and** its arg-taking messages | the first table in the project resolved from code, so it owns a `TradeUIText` keys type — see below |
   | `Shared/Navigation/Localization/NavigationUITable` | the bottom bar's tab labels | the middle row's pattern, for a screen that is shared rather than a module (§4.6). Nothing outside the nav bar draws the word "Laws", so these are chrome, not cross-cutting words. Like `LawsUITable`, it is resolved only by `LocalizeStringEvent` components, so it names itself in `SharedLocalizationValidator` |
   | `Modules/<X>/Localization/<X>…Table` | that module's content, keyed by id | grows with authored content; what a translator is handed in bulk |
 
@@ -185,6 +186,19 @@
   each of the 5 bottom-nav screens gets its own Canvas, and within a screen, anything that
   animates or updates frequently (a ticking currency counter, an animating law card) gets
   its own Canvas or nested sub-canvas so it doesn't force a rebuild of static sibling UI.
+  A Canvas is the unit of *rebuild* — dirty one Graphic and every Graphic sharing that canvas
+  re-batches — so the thing to isolate is whatever changes per frame. `Image.fillAmount` is
+  the easy one to miss: it dirties vertices, so any tweened progress bar or ring re-batches
+  its whole canvas every frame it animates.
+
+  **A nested Canvas needs its own `GraphicRaycaster`.** Graphics register to the nearest
+  Canvas, so the parent's raycaster cannot see them: split a panel onto its own Canvas and
+  every button inside it goes dead, silently and with no error. Add the raycaster with the
+  Canvas, and verify with an actual raycast rather than by invoking `onClick` — invoking the
+  handler directly bypasses the raycaster and passes either way. `overrideSorting` is a
+  separate concern: needed only when the sub-canvas must draw above its siblings, never for
+  rebuild isolation.
+
   For the pixel-art look, prefer a bitmap-style font asset in TMP over a smooth vector font,
   to stay visually consistent with the art.
 - **Newtonsoft.Json** — save serialization (see §5 for the IL2CPP caveat). Install via
@@ -199,7 +213,9 @@ Assets/
   _Game/
     Core/
       Scripts/
-        Bootstrap/         # Bootstrap scene entry point, root VContainer LifetimeScope
+        Bootstrap/         # Bootstrap scene entry point, root VContainer LifetimeScope,
+                           # GameStateCoordinator and AccrualDriver — the two classes that
+                           # legitimately know every module (§4.5)
         EventBus/           # the pub/sub MECHANISM only — no event message types (§4.2)
     Shared/
       Fonts/
@@ -234,6 +250,12 @@ Assets/
         Scripts/            # module: 4 classes, and it deals only in ScreenId
         Prefabs/            # BottomNavBar.prefab
         Localization/       # NavigationUITable — the tab labels
+      Popups/               # shared popup system — see §4.7
+        Scripts/
+          Core/             # the mechanism: manager, popup base classes, registry
+          ConfirmPopup/     # one folder per kind of popup — see "Systems with variants"
+        Prefabs/
+        ScriptableObjects/  # PopupRegistry.asset
       Editor/               # editor-only tooling for shared data, own Editor asmdef
                             # (SharedLocalizationValidator)
     Modules/
@@ -258,7 +280,9 @@ Assets/
           Data/             # one LawCardDefinition asset per card
         Prefabs/
         Images/             # sprites/textures for this mechanic (see note below)
-      Trade/                # same internal shape as Laws
+      Trade/                # same internal shape as Laws, plus Editor/ and Localization/.
+                            # ScriptableObjects/Data/ stays empty: offers are generated, not
+                            # authored, so there is no content table either (docs/modules/Trade.md)
       Economy/              # same internal shape as Laws
       Cities/                # same internal shape as Laws
       RandomOccurrences/      # same internal shape as Laws — the mechanic in GDD §10
@@ -278,6 +302,7 @@ docs/
   ARCHITECTURE.md
   modules/
     Laws.md              # per-module architecture — see note below
+    Trade.md             # ditto, for the Trade mechanic
 CLAUDE.md
 ```
 
@@ -295,12 +320,59 @@ tree *is* strict about is the `Scripts/` role split and the `Config/` vs. conten
 because those two carry real architectural meaning. Adding a sprite folder does not need a doc
 update; adding a new **script role** or a new top-level folder under `_Game/` does.
 
+### Systems with variants: split `Scripts/` into Core plus one folder per variant
+
+Group by type at the top level as everywhere else — `Scripts/`, `Prefabs/`,
+`ScriptableObjects/`. But when a system is made of **several variants of the same thing** —
+kinds of popup, kinds of offer — split `Scripts/` further, by variant:
+
+```
+Shared/Popups/
+  Scripts/
+    Core/            the mechanism itself: base classes, interfaces, the manager
+    ConfirmPopup/    everything code-side for one variant
+    <Variant>Popup/  the next one, laid out the same way
+  Prefabs/
+  ScriptableObjects/
+```
+
+Without this, a variant's view, model and result type scatter across role folders and nothing
+shows which files belong together.
+
+The test for where a file goes: **delete a variant's script folder, and `Core/` must still
+compile.** If it would not, something variant-specific has leaked into the core. Namespaces
+follow the folders (`…Popups` for the core, `…Popups.Confirm` for the variant).
+
+### Naming
+
+- **A name says what the thing is responsible for** — not how it is implemented, not where it
+  happened to be written first.
+- **Call sites should read as a sentence.** `if (choice == ConfirmPopupChoice.Confirm)`
+  reads; `if (result.Or(No) == Yes)` has to be decoded. When a call site needs a comment to be
+  understood, rename before commenting.
+- **Members of one family share a prefix**, so they sort together and nobody has to guess the
+  odd one out: `ConfirmPopup`, `ConfirmPopupData`, `ConfirmPopupChoice`.
+- **Paired operations get paired names** that make the difference obvious:
+  `Choose(choice)` / `Close()`, `Show(data)` / `Ask(data)`.
+- **One word, one meaning, project-wide.** "Manager" is a plain-C# module Model; "Event" is a
+  message on the bus. Where something must break a convention, say so in its doc comment.
+- **An object owns itself, not its surroundings.** A view is responsible for its own content,
+  animation and lifecycle; where it sits relative to its siblings, or on a canvas it did not
+  create, belongs to whatever owns that canvas. If a method on a child only makes sense in
+  terms of the parent's layout, it belongs on the parent.
+- **No unused public API.** Delete it. The exception is a deliberate hook with a known first
+  caller, which says so in its doc comment — otherwise the next reader has to work out whether
+  it matters.
+
 ### Per-module architecture docs (`docs/modules/`)
 
 This document covers rules that apply to *every* module. Once a module grows past a handful of
 classes, it gets its own file under `docs/modules/` describing its layers, its state model, its data
 flows, and — most importantly — the decisions inside it that look arbitrary from the outside and
-would otherwise be undone by accident. `docs/modules/Laws.md` is the worked example and the template
+would otherwise be undone by accident. A **shared system** that grows past a handful of classes
+gets one too — `docs/modules/Popups.md` — even though it is not a module; the folder is
+"per-system architecture", not "per-module" in the §3 sense.
+`docs/modules/Laws.md` is the worked example and the template
 to follow; write the equivalent for a module when someone other than its author needs to extend it.
 
 ## 4. Core systems
@@ -452,7 +524,9 @@ them for purchase requirements, and Random Occurrences for outcome text. A modul
 registry and asks; it does not re-derive.
 
 **This is the pattern to copy** for any per-thing metadata more than one module displays —
-trade resources are the obvious next one. Three rules make it work:
+trade resources were the obvious next one, and `TradeResourceRegistry` +
+`TradeResourceDefinition` now follow it exactly (`resource.stone` … `resource.clay`, in
+`SharedTable` beside the characteristic names). Three rules make it work:
 
 1. **Name it for what it is, not for whoever needed it first.** `CharacteristicRegistry`, not
    `LawCharacteristicRegistry`. The name is what grants the next person permission to reach
@@ -504,6 +578,38 @@ Pump these at a coarse interval (a few times a second), not every frame — thes
 timers and per-frame work on them is wasted battery. Note also that a UI *sound* tied to a timer
 firing (a law card arriving, say) should only play when that screen is actually open; the state
 change itself still happens either way, so the screen is correct when the player returns to it.
+
+**One driver pumps everything: `AccrualDriver` in `Core/Bootstrap`.** It replaced the per-module
+`LawsTickDriver` once Trade arrived needing two things pumped (its offer timer *and* Ledger
+warehouse regen). It lives beside `GameStateCoordinator` for the same stated reason — it knows
+every module, so it belongs with the composition root rather than inside any one of them.
+
+The **order inside its `Tick` is deliberate and written down**: regeneration settles before any
+module's timer, so nothing reacts to a matured timer against stale amounts. That ordering is the
+whole point of merging the drivers. With an `ITickable` per system the relative order would be
+decided by VContainer's registration order, and a correctness dependency would live implicitly in
+the bootstrapper — which is exactly the class of bug that produced the old
+`GameStateCoordinator` / `TradeManager.LoadFromDto` capacity fight.
+
+Accepted cost: modules can no longer tune their own tick rate. Both want ~4 Hz today. **The
+trigger to split back out is a module that genuinely needs a different cadence**, and the trigger
+to reconsider the single driver at all was the *second* one — so if a third arrives, this stays
+as is.
+
+**No application focus/resume hook is needed, and its absence is deliberate.** Every system
+derives elapsed time from a stored UTC timestamp, so the first tick after the app returns settles
+the entire absence in one step. The save on focus loss writes each amount together with its own
+matching timestamp, so a tick that last ran a fraction of a second earlier persists a slightly
+stale pair that the next accrual covers exactly — no drift, no double-count.
+
+**Continuous drift is polled; discrete changes go on the bus.** `KingdomLedger.
+AccruePassiveResourceRegen` deliberately publishes **no** `ResourceChanged`: at 4 Hz across six
+resources that would be ~24 messages a second, forever, on every screen, to announce a delta of
+roughly a third of a thousandth of a warehouse — precisely the idle battery drain `GDD.md` §3
+forbids. The warehouse bars read the amount each frame and redraw only when the displayed value
+changes, the same way the Laws countdown is rendered. Accepting an offer, upgrading a warehouse
+and a Cities purchase all still publish normally. **"This mutation doesn't publish an event"
+reads like a bug and is not** — see the doc block on that method.
 
 ### 4.6 Screen navigation (`Shared/Navigation`)
 
@@ -644,6 +750,38 @@ so the bar can never be asked for a screen that isn't there. **Active tab is
 not persisted** — no save DTO involvement, no `schemaVersion` bump. The launch screen is a const
 on `ScreenNavigator`, and should become `Kingdom` once that screen exists.
 
+### 4.7 Popups (`Shared/Popups`)
+
+A shared system every mechanic uses. Full detail: `docs/modules/Popups.md`.
+
+A caller creates a popup by its type, gives it data, and awaits the button the player pressed;
+the popup being open is a pause in the middle of one method:
+
+```csharp
+var choice = await _popups.Create<ConfirmPopup>().Ask(new ConfirmPopupData(title, body));
+if (choice == ConfirmPopupChoice.Confirm) DoTheThing();
+```
+
+`Create` only builds the popup, hidden and without data. `Ask` (one question: show, wait for one
+choice, close) or `Show` (a panel that stays open) is what fills it and puts it on screen.
+
+`PopupManager` lives in the Bootstrap scene so anything built at startup can use it. It owns the
+stack and a single backdrop kept behind the topmost popup. Every kind of popup derives from
+`Popup<TData, TChoice>` and differs only in the data it shows and the buttons it has.
+
+Rules that reach beyond this system:
+
+- **Live data is re-read, not pushed.** Pass a function instead of a value and the popup
+  re-reads it a few times a second while open, redrawing only when the result changes. The
+  function must only read. This replaced an event-driven design whose callers had to forward
+  every relevant event plus run their own timer — see `docs/modules/Popups.md` §6.
+- **Closing without a choice gives `null`** — the backdrop, `closeWhen`, a destroyed popup. It
+  never equals a real choice, so it can never be mistaken for one.
+- **The tap spends nothing.** A purchase is charged only after the confirmation, and the price
+  is re-read at that moment rather than taken from what the popup displayed.
+- **`UniTaskVoid` + `.Forget()`, never `async void`**, whose exceptions are unobservable. An
+  awaited object that can be destroyed must release its awaiter when it is.
+
 ## 5. Save system
 
 - `ISaveService` with `Save(GameStateDto)` / `Load() -> GameStateDto?`.
@@ -693,6 +831,20 @@ touched (git-friendly, parallel-editing-friendly), and tuning a curve doesn't re
 scrolling past 40 content entries to find the one number that matters.
 
 ## 8. Testing strategy
+
+**Testability never outranks design.** If making a class testable would make it worse — an
+interface invented for a fake, a dependency loosened to `null`, logic pulled out of the place
+it belongs — don't. Write the better class and verify it in Play mode instead, and say so in
+the module's doc so the gap is deliberate rather than an oversight. This is a standing
+decision by the project owner, not a per-case judgement call.
+
+What that does *not* license: skipping tests for plain-C# domain logic that is already
+testable. `KingdomLedger`, the leveling curve, the shuffle bag, timer arithmetic and Presenter
+state are all testable without distortion, and stay tested. The exemption is for code that
+would have to be bent to fit — mostly MonoBehaviour and DOTween.
+
+Where the exemption has been used, the module doc lists what was verified in Play mode
+instead; `docs/modules/Popups.md` §7 is the worked example.
 
 - **EditMode tests are the default and the bulk of coverage**, mirroring `Modules/` under
   `Tests/EditMode/Modules/`. Cover: leveling math (including that every mechanic awarding

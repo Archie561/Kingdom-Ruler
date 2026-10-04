@@ -28,11 +28,35 @@ namespace KingdomRuler.Shared.Editor
             var problems = new List<string>();
             int checkedEntries = 0;
 
-            ValidateRegistry(problems);
+            ValidateCharacteristicRegistry(problems);
+            ValidateTradeResourceRegistry(problems);
             ValidateCharacteristicNames(problems, ref checkedEntries);
+            ValidateTradeResourceNames(problems, ref checkedEntries);
             ValidateNavigationLabels(problems, ref checkedEntries);
 
             Report(problems, checkedEntries);
+        }
+
+        /// <summary>
+        /// Load every asset of a registry type, reporting the two ways the count can be wrong.
+        /// </summary>
+        /// <remarks>
+        /// The only part the two registries genuinely share. Their missing/duplicate/icon checks
+        /// are typed over different enums with no common interface between them, and unifying
+        /// those through delegates would be harder to read than the parallel methods below.
+        /// </remarks>
+        private static List<T> LoadRegistries<T>(ICollection<string> problems) where T : Object
+        {
+            var registries = LoadAll<T>();
+            string name = typeof(T).Name;
+
+            if (registries.Count == 0)
+                problems.Add($"No {name} asset exists.");
+            else if (registries.Count > 1)
+                problems.Add($"{registries.Count} {name} assets exist — there should be exactly " +
+                             "one, or modules can be wired to different sets.");
+
+            return registries;
         }
 
         /// <summary>
@@ -41,20 +65,9 @@ namespace KingdomRuler.Shared.Editor
         /// <see cref="CharacteristicRegistry.NameKeyFor"/> falls back to the derivation, and
         /// only the icon quietly goes missing.
         /// </summary>
-        private static void ValidateRegistry(ICollection<string> problems)
+        private static void ValidateCharacteristicRegistry(ICollection<string> problems)
         {
-            var registries = LoadAll<CharacteristicRegistry>();
-            if (registries.Count == 0)
-            {
-                problems.Add("No CharacteristicRegistry asset exists.");
-                return;
-            }
-
-            if (registries.Count > 1)
-                problems.Add($"{registries.Count} CharacteristicRegistry assets exist — there " +
-                             "should be exactly one, or modules can be wired to different sets.");
-
-            foreach (var registry in registries)
+            foreach (var registry in LoadRegistries<CharacteristicRegistry>(problems))
             {
                 // The array may have been edited since this registry was last loaded.
                 registry.InvalidateIndex();
@@ -67,6 +80,34 @@ namespace KingdomRuler.Shared.Editor
                                  "definition; only the first is ever used.");
 
                 foreach (CharacteristicType type in System.Enum.GetValues(typeof(CharacteristicType)))
+                {
+                    var definition = registry.Get(type);
+                    if (definition != null && definition.Icon == null)
+                        problems.Add($"{definition.name}: no icon assigned.");
+                }
+            }
+        }
+
+        /// <summary>
+        /// The same three checks for the trade-resource registry — the second instance of the
+        /// §4.4 registry pattern. Trade draws these on warehouse tiles and offer rows; Cities and
+        /// Random Occurrences will resolve the identical entries.
+        /// </summary>
+        private static void ValidateTradeResourceRegistry(ICollection<string> problems)
+        {
+            foreach (var registry in LoadRegistries<TradeResourceRegistry>(problems))
+            {
+                // The array may have been edited since this registry was last loaded.
+                registry.InvalidateIndex();
+
+                foreach (var missing in registry.FindMissingTypes())
+                    problems.Add($"{registry.name}: no definition for '{missing}'.");
+
+                foreach (var duplicate in registry.FindDuplicateTypes())
+                    problems.Add($"{registry.name}: '{duplicate}' is claimed by more than one " +
+                                 "definition; only the first is ever used.");
+
+                foreach (TradeResourceType type in System.Enum.GetValues(typeof(TradeResourceType)))
                 {
                     var definition = registry.Get(type);
                     if (definition != null && definition.Icon == null)
@@ -88,6 +129,25 @@ namespace KingdomRuler.Shared.Editor
             }
 
             ValidateKeys(CharacteristicDefinition.StringTable, keys, problems, ref checkedEntries);
+        }
+
+        /// <summary>
+        /// Every trade resource's display name exists in every locale.
+        /// </summary>
+        /// <remarks>
+        /// Resolved through <see cref="TradeResourceDefinition.BuildNameKey"/> — the same
+        /// derivation the game asks for at runtime, not a copy of the string pattern. A copy
+        /// could agree with the table and still disagree with what is actually requested, which
+        /// gives a green menu item and a blank label on screen.
+        /// </remarks>
+        private static void ValidateTradeResourceNames(ICollection<string> problems,
+                                                       ref int checkedEntries)
+        {
+            var keys = new List<string>();
+            foreach (TradeResourceType type in System.Enum.GetValues(typeof(TradeResourceType)))
+                keys.Add(TradeResourceDefinition.BuildNameKey(type));
+
+            ValidateKeys(TradeResourceDefinition.StringTable, keys, problems, ref checkedEntries);
         }
 
         /// <summary>Table and key convention for the bottom nav bar's tab labels.</summary>

@@ -12,7 +12,8 @@
         "KingdomRuler.Modules.Shop",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
-        "VContainer"
+        "VContainer",
+        "UniTask"
     ],
     "includePlatforms": [
         "Editor"

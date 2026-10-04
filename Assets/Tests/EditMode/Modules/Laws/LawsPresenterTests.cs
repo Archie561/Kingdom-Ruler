@@ -1,84 +1,27 @@
 using System;
+using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using System.Linq;
+using Cysharp.Threading.Tasks;
 using NUnit.Framework;
+using UnityEngine.TestTools;
 using UnityEngine;
 using KingdomRuler.Core;
 using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Shared.Popups;
 using KingdomRuler.Shared.Services;
 using KingdomRuler.Modules.Laws;
 using KingdomRuler.Modules.Laws.Domain;
 using KingdomRuler.Modules.Laws.Presenters;
+using KingdomRuler.Tests.EditMode.Shared;
 using KingdomRuler.Tests.EditMode.Shared.Ledger;
 
 namespace KingdomRuler.Tests.EditMode.Modules.Laws
 {
-    // ── Test fakes ────────────────────────────────────────────────────────────────
-    // FakeClock is defined in LawsDomainTests.cs in this same namespace/assembly.
+    // Test fakes live in Tests/EditMode/Shared/TestServiceFakes.cs — promoted there once
+    // Trade needed the identical ones. FakeClock is still declared in LawsDomainTests.cs
+    // in this namespace.
 
-    public sealed class FakeAudioService : IAudioService
-    {
-        public readonly List<string> PlayedSfxIds = new();
-        public void PlaySfx(string sfxId)    => PlayedSfxIds.Add(sfxId);
-        public void PlayMusic(string musicId) { }
-        public void StopMusic()              { }
-    }
-
-    public sealed class FakeHapticService : IHapticService
-    {
-        public int LightTriggerCount;
-        public int MediumTriggerCount;
-        public void TriggerLight()  => LightTriggerCount++;
-        public void TriggerMedium() => MediumTriggerCount++;
-    }
-
-    /// <summary>
-    /// Returns "table:key" so tests can assert exactly which entry the Presenter asked for,
-    /// without booting Unity Localization. Overrides let a test pin real text where the
-    /// wording matters.
-    /// </summary>
-    public sealed class FakeLocalizationService : ILocalizationService
-    {
-        public readonly System.Collections.Generic.List<string> Requested = new();
-        public readonly System.Collections.Generic.Dictionary<string, string> Overrides = new();
-
-        public bool IsReady { get; set; } = true;
-        public event Action LocaleChanged;
-
-        public string Resolve(string table, string key) => Resolve(table, key, null);
-
-        public string Resolve(string table, string key, params object[] args)
-        {
-            string id = table + ":" + key;
-            Requested.Add(id);
-            if (Overrides.TryGetValue(id, out var text)) return text;
-            // Smart String stand-in: append the args so composition is still observable.
-            if (args != null && args.Length > 0) return id + "(" + string.Join(",", args) + ")";
-            return id;
-        }
-
-        public void WhenReady(Action onReady)
-        {
-            if (onReady == null) return;
-            if (IsReady) onReady();
-            else _pendingReady += onReady;
-        }
-
-        private Action _pendingReady;
-
-        /// <summary>Simulate localization finishing its asynchronous startup.</summary>
-        public void BecomeReady()
-        {
-            IsReady = true;
-            var callbacks = _pendingReady;
-            _pendingReady = null;
-            callbacks?.Invoke();
-            LocaleChanged?.Invoke();
-        }
-
-        /// <summary>Simulate the player switching language.</summary>
-        public void RaiseLocaleChanged() => LocaleChanged?.Invoke();
-    }
 
     // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -94,6 +37,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         private FakeHapticService _haptics;
         private FakeLocalizationService _localization;
         private CharacteristicRegistry  _characteristics;
+        private PopupManager            _popups;
         private LawsPresenter     _presenter;
 
         private readonly List<ScriptableObject> _createdAssets = new();
@@ -118,8 +62,14 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _haptics   = new FakeHapticService();
             _localization = new FakeLocalizationService();
             _characteristics = TestCharacteristics.Complete(_createdObjects);
+
+            // A bare manager with no registry: opening any popup throws, so nothing is confirmed.
+            // Flows that actually open one are verified in Play mode (ARCHITECTURE.md §8).
+            var popupHost = new GameObject("popups");
+            _createdObjects.Add(popupHost);
+            _popups = popupHost.AddComponent<PopupManager>();
             _presenter = new LawsPresenter(
-                _manager, _ledger, _eventBus, _audio, _haptics, _localization, _characteristics);
+                _manager, _ledger, _eventBus, _audio, _haptics, _localization, _characteristics, _popups);
         }
 
         [TearDown]
@@ -243,7 +193,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _presenter.Dispose();
             _presenter = new LawsPresenter(
                 _manager, _ledger, _eventBus, _audio, _haptics, _localization,
-                TestCharacteristics.Registry(definitions, _createdObjects));
+                TestCharacteristics.Registry(definitions, _createdObjects), _popups);
 
             Assert.That(_presenter.GetCharacteristicDisplay(CharacteristicType.Science).Icon,
                 Is.SameAs(sprite));
@@ -315,7 +265,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             // TearDown disposes again; that must stay safe.
             _characteristics = TestCharacteristics.Complete(_createdObjects);
             _presenter = new LawsPresenter(
-                _manager, _ledger, _eventBus, _audio, _haptics, _localization, _characteristics);
+                _manager, _ledger, _eventBus, _audio, _haptics, _localization, _characteristics, _popups);
         }
 
         [Test]
@@ -461,45 +411,70 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
         // ── OnCrystalRefillRequested ──────────────────────────────────────────────
 
+        /// <summary>
+        /// Regression: the refill button's return value used to mean "the refill happened",
+        /// and the View replayed the card's entrance animation on it. Once the button started
+        /// opening a confirmation instead, merely *opening* the dialog replayed the animation
+        /// behind it. The entrance is now driven by a card actually arriving.
+        /// </summary>
         [Test]
-        public void OnCrystalRefillRequested_WithEnoughCrystals_CancelsTimersAndDrawsActiveCard()
-        {
-            var card = CreateCard("card");
-            _config.AllCards = new[] { card };
-            _manager.InitializeCardPool(); // 8 replenishing → cost = 8 × 2 = 16
-
-            _ledger.AddCrystals(20);
-            bool result = _presenter.OnCrystalRefillRequested();
-
-            Assert.IsTrue(result);
-            Assert.AreEqual(0, _manager.CardsReplenishing); // all timers cancelled
-            Assert.IsTrue(_manager.HasActiveCard);   // 1 active card drawn
-            Assert.AreEqual(4, _ledger.Crystals);           // 20 - 16
-        }
-
-        [Test]
-        public void OnCrystalRefillRequested_WithoutEnoughCrystals_ReturnsFalse()
-        {
-            var card = CreateCard("card");
-            _config.AllCards = new[] { card };
-            _manager.InitializeCardPool();
-
-            _ledger.AddCrystals(1);
-            Assert.IsFalse(_presenter.OnCrystalRefillRequested());
-        }
-
-        [Test]
-        public void OnCrystalRefillRequested_PlaysCrystalSpendSfx()
+        public void OpeningTheRefillConfirm_DoesNotAnnounceACardArrival()
         {
             var card = CreateCard("card");
             _config.AllCards = new[] { card };
             _manager.InitializeCardPool();
             _ledger.AddCrystals(100);
 
-            _audio.PlayedSfxIds.Clear();
-            _presenter.OnCrystalRefillRequested();
+            int arrivals = 0;
+            _presenter.OnCardArrived += () => arrivals++;
 
-            Assert.Contains("sfx_laws_crystal_spend", _audio.PlayedSfxIds);
+            // The fixture's PopupManager has no registry, so opening the popup throws — loudly,
+            // as a setup mistake should. Expect that rather than let it fail the run.
+            LogAssert.Expect(LogType.Exception, new Regex("No popup registry"));
+            _presenter.OnCrystalRefillRequested().Forget();
+
+            Assert.AreEqual(0, arrivals,
+                "Opening the dialog must not look like a card turning up.");
+            Assert.AreEqual(100, _ledger.Crystals,
+                "A popup that could not be shown must never fall through into the purchase.");
+        }
+
+        /// <summary>
+        /// A card that arrives on its own — nobody pressed anything — still animates.
+        /// The old button-driven approach never covered this at all.
+        /// </summary>
+        [Test]
+        public void ACardMaturingOnItsOwn_AnnouncesAnArrival()
+        {
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            int arrivals = 0;
+            _presenter.OnCardArrived += () => arrivals++;
+
+            _clock.Advance(TimeSpan.FromSeconds(_config.CardReplenishTimeSeconds + 1));
+            _manager.ProcessReplenishment();
+
+            Assert.AreEqual(1, arrivals);
+        }
+
+        [Test]
+        public void OnCrystalRefillRequested_WithoutEnoughCrystals_OpensNothingAndSpendsNothing()
+        {
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            _ledger.AddCrystals(1);
+            int before = _ledger.Crystals;
+
+            // Returns UniTaskVoid now; the guard runs before anything is awaited, so this
+            // completes synchronously without touching the popup manager.
+            _presenter.OnCrystalRefillRequested().Forget();
+
+            Assert.IsFalse(_presenter.CanAffordRefill);
+            Assert.AreEqual(before, _ledger.Crystals, "Nothing may be spent.");
         }
 
         // ── OnBuyUpRequested ──────────────────────────────────────────────────────
@@ -707,23 +682,6 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         // another is the worst kind of bug to ship.
 
         [Test]
-        public void RefillCost_ShownMatchesCrystalsActuallyTaken()
-        {
-            var card = CreateCard("card");
-            _config.AllCards = new[] { card };
-            _manager.InitializeCardPool();
-            _ledger.AddCrystals(1000);
-
-            int quoted = _presenter.RefillCost;
-            int before = _ledger.Crystals;
-
-            Assert.IsTrue(_presenter.OnCrystalRefillRequested());
-
-            Assert.AreEqual(quoted, before - _ledger.Crystals,
-                "The refill charged a different number of crystals than it displayed.");
-        }
-
-        [Test]
         public void BuyUpCost_ShownMatchesCrystalsActuallyTaken()
         {
             _ledger.AddCrystals(1000);
@@ -766,6 +724,30 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _manager.InitializeCardPool(); // 8 replenishing × 2 = 16
 
             Assert.AreEqual(16, _presenter.RefillCost);
+        }
+
+        /// <summary>
+        /// The monetization invariant: the number the UI would show is the number actually
+        /// taken. It used to be asserted through the confirm dialog; with the popup system
+        /// being rebuilt it is pinned directly against the Manager, which is where the charge
+        /// lives. Restore the dialog-level version once the new popup flow is wired.
+        /// </summary>
+        [Test]
+        public void RefillCost_ShownMatchesCrystalsActuallyTaken()
+        {
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+            _ledger.AddCrystals(500);
+
+            int quoted = _presenter.RefillCost;
+            Assert.Greater(quoted, 0, "There should be something to buy.");
+
+            int before = _ledger.Crystals;
+            Assert.IsTrue(_manager.RefillWithCrystals());
+
+            Assert.AreEqual(quoted, before - _ledger.Crystals,
+                "Crystals taken must equal the price the player was quoted.");
         }
 
         [Test]

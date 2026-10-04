@@ -24,10 +24,19 @@ namespace KingdomRuler.Shared.Services
     ///       timer now stores the deadline itself rather than the moment it was last
     ///       settled. An older save's key is ignored, so the queue restarts one interval
     ///       from load.
+    ///   v5: trade gained "activeOffers" — the generated offers are now persisted, so
+    ///       relaunching the app can no longer reroll them for free — and
+    ///       trade."lastOfferRefreshUtc" became "nextOfferRefreshDueUtc", storing the
+    ///       refresh deadline rather than the moment it was last settled (the same change
+    ///       laws made in v4, for the same reason). ledger."tradeResources".*.
+    ///       "regenRatePerSecond" was removed: it is always capacity ÷ 86400, and warehouse
+    ///       capacity is itself derived from trade."warehouseLevels" on load. A v4 save
+    ///       deserializes the new fields as null, so one fresh batch of offers is generated
+    ///       and the refresh timer starts one interval from load.
     /// </summary>
     public sealed class GameStateDto
     {
-        public const int CurrentSchemaVersion = 4;
+        public const int CurrentSchemaVersion = 5;
 
         [JsonProperty("schemaVersion")]
         public int SchemaVersion { get; set; } = CurrentSchemaVersion;

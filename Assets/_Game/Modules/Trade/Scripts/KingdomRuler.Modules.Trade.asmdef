@@ -7,7 +7,8 @@
         "VContainer",
         "Unity.InputSystem",
         "Unity.TextMeshPro",
-        "Unity.Localization"
+        "Unity.Localization",
+        "DOTween.Modules"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

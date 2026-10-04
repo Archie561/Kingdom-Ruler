@@ -27,6 +27,14 @@ MonoBehaviour:
     m_Key: ui.reject
     m_Metadata:
       m_Items: []
+  - m_Id: 7126218494214144
+    m_Key: ui.refill.title
+    m_Metadata:
+      m_Items: []
+  - m_Id: 7126218544545792
+    m_Key: ui.refill.body
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:

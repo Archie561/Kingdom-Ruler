@@ -36,6 +36,11 @@ MonoBehaviour:
     m_ReadOnly: 1
     m_SerializedLabels: []
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: cb5333437f202ac42aa7853a461bca98
+    m_Address: Assets/_Game/Modules/Trade/Localization/TradeUITable Shared Data.asset
+    m_ReadOnly: 1
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
   m_ReadOnly: 1
   m_Settings: {fileID: 11400000, guid: c5869c7c48d601342a6101bab66a5fbe, type: 2}
   m_SchemaSet:

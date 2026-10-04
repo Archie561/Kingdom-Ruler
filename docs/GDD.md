@@ -123,12 +123,22 @@ current trade offers below.
 - **Warehouse upgrade**, two payment paths:
   1. Crystals (flat premium option, cost scales with upgrade tier).
   2. Spend **80% of the current capacity** of a *paired* resource's warehouse.
-     **[ASSUMED — CONFIRM pairing]:** Stone↔Wood, Metal↔Minerals, Leather↔Clay. (i.e.
-     upgrading Wood consumes 80% of Stone's warehouse *limit*, not stored amount — read
-     "spend 80% of the limit" literally; if you actually want it to cost 80% of currently
-     *stored* resource instead, that's a one-line change, flag it.)
-  - Each subsequent upgrade costs more than the last (same style of curve as §6, own
-    designer-editable table per resource).
+     **[ASSUMED — CONFIRM pairing]:** Stone↔Wood, Metal↔Minerals, Leather↔Clay.
+     **Settled:** the cost is *computed from* the paired warehouse's **capacity** and
+     *deducted from* that resource's **stored amount**. Upgrading Wood therefore costs 80% of
+     Stone's limit, paid in Stone — so the player must be at least 80% full of the paired
+     resource, and a pair advances in step. (Pricing it off the stored amount instead would
+     make it cheapest exactly when the player has least, inverting that pressure.)
+  - Each subsequent upgrade costs more than the last, as a **formula**, not a per-level table:
+    `capacity(L) = round(base × growth^L / roundTo) × roundTo` and
+    `crystalCost(L) = max(1, round(base × growth^L))`, coefficients on `TradeConfig`.
+    Same style as §6 and for the same reason §6 gives — a formula keeps every level defined,
+    including ones no designer has reached. (This clause previously also said "designer-editable
+    table per resource", which contradicted it; the table reading is dropped. Per-resource
+    coefficient overrides can be layered on later if a resource needs to differ.)
+  - Upgrade levels are capped at a high ceiling purely as a **save-integrity guard** — an
+    unbounded level read from an edited save produces an infinite capacity and a corrupt
+    economy. It is not a design cap and no player will reach it.
 - **Trade offer list:** 10 offers at a time, refresh **every 20 minutes**, or instantly for
   crystals. Refreshing discards all unused offers.
 - **Offer generation ratio (of the 10 offers):**
@@ -136,11 +146,23 @@ current trade offers below.
   - 45% neutral (roughly even) **[ASSUMED — CONFIRM exact split; brief said 40–50%]**
   - 25% unprofitable (player gives more than they receive)
   - All 6 resources are valued identically (1 unit = 1 unit) for this calculation.
+  - **These are long-run averages, not a per-batch guarantee.** 45% of 10 is 4.5, so no integer
+    split of a single batch reaches it. Each batch takes the floor (3 profitable / 4 neutral /
+    2 unprofitable) and awards the two spare slots by weighted chance, so the expectation is
+    exactly 30/45/25 and any one list is 3/5/2 or 3/4/3.
 - Each offer gives 2–3 resource types and asks for 2–3 different types; **give and receive
   sets never overlap** within one offer.
 - Tapping an offer opens a confirmation panel. If the player can't afford the ask, or a
   received resource would overflow warehouse capacity, show a clear inline message
-  explaining which resource is the blocker — never silently disable the offer.
+  explaining which resource is the blocker — never silently disable the offer. All applicable
+  messages are listed at once, not just the first: an offer moves 2–3 types each way and several
+  can be short together.
+- **A full warehouse warns; it does not refuse.** Overflow is shown as a warning naming the
+  resource and how much will not fit, and the player may accept anyway and forfeit the excess.
+  The trade is refused **only** when the give side cannot be paid. What was actually received is
+  reported back, so the loss is always visible — it is a choice, never a silent deletion.
+- **The current offers and the refresh deadline are saved.** Relaunching the app cannot reroll
+  the list, which would otherwise be a free substitute for the crystal-priced instant refresh.
 
 ## 8. Mechanic 3 — Economy
 
@@ -255,7 +277,7 @@ animates on selection. See `ARCHITECTURE.md` §4.6; re-adding a screen transitio
 isolated change if it turns out to be missed.
 
 **Build status.** The bar is built and all five tabs are drawn. Laws is the only complete screen;
-Trade is a greybox placeholder awaiting §7; Economy, Kingdom and Shop are rendered dimmed and are
+Trade is complete but greybox; Economy, Kingdom and Shop are rendered dimmed and are
 not tappable until their screens exist. The app currently launches on **Laws** rather than
 Kingdom, purely because Kingdom does not exist yet — see `ARCHITECTURE.md` §4.6.
 

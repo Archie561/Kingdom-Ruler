@@ -30,6 +30,15 @@ MonoBehaviour:
     m_Localized: REJECT
     m_Metadata:
       m_Items: []
+  - m_Id: 7126218494214144
+    m_Localized: Refill laws?
+    m_Metadata:
+      m_Items: []
+  - m_Id: 7126218544545792
+    m_Localized: Spend {0} crystals to bring every law back now? Otherwise they all
+      return in {1}.
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

@@ -1,6 +1,11 @@
 using System;
+using Cysharp.Threading.Tasks;
+using UnityEngine;
 using KingdomRuler.Core;
 using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Shared.Popups;
+using KingdomRuler.Shared.Popups.Confirm;
+using KingdomRuler.Shared.Text;
 using KingdomRuler.Shared.Services;
 
 namespace KingdomRuler.Modules.Laws.Presenters
@@ -48,6 +53,7 @@ namespace KingdomRuler.Modules.Laws.Presenters
         private readonly IHapticService _haptics;
         private readonly ILocalizationService   _localization;
         private readonly CharacteristicRegistry _characteristics;
+        private readonly PopupManager           _popups;
 
         /// <summary>Whether a card was active as of the last notification, to spot arrivals.</summary>
         private bool _hadActiveCard;
@@ -68,6 +74,18 @@ namespace KingdomRuler.Modules.Laws.Presenters
         /// The View uses this to trigger per-bar celebration animations.
         /// </summary>
         public event Action<CharacteristicType> OnCharacteristicLeveledUp;
+
+        /// <summary>
+        /// Fired when a card becomes the active one having not been there before — however it
+        /// arrived: a timer maturing, a crystal refill, a fresh game.
+        /// </summary>
+        /// <remarks>
+        /// The View animates the card in from this rather than from whichever button was
+        /// pressed. The button knows why it was clicked; only the Presenter knows whether a
+        /// card actually turned up, and those two stopped being the same thing the moment the
+        /// refill button started opening a confirmation instead of refilling.
+        /// </remarks>
+        public event Action OnCardArrived;
 
         // ── Read-only state the View polls ────────────────────────────────────────
 
@@ -115,6 +133,9 @@ namespace KingdomRuler.Modules.Laws.Presenters
         /// <summary>Seconds until the next replenishment slot fires.</summary>
         public float SecondsUntilNextCard => _manager.GetSecondsUntilNextCard();
 
+        /// <summary>Seconds until the queue refills itself completely — what refilling skips.</summary>
+        public float SecondsUntilAllCards => _manager.GetSecondsUntilAllCards();
+
         /// <summary>
         /// Crystal cost to instant-complete all pending replenishment timers.
         /// Read from the Manager rather than recomputed, so the price shown is by
@@ -138,7 +159,8 @@ namespace KingdomRuler.Modules.Laws.Presenters
             IAudioService  audio,
             IHapticService haptics,
             ILocalizationService   localization,
-            CharacteristicRegistry characteristics)
+            CharacteristicRegistry characteristics,
+            PopupManager           popups)
         {
             _manager  = manager  ?? throw new ArgumentNullException(nameof(manager));
             _ledger   = ledger   ?? throw new ArgumentNullException(nameof(ledger));
@@ -152,6 +174,11 @@ namespace KingdomRuler.Modules.Laws.Presenters
             // would pass this check and then fail on first use.
             if (characteristics == null) throw new ArgumentNullException(nameof(characteristics));
             _characteristics = characteristics;
+
+            // Explicit == null: PopupManager is a UnityEngine.Object, and ?? skips Unity's
+            // overloaded equality, so a destroyed manager would slip through.
+            if (popups == null) throw new ArgumentNullException(nameof(popups));
+            _popups = popups;
 
             _hadActiveCard = _manager.HasActiveCard;
 
@@ -220,14 +247,54 @@ namespace KingdomRuler.Modules.Laws.Presenters
             return true;
         }
 
-        /// <summary>Player tapped the crystal refill button.</summary>
-        public bool OnCrystalRefillRequested()
+        /// <summary>
+        /// Player tapped refill. Opens the confirmation and, only if the player says yes,
+        /// charges.
+        /// </summary>
+        /// <remarks>
+        /// <para>Crystals are a premium currency, so nothing is spent on the tap. The flow
+        /// reads top to bottom precisely because it is awaited — the popup being open is just
+        /// a pause in the middle of this method.</para>
+        ///
+        /// <para>The popup re-reads its data while it is open, so the countdown ticks and the
+        /// price follows the queue without anything here pushing updates into it.</para>
+        ///
+        /// <para>Returns <c>UniTaskVoid</c> rather than <c>async void</c>: an exception in the
+        /// latter is unobservable and can take the app down.</para>
+        /// </remarks>
+        public async UniTaskVoid OnCrystalRefillRequested()
         {
-            if (!_manager.RefillWithCrystals()) return false;
+            if (!CanAffordRefill) return;
+
+            var choice = await _popups.Create<ConfirmPopup>().Ask(
+                () => new ConfirmPopupData(
+                    _localization.Resolve(LawsUIText.StringTable, LawsUIText.RefillTitle),
+                    DescribeRefill(),
+                    canConfirm: CanAffordRefill),
+                closeWhen: () => RefillCost <= 0);   // every law came back on its own meanwhile
+
+            if (choice == ConfirmPopupChoice.Confirm) CompleteRefill();
+        }
+
+        private string DescribeRefill() =>
+            _localization.Resolve(LawsUIText.StringTable, LawsUIText.RefillBody,
+                RefillCost,
+                TimeFormat.MinutesSeconds((int)Math.Ceiling(SecondsUntilAllCards)));
+
+        /// <summary>
+        /// Charge and refill, after confirmation.
+        /// </summary>
+        /// <remarks>
+        /// Goes through the Manager rather than a price captured when the dialog opened, so
+        /// the amount taken is the amount that is current at this instant — the queue may have
+        /// refilled itself while the player was reading.
+        /// </remarks>
+        private void CompleteRefill()
+        {
+            if (!_manager.RefillWithCrystals()) return;
 
             _audio.PlaySfx(SfxIds.CrystalSpend);
             _haptics.TriggerLight();
-            return true;
         }
 
         /// <summary>Player tapped the buy-up button for a specific characteristic.</summary>
@@ -284,6 +351,10 @@ namespace KingdomRuler.Modules.Laws.Presenters
                 _audio.PlaySfx(SfxIds.CardArrive);
 
             NotifyStateChanged();
+
+            // After the refresh: the View has populated and shown the new card by now, so
+            // the animation has something to play on.
+            if (cardArrived) OnCardArrived?.Invoke();
         }
 
         private void HandleCharacteristicLeveledUp(CharacteristicLeveledUp evt)

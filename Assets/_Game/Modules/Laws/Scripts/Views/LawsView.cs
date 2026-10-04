@@ -1,9 +1,11 @@
 using System.Collections.Generic;
 using TMPro;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 using VContainer;
 using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Shared.Text;
 using KingdomRuler.Modules.Laws.Presenters;
 
 namespace KingdomRuler.Modules.Laws.Views
@@ -16,7 +18,7 @@ namespace KingdomRuler.Modules.Laws.Views
     ///   - Subscribes to presenter events; drives sub-views on state changes.
     ///   - Forwards user intents (swipe, buttons) to the Presenter.
     ///   - Renders the countdown. It does NOT advance it: the replenishment timer is
-    ///     driven by LawsTickDriver so the mechanic keeps running whether or not this
+    ///     driven by AccrualDriver so the mechanic keeps running whether or not this
     ///     screen exists (ARCHITECTURE.md §4.5). This View is display-only.
     ///
     /// Animation contract (CRITICAL — no business logic gated on animations):
@@ -105,6 +107,7 @@ namespace KingdomRuler.Modules.Laws.Views
 
             _presenter.OnStateChanged            += Refresh;
             _presenter.OnCharacteristicLeveledUp += OnCharacteristicLeveledUp;
+            _presenter.OnCardArrived             += OnCardArrived;
 
             _refillButton.onClick.AddListener(OnRefillButtonPressed);
 
@@ -137,11 +140,12 @@ namespace KingdomRuler.Modules.Laws.Views
             if (_presenter == null) return;
             _presenter.OnStateChanged            -= Refresh;
             _presenter.OnCharacteristicLeveledUp -= OnCharacteristicLeveledUp;
+            _presenter.OnCardArrived             -= OnCardArrived;
         }
 
         private void Update()
         {
-            // Display only. The replenishment timer itself is advanced by LawsTickDriver,
+            // Display only. The replenishment timer itself is advanced by AccrualDriver,
             // not from here — the mechanic must keep running whether or not this screen
             // exists (ARCHITECTURE.md §4.5).
             if (!_presenter.IsReplenishing) return;
@@ -154,7 +158,7 @@ namespace KingdomRuler.Modules.Laws.Views
             if (secondsRemaining == _shownTimerSeconds) return;
 
             _shownTimerSeconds = secondsRemaining;
-            _timerLabel.SetText(FormatTimer(secondsRemaining));
+            _timerLabel.SetText(TimeFormat.MinutesSeconds(secondsRemaining));
         }
 
         // ── Full refresh (driven by Presenter.OnStateChanged) ─────────────────────
@@ -251,13 +255,21 @@ namespace KingdomRuler.Modules.Laws.Views
                 _cardView.AnimateIn();
         }
 
-        private void OnRefillButtonPressed()
-        {
-            // Business logic first — Presenter updates the Manager immediately.
-            bool refilled = _presenter.OnCrystalRefillRequested();
+        // Opens the confirmation. Nothing is spent and no card appears until the player
+        // confirms, so there is deliberately nothing cosmetic to do here — the card's
+        // entrance is driven by Presenter.OnCardArrived instead.
+        private void OnRefillButtonPressed() => _presenter.OnCrystalRefillRequested().Forget();
 
-            // Cosmetic: animate the newly available card in (if no swipe in progress).
-            if (refilled && _presenter.HasActiveCard && !_cardView.IsSwipeAnimating)
+        /// <summary>
+        /// A card turned up. Play its entrance, whatever caused it to arrive.
+        /// </summary>
+        /// <remarks>
+        /// Guarded on the swipe animation because OnSwipeAnimationComplete owns the reveal in
+        /// that case: letting both run would restart the scale-in mid-flight.
+        /// </remarks>
+        private void OnCardArrived()
+        {
+            if (!_cardView.IsSwipeAnimating)
                 _cardView.AnimateIn();
         }
 
@@ -308,13 +320,6 @@ namespace KingdomRuler.Modules.Laws.Views
 
         private CharacteristicBarView FindBarForType(CharacteristicType type) =>
             _barsByType.TryGetValue(type, out var bar) ? bar : null;
-
-        private static string FormatTimer(int totalSeconds)
-        {
-            int minutes = totalSeconds / 60;
-            int seconds = totalSeconds % 60;
-            return $"{minutes}:{seconds:D2}";
-        }
 
         private void ValidateSubViews()
         {

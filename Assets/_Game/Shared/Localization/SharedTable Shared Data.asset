@@ -39,6 +39,38 @@ MonoBehaviour:
     m_Key: characteristic.welfare
     m_Metadata:
       m_Items: []
+  - m_Id: 6762574577164288
+    m_Key: resource.stone
+    m_Metadata:
+      m_Items: []
+  - m_Id: 6762574640078848
+    m_Key: resource.wood
+    m_Metadata:
+      m_Items: []
+  - m_Id: 6762574640078849
+    m_Key: resource.metal
+    m_Metadata:
+      m_Items: []
+  - m_Id: 6762574640078850
+    m_Key: resource.minerals
+    m_Metadata:
+      m_Items: []
+  - m_Id: 6762574640078851
+    m_Key: resource.leather
+    m_Metadata:
+      m_Items: []
+  - m_Id: 6762574640078852
+    m_Key: resource.clay
+    m_Metadata:
+      m_Items: []
+  - m_Id: 7126220545228800
+    m_Key: ui.confirm
+    m_Metadata:
+      m_Items: []
+  - m_Id: 7126220629114880
+    m_Key: ui.cancel
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:

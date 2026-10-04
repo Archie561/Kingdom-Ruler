@@ -42,6 +42,38 @@ MonoBehaviour:
     m_Localized: Welfare
     m_Metadata:
       m_Items: []
+  - m_Id: 6762574577164288
+    m_Localized: Stone
+    m_Metadata:
+      m_Items: []
+  - m_Id: 6762574640078848
+    m_Localized: Wood
+    m_Metadata:
+      m_Items: []
+  - m_Id: 6762574640078849
+    m_Localized: Metal
+    m_Metadata:
+      m_Items: []
+  - m_Id: 6762574640078850
+    m_Localized: Minerals
+    m_Metadata:
+      m_Items: []
+  - m_Id: 6762574640078851
+    m_Localized: Leather
+    m_Metadata:
+      m_Items: []
+  - m_Id: 6762574640078852
+    m_Localized: Clay
+    m_Metadata:
+      m_Items: []
+  - m_Id: 7126220545228800
+    m_Localized: Confirm
+    m_Metadata:
+      m_Items: []
+  - m_Id: 7126220629114880
+    m_Localized: Cancel
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

@@ -1,0 +1,103 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9620f8c34305754d8cc9a7e49e852d9, type: 3}
+  m_Name: TradeUITable_en
+  m_EditorClassIdentifier: Unity.Localization::UnityEngine.Localization.Tables.StringTable
+  m_LocaleId:
+    m_Code: en
+  m_SharedData: {fileID: 11400000, guid: cb5333437f202ac42aa7853a461bca98, type: 2}
+  m_Metadata:
+    m_Items: []
+  m_TableData:
+  - m_Id: 1211129856
+    m_Localized: Trade
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1295015936
+    m_Localized: Warehouses
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404544
+    m_Localized: Offers
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404545
+    m_Localized: The caravans are still on the road
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404546
+    m_Localized: You give
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404547
+    m_Localized: You get
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404548
+    m_Localized: Confirm
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404549
+    m_Localized: Cancel
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404550
+    m_Localized: Refresh now
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404551
+    m_Localized: Upgrade
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404552
+    m_Localized: Next refresh
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404553
+    m_Localized: You need {0} more {1}
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404554
+    m_Localized: Your {0} warehouse only has room for {1}
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404555
+    m_Localized: This offer is no longer available
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404556
+    m_Localized: '{0} / {1}'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404557
+    m_Localized: Level {0}
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404558
+    m_Localized: '{0} crystals'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404559
+    m_Localized: '{0} {1}'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404560
+    m_Localized: Fully upgraded
+    m_Metadata:
+      m_Items: []
+  - m_Id: 1303404561
+    m_Localized: Refresh in {0}
+    m_Metadata:
+      m_Items: []
+  references:
+    version: 2
+    RefIds: []

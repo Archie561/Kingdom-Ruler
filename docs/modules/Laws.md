@@ -40,7 +40,7 @@ this is worth preserving, and is easy to verify with a grep.
  PRESENTER       LawsPresenter ────► LawsManager, KingdomLedger, EventBus,
  (plain C#)                          IAudioService, IHapticService
                                           ▲
- DRIVER          LawsTickDriver ───► LawsManager          (VContainer ITickable)
+ DRIVER          AccrualDriver ────► LawsManager          (Core/Bootstrap, ITickable)
                                           ▲
  MODEL           LawsManager ──────► ShuffleBagDeck, ReplenishmentSlots,
  (plain C#)                          LawCardEffectApplier, CrystalBuyUpCalculator,
@@ -105,8 +105,11 @@ int   GetBuyUpCost(CharacteristicType t);
 LawsStateDto ToDto();   void LoadFromDto(LawsStateDto dto);
 ```
 
-**`LawsTickDriver`** (`ITickable`) — pumps `ProcessReplenishment()` at ~4 Hz. Exists so the
-timer does not depend on any View being alive (§6.4).
+**`AccrualDriver`** (`Core/Bootstrap`, `ITickable`) — pumps `ProcessReplenishment()` at ~4 Hz.
+Exists so the timer does not depend on any View being alive (§6.4). It replaced the
+module-local `LawsTickDriver` when Trade arrived as the second module needing a timer, which is
+the trigger that driver's own comment named; it now pumps Ledger regen and Trade's offer refresh
+too, in a documented order (`ARCHITECTURE.md` §4.5).
 
 ### Presenter
 
@@ -224,7 +227,7 @@ the first tween frame runs.
 
 ### A timer maturing
 ```
-LawsTickDriver.Tick()  (~4 Hz)
+AccrualDriver.Tick()  (~4 Hz)
   └─ LawsManager.ProcessReplenishment()
        ├─ slots.Advance(now, interval) → how many matured
        ├─ TryFillActiveSlot()          → draws only if the active slot is empty
@@ -281,7 +284,7 @@ Tests assert the property directly: **crystals quoted == crystals deducted.**
 
 ### 6.4 The View is display-only
 The replenishment timer used to be pumped from `LawsView.Update()`, which tied the mechanic's
-progress to whether the screen happened to exist. `LawsTickDriver` owns it now. A View may
+progress to whether the screen happened to exist. `AccrualDriver` owns it now. A View may
 *read* remaining time to draw a countdown; it must never be what makes the countdown advance.
 
 Audio is the one thing gated on visibility (`SetScreenVisible`): the queue keeps advancing on
@@ -299,11 +302,31 @@ declared `Type`. Reordering the serialized array is therefore harmless. Do not r
 index-based binding: it silently renders one characteristic's data in another's row while
 level-up celebrations still land correctly — nearly impossible to spot.
 
-### 6.7 Two canvases on purpose
-`LawsScreen` (static) and a nested `CardCanvas` with `overrideSorting`. The card animates
-constantly; isolating it stops those redraws rebuilding the static panel
-(`ARCHITECTURE.md` §2/§9). Do not merge them. For the same reason the countdown label is only
-rewritten when its whole-second value changes.
+### 6.7 Four canvases on purpose
+
+A Canvas is the unit of *rebuild*: dirty one Graphic and every Graphic sharing that canvas
+re-batches. So anything that changes at runtime is split off from the static rest
+(`ARCHITECTURE.md` §2/§9).
+
+| Canvas | Graphics | Why it is separate |
+|---|---|---|
+| `LawsScreen` (root) | 3 | what is left once the movers are split out |
+| `CharacteristicsPanel` | 43 | `Image.fillAmount` dirties vertices, and DOTween drives it **every frame** during a fill or level-up |
+| `CardCanvas` (`overrideSorting`) | 9 | the card animates constantly, and must draw above its siblings |
+| `TimerRow` | 6 | the countdown rewrites once a second — the "ticking counter" case in §2 |
+
+Before this split all 52 non-card graphics rebuilt together, so a single ring tween re-batched
+the whole screen every frame. Do not merge them back.
+
+**A nested Canvas needs its own `GraphicRaycaster`.** Graphics register to the nearest Canvas,
+so the parent's raycaster cannot see them — without one, every button inside goes silently
+dead. Verified here by raycasting at the refill button, a dial and the card and confirming
+each is hit, then clicking refill through `ExecuteEvents` (2/8 → 8/8, crystals 1131 → 1119).
+
+`overrideSorting` is *not* needed for rebuild isolation — only `CardCanvas` sets it, because
+it alone needs to draw above its siblings. The countdown label is still rewritten only when
+its whole-second value changes; the canvas split and the throttle solve different halves of
+the same problem.
 
 ### 6.8 `LawsManager` is registered with an explicit factory
 It has a second constructor taking a `System.Random` for deterministic tests. VContainer picks

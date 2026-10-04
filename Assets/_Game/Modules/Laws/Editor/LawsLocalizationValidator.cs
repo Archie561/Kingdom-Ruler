@@ -3,6 +3,7 @@ using System.Text;
 using UnityEditor;
 using UnityEditor.Localization;
 using UnityEngine;
+using KingdomRuler.Modules.Laws;
 
 namespace KingdomRuler.Modules.Laws.Editor
 {
@@ -31,10 +32,17 @@ namespace KingdomRuler.Modules.Laws.Editor
         // duplicate of one.
         private const string LawsUITable = "LawsUITable";
 
+        // Prefab-only chrome: nothing resolves these in C#, so they are spelled here, which
+        // is their single code reference rather than a duplicate of one.
         // No "effect.line": a card deliberately does not tell the player which
         // characteristics it moves before the swipe (GDD §6).
-        private static readonly string[] RequiredUIKeys =
+        private static readonly string[] PrefabChromeKeys =
             { "ui.waiting", "ui.accept", "ui.reject" };
+
+        // Resolved from code, so the keys come from the type that owns them — never
+        // re-spelled here, or this validator could pass on keys the game never asks for.
+        private static readonly string[] CodeResolvedKeys =
+            { LawsUIText.RefillTitle, LawsUIText.RefillBody };
 
         [MenuItem("Kingdom Ruler/Validate Laws Localization")]
         public static void Validate()
@@ -42,8 +50,11 @@ namespace KingdomRuler.Modules.Laws.Editor
             var problems = new List<string>();
             int checkedEntries = 0;
 
-            foreach (var key in RequiredUIKeys)
+            foreach (var key in PrefabChromeKeys)
                 CheckKey(LawsUITable, key, problems, ref checkedEntries);
+
+            foreach (var key in CodeResolvedKeys)
+                CheckKey(LawsUIText.StringTable, key, problems, ref checkedEntries);
 
             // Card content — two entries per card, named after its id.
             foreach (var config in LoadAll<LawsConfig>())

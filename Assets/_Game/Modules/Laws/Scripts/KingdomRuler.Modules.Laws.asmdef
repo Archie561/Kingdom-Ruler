@@ -8,7 +8,8 @@
         "Unity.InputSystem",
         "Unity.TextMeshPro",
         "Unity.Localization",
-        "DOTween.Modules"
+        "DOTween.Modules",
+        "UniTask"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -20,5 +21,3 @@
     "versionDefines": [],
     "noEngineReferences": false
 }
-
-

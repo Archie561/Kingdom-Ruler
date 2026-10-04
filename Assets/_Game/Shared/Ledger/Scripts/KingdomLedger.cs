@@ -160,11 +160,22 @@ namespace KingdomRuler.Shared.Ledger
         }
 
         /// <summary>Set warehouse capacity (for upgrades).</summary>
+        /// <remarks>
+        /// <para>The regen rate is recomputed here and nowhere else. GDD §7 fixes the <i>fill
+        /// time</i> at 24 hours rather than the rate, so a bigger warehouse must produce more per
+        /// hour to still fill in a day. This derivation is Ledger-owned
+        /// (<c>ARCHITECTURE.md</c> §4.3): callers hand over a capacity, never a rate.</para>
+        ///
+        /// <para>The stored amount is clamped down with the capacity. A designer retuning the
+        /// curve downwards would otherwise leave a warehouse holding more than it can hold, which
+        /// then never regenerates (it is already "full") and reads as a stuck bar.</para>
+        /// </remarks>
         public void SetWarehouseCapacity(TradeResourceType type, float newCapacity)
         {
             if (newCapacity <= 0) throw new ArgumentException("Capacity must be positive.", nameof(newCapacity));
             var state = _tradeResources[type];
             state.Capacity = newCapacity;
+            if (state.Amount > newCapacity) state.Amount = newCapacity;
             // Recalculate regen rate: fill time stays at 24h
             state.RegenRatePerSecond = newCapacity / SecondsPerDay;
         }
@@ -245,14 +256,51 @@ namespace KingdomRuler.Shared.Ledger
         // --- Offline Accrual ---
 
         /// <summary>
-        /// Fast-forward passive resource regeneration for all trade resources.
-        /// Called on app resume / save load.
+        /// Fast-forward passive resource regeneration for all trade resources (GDD §7 — an empty
+        /// warehouse refills over 24 hours, scaled to its capacity).
         /// </summary>
+        /// <remarks>
+        /// <para><b>Deliberately publishes no <c>ResourceChanged</c>, and this is not an
+        /// oversight.</b> It is pumped several times a second by <c>AccrualDriver</c>, so
+        /// publishing would put six messages per tick — around 24 a second, forever, on every
+        /// screen — onto the shared bus to announce a delta of roughly a third of a thousandth of
+        /// a warehouse. That is exactly the idle battery drain GDD §3 forbids in a game people
+        /// leave installed.</para>
+        ///
+        /// <para>The seam is: <b>discrete changes go on the bus; continuous drift is polled.</b>
+        /// Accepting an offer, upgrading a warehouse and a Cities purchase all publish normally
+        /// through <see cref="AddTradeResource"/> / <see cref="SpendTradeResource"/>. The
+        /// warehouse bars read the amount each frame and redraw only when the displayed value
+        /// changes, the same way the Laws countdown is rendered (<c>ARCHITECTURE.md</c> §4.5).</para>
+        ///
+        /// <para>Takes <paramref name="now"/> rather than reading a clock: the Ledger holds no
+        /// <c>IClock</c>, so something outside it always decides when time has passed. That is
+        /// what keeps this directly unit-testable.</para>
+        /// </remarks>
         public void AccruePassiveResourceRegen(DateTime now)
         {
             foreach (var kvp in _tradeResources)
             {
                 kvp.Value.AccruePassiveRegen(now);
+            }
+        }
+
+        /// <summary>
+        /// Start every warehouse's regen clock at <paramref name="now"/>, accruing nothing.
+        /// </summary>
+        /// <remarks>
+        /// For a <b>new game only</b> — loading a save restores each resource's own timestamp,
+        /// which is what makes offline accrual work. This exists because
+        /// <see cref="TradeResourceState"/> seeds its baseline from the system clock at
+        /// construction, which is not the injected <c>IClock</c>: without this, a fresh game's
+        /// first accrual measures from whenever the object happened to be built rather than from
+        /// when the game actually started.
+        /// </remarks>
+        public void ResetRegenBaseline(DateTime now)
+        {
+            foreach (var kvp in _tradeResources)
+            {
+                kvp.Value.LastUpdatedUtc = now;
             }
         }
 
@@ -288,10 +336,12 @@ namespace KingdomRuler.Shared.Ledger
             {
                 dto.TradeResources[kvp.Key.ToString()] = new TradeResourceStateDto
                 {
-                    Amount             = kvp.Value.Amount,
-                    Capacity           = kvp.Value.Capacity,
-                    RegenRatePerSecond = kvp.Value.RegenRatePerSecond,
-                    LastUpdatedUtc     = kvp.Value.LastUpdatedUtc.ToString("O")
+                    Amount = kvp.Value.Amount,
+                    // Capacity is a bootstrap value here; Trade re-asserts it from the upgrade
+                    // level on load. The regen rate is not persisted at all — it is always
+                    // capacity ÷ 86400 (schema v5).
+                    Capacity       = kvp.Value.Capacity,
+                    LastUpdatedUtc = kvp.Value.LastUpdatedUtc.ToString("O")
                 };
             }
 
@@ -341,9 +391,9 @@ namespace KingdomRuler.Shared.Ledger
                     if (kvp.Value.Capacity > 0f)
                         state.Capacity = kvp.Value.Capacity;
 
-                    state.RegenRatePerSecond = kvp.Value.RegenRatePerSecond > 0f
-                        ? kvp.Value.RegenRatePerSecond
-                        : state.Capacity / SecondsPerDay;
+                    // Always derived, never read from the file (schema v5 dropped the field):
+                    // GDD §7 fixes the fill time at 24h, so the rate follows from capacity.
+                    state.RegenRatePerSecond = state.Capacity / SecondsPerDay;
 
                     state.Amount = Math.Clamp(kvp.Value.Amount, 0f, state.Capacity);
 

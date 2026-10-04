@@ -1,47 +1,79 @@
 using UnityEngine;
+using KingdomRuler.Modules.Trade.Domain;
 
 namespace KingdomRuler.Modules.Trade
 {
     /// <summary>
-    /// Tunable parameters for the Trade mechanic.
-    /// One asset in ScriptableObjects/Config/.
+    /// Tunable parameters for the Trade mechanic (<c>GDD.md</c> §7). One asset; this is what
+    /// changes when someone is balancing the game.
     /// </summary>
+    /// <remarks>
+    /// <para>Config only, no content — offers are generated at runtime from these numbers, not
+    /// authored one-asset-each, so <c>ScriptableObjects/Data/</c> stays empty for this module
+    /// (<c>ARCHITECTURE.md</c> §7).</para>
+    ///
+    /// <para><b>Curves are formulas, not per-level tables.</b> This replaced a 6-entry capacity
+    /// array and a 5-entry cost array whose fallbacks past the last entry diverged — capacity
+    /// grew exponentially while cost grew linearly, so a level-50 warehouse was cheap. See
+    /// <see cref="WarehouseCurve"/>.</para>
+    ///
+    /// <para>What does <b>not</b> live here: the 24-hour warehouse refill window, which is
+    /// Ledger-owned because the regen rate is derived from capacity (<c>ARCHITECTURE.md</c> §4.3).</para>
+    /// </remarks>
     [CreateAssetMenu(fileName = "TradeConfig", menuName = "Kingdom Ruler/Trade/Trade Config")]
     public sealed class TradeConfig : ScriptableObject
     {
-        [Header("Trade Offers")]
-        [Tooltip("Number of active trade offers at a time.")]
+        [Header("Offers")]
+        [Tooltip("How many offers are shown at once. GDD §7 says 10.")]
+        [Min(1)]
         public int OfferCount = 10;
 
-        [Tooltip("Auto-refresh interval in seconds (real-time including offline). Default: 1200 = 20 min.")]
+        [Tooltip("Seconds between automatic offer refreshes. GDD §7 says 20 minutes.")]
+        [Min(1f)]
         public float OfferRefreshTimeSeconds = 1200f;
 
-        [Tooltip("Crystal cost for instant offer refresh.")]
+        [Tooltip("Crystals to refresh the offer list immediately.")]
+        [Min(1)]
         public int InstantRefreshCrystalCost = 3;
 
-        [Tooltip("Base resource amount per offer for generation.")]
+        [Tooltip("Units the player gives in a typical offer, before the profitability multiplier.")]
+        [Min(1f)]
         public float OfferBaseAmount = 50f;
 
-        [Header("Warehouse Upgrades")]
-        [Tooltip("Capacity per upgrade level. Index 0 = base level. Designer-editable.")]
-        public float[] WarehouseCapacityCurve = new float[]
-        {
-            100f,   // Level 0 (base)
-            150f,   // Level 1
-            225f,   // Level 2
-            340f,   // Level 3
-            500f,   // Level 4
-            750f,   // Level 5
-        };
+        [Header("Warehouse capacity — capacity(L) = round(base × growth^L / roundTo) × roundTo")]
+        [Min(1f)]   public float CapacityBase       = WarehouseCurve.DefaultBaseValue;
+        [Min(1.01f)] public float CapacityGrowth    = WarehouseCurve.DefaultGrowthFactor;
+        [Min(1f)]   public float CapacityRoundTo    = WarehouseCurve.DefaultRoundToNearest;
 
-        [Tooltip("Crystal cost per warehouse upgrade level. Index = current level.")]
-        public int[] WarehouseCrystalCostCurve = new int[]
+        [Header("Warehouse crystal price — cost(L) = round(base × growth^L)")]
+        [Min(1f)]   public float CrystalCostBase    = 5f;
+        [Min(1.01f)] public float CrystalCostGrowth = WarehouseCurve.DefaultGrowthFactor;
+
+        /// <summary>Capacity of a warehouse at a given upgrade level.</summary>
+        public WarehouseCurve ToCapacityCurve() =>
+            new WarehouseCurve(CapacityBase, CapacityGrowth, CapacityRoundTo);
+
+        /// <summary>Crystal price of the upgrade leaving a given level. Whole crystals, so roundTo is 1.</summary>
+        public WarehouseCurve ToCrystalCostCurve() =>
+            new WarehouseCurve(CrystalCostBase, CrystalCostGrowth, 1f);
+
+        private void OnValidate()
         {
-            5,   // Level 0 -> 1
-            8,   // Level 1 -> 2
-            12,  // Level 2 -> 3
-            18,  // Level 3 -> 4
-            25,  // Level 4 -> 5
-        };
+            // The curves defend themselves too, but catching it here tells the designer
+            // immediately instead of silently substituting a different curve than the Inspector
+            // shows. Growth must exceed 1 or upgrades get cheaper as they go, which reverses the
+            // progression GDD §7 asks for.
+            if (OfferCount                < 1)     OfferCount                = 1;
+            if (OfferRefreshTimeSeconds   < 1f)    OfferRefreshTimeSeconds   = 1f;
+            if (InstantRefreshCrystalCost < 1)     InstantRefreshCrystalCost = 1;
+            if (OfferBaseAmount           < 1f)    OfferBaseAmount           = 1f;
+
+            if (CapacityBase    < 1f)    CapacityBase    = 1f;
+            if (CapacityGrowth  <= 1f)   CapacityGrowth  = 1.01f;
+            if (CapacityRoundTo < 1f)    CapacityRoundTo = 1f;
+
+            if (CrystalCostBase   < 1f)  CrystalCostBase   = 1f;
+            if (CrystalCostGrowth <= 1f) CrystalCostGrowth = 1.01f;
+        }
     }
 }

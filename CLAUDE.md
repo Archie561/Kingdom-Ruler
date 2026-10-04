@@ -140,7 +140,10 @@ A task isn't complete until:
 - [ ] It compiles with no new warnings introduced — confirmed via Unity MCP's console check,
       not assumed from reading the code.
 - [ ] Relevant EditMode tests exist and were actually run via Unity MCP, and pass (domain
-      logic changes should come with tests, per `ARCHITECTURE.md` §8).
+      logic changes should come with tests, per `ARCHITECTURE.md` §8). **Testability does not
+      outrank design**: if a class would have to be made worse to test it — an interface
+      invented for a fake, a dependency loosened to `null` — write the better class, verify it
+      in Play mode, and record what was verified in the module's doc.
 - [ ] New code lives in the right place per `ARCHITECTURE.md` §3 — inside its module
       (`Modules/<X>/Scripts/{Domain,Presenters,Views}` + the module's `Manager`) or, if it's
       cross-cutting, under `Shared/` or `Core/`, not invented as a new top-level folder.
