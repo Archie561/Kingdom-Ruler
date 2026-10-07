@@ -3,9 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
-using KingdomRuler.Core;
-using KingdomRuler.Shared.Ledger;
-using KingdomRuler.Shared.Services;
+using KingdomRuler.Systems.Events;
+using KingdomRuler.Systems.Ledger;
+using KingdomRuler.Systems.Clock;
+using KingdomRuler.Systems.Save;
 using KingdomRuler.Modules.Trade;
 using KingdomRuler.Modules.Trade.Domain;
 

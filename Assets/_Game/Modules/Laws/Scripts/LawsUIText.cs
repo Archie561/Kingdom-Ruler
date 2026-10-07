@@ -5,8 +5,8 @@ namespace KingdomRuler.Modules.Laws
     /// with numbers in it, which a <c>LocalizeStringEvent</c> cannot produce.
     /// </summary>
     /// <remarks>
-    /// <para>Public and a type of its own, not nested in the Presenter: the module's Editor
-    /// validator lives in a separate assembly and imports these, which is the whole point —
+    /// <para>Public and a type of its own, not nested in the Presenter: <c>LawsContentTests</c>
+    /// lives in the separate EditMode test assembly and imports these, which is the whole point —
     /// one declaration, checked against the real String Table
     /// (<c>ARCHITECTURE.md</c> §2).</para>
     ///

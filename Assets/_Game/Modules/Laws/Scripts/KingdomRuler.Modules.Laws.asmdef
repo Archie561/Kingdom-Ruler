@@ -2,7 +2,7 @@
     "name": "KingdomRuler.Modules.Laws",
     "rootNamespace": "KingdomRuler.Modules.Laws",
     "references": [
-        "KingdomRuler.Core",
+        "KingdomRuler.Systems",
         "KingdomRuler.Shared",
         "VContainer",
         "Unity.InputSystem",

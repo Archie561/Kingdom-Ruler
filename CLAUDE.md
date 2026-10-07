@@ -74,15 +74,21 @@ Say so explicitly, propose the smallest addition that would cover it, and ask wh
 add it to the relevant doc before or after implementing. Don't quietly improvise a new
 mechanic, currency, or sink/source and let it exist only in code.
 
+**Placement check for anything that is not a module:** `ARCHITECTURE.md` §3 splits the project
+into `Modules/` (nothing may call it), `Systems/` (has state or behaviour, reached through
+injection — any module may use it) and `Shared/` (a passive building block used directly — a
+font, a prefab atom, a static helper). Dependencies run `Modules → Systems → Shared` and the
+asmdefs enforce it. If a module would need to call the thing you are adding, it is not a module.
+
 **Placement check for anything that touches Ledger-owned state:** before putting new logic
 inside a module's `Domain/`, check the GDD for other mechanics that touch the same
 characteristic/resource/currency. If more than one module will need it (e.g. any math for
-mutating a characteristic — Laws today, Random Occurrences later), it belongs in `Shared/Ledger`,
+mutating a characteristic — Laws today, Random Occurrences later), it belongs in `Systems/Ledger`,
 not inside whichever module needed it first. Flag it rather than guessing if it's unclear
 which side of that line something falls on.
 
 **Placement check for a new event type:** `ARCHITECTURE.md` §4.2 defines three tiers —
-`Core/EventBus/` is the mechanism only (no message types), `Shared/Ledger/Scripts/Events/` holds
+`Systems/Events/` is the mechanism only (no message types), `Systems/Ledger/Scripts/Events/` holds
 cross-module ledger events, and `Modules/<X>/Scripts/Events/` holds module-local ones. Pick the tier
 by who is allowed to subscribe. Before adding a module-local event at all, check whether the only
 subscriber already holds a direct reference to the publisher — if so, a plain `event Action` is
@@ -146,7 +152,9 @@ A task isn't complete until:
       in Play mode, and record what was verified in the module's doc.
 - [ ] New code lives in the right place per `ARCHITECTURE.md` §3 — inside its module
       (`Modules/<X>/Scripts/{Domain,Presenters,Views}` + the module's `Manager`) or, if it's
-      cross-cutting, under `Shared/` or `Core/`, not invented as a new top-level folder.
+      cross-cutting, under `Systems/` (it has behaviour and is injected) or `Shared/` (a passive
+      building block), not invented as a new top-level folder. `Core/` is the composition root
+      only.
 - [ ] Any new user-facing text is authored as a **String Table key field** on its data asset, not a
       hardcoded display string. Resolving those keys through Unity Localization at render time is
       deliberately deferred until the main mechanics are done (`ARCHITECTURE.md` §2) — so a View

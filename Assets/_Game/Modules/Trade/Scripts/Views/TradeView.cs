@@ -4,7 +4,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using VContainer;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Modules.Trade.Presenters;
 
 namespace KingdomRuler.Modules.Trade.Views

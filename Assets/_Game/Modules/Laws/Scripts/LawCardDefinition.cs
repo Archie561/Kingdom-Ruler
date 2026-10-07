@@ -9,7 +9,7 @@ namespace KingdomRuler.Modules.Laws
     /// <remarks>
     /// Carries no text and no localization-key fields: <see cref="CardId"/> is the key
     /// (<c>ARCHITECTURE.md</c> §2). The derivations below are the only definition of that
-    /// convention — the Presenter resolves through them and the Editor validator checks the
+    /// convention — the Presenter resolves through them and the content tests check the
     /// table through them, so the two cannot disagree about what the game actually asks for.
     /// This mirrors <c>CharacteristicDefinition</c>.
     /// </remarks>
@@ -40,7 +40,7 @@ namespace KingdomRuler.Modules.Laws
         public string FlavorKey => BuildFlavorKey(CardId);
 
         /// <summary>
-        /// The title-key convention, in one place. Static so the Editor validator can check
+        /// The title-key convention, in one place. Static so the content tests can check
         /// the table using the same derivation the game resolves with, rather than a copy of
         /// the suffix that could silently drift from it.
         /// </summary>

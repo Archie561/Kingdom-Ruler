@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
-using KingdomRuler.Core;
-using KingdomRuler.Shared.Ledger;
-using KingdomRuler.Shared.Services;
+using KingdomRuler.Systems.Events;
+using KingdomRuler.Systems.Ledger;
+using KingdomRuler.Systems.Audio;
+using KingdomRuler.Systems.Haptics;
+using KingdomRuler.Systems.Localization;
 using KingdomRuler.Modules.Trade.Domain;
 
 namespace KingdomRuler.Modules.Trade.Presenters

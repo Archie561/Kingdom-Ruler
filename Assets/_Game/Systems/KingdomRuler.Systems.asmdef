@@ -1,0 +1,22 @@
+{
+    "name": "KingdomRuler.Systems",
+    "rootNamespace": "KingdomRuler.Systems",
+    "references": [
+        "VContainer",
+        "Unity.Localization",
+        "Unity.ResourceManager",
+        "Unity.TextMeshPro",
+        "DOTween.Modules",
+        "UniTask",
+        "UniTask.DOTween"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

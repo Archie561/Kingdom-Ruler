@@ -2,7 +2,7 @@
     "name": "KingdomRuler.Modules.RandomOccurrences",
     "rootNamespace": "KingdomRuler.Modules.RandomOccurrences",
     "references": [
-        "KingdomRuler.Core",
+        "KingdomRuler.Systems",
         "KingdomRuler.Shared",
         "VContainer",
         "Unity.InputSystem",

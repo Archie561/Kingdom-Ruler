@@ -1,6 +1,6 @@
 using NUnit.Framework;
-using KingdomRuler.Core;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Events;
+using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Modules.Laws.Domain;
 
 namespace KingdomRuler.Tests.EditMode.Modules.Laws

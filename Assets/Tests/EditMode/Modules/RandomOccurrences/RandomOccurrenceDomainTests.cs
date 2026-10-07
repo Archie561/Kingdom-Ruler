@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
-using KingdomRuler.Core;
-using KingdomRuler.Shared.Ledger;
-using KingdomRuler.Shared.Services;
+using KingdomRuler.Systems.Events;
+using KingdomRuler.Systems.Ledger;
+using KingdomRuler.Systems.Clock;
 using KingdomRuler.Modules.RandomOccurrences;
 using KingdomRuler.Modules.RandomOccurrences.Domain;
 

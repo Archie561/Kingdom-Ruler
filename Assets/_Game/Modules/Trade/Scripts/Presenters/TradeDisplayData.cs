@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Ledger;
 
 namespace KingdomRuler.Modules.Trade.Presenters
 {

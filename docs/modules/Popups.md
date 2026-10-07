@@ -1,6 +1,6 @@
 # Popups system — architecture
 
-> A shared system: it belongs to no mechanic and every mechanic uses it.
+> A system (`Systems/Popups`): it belongs to no mechanic and every mechanic uses it.
 > Project-wide rules are in `ARCHITECTURE.md`; §4.7 there is the short version of this file.
 
 ---
@@ -98,16 +98,16 @@ branch for it.
 
 | Class | Does | Written |
 |---|---|---|
-| `PopupManager` | creates popups (hidden); for the shown ones, keeps the stack, keeps the backdrop behind the top one, closes the top one on a backdrop tap, plays the open/close sounds | once |
+| `PopupSystem` | creates popups (hidden); for the shown ones, keeps the stack, keeps the backdrop behind the top one, closes the top one on a backdrop tap, plays the open/close sounds | once |
 | `Popup<TData, TChoice>` | appears when shown, animates, re-reads the data and redraws on change, checks `closeWhen`, hands the choice to the caller, destroys itself | once |
 | `ConfirmPopup` and the like | draws its data, wires its buttons to `Choose(...)` | per kind of popup |
 | the caller | what to show, and what to do with the choice | per use |
 
 One open, start to finish:
 
-1. `_popups.Create<ConfirmPopup>()` — the manager finds the prefab in the `PopupRegistry` and
+1. `_popups.Create<ConfirmPopup>()` — `PopupSystem` finds the prefab in the `PopupRegistry` and
    instantiates it on the popup canvas, **inactive**. Nothing is visible and nothing is stacked.
-2. `.Ask(data, closeWhen)` — the popup activates itself and raises `Shown`. The manager, reacting
+2. `.Ask(data, closeWhen)` — the popup activates itself and raises `Shown`. `PopupSystem`, reacting
    to it, puts the popup on top of the stack, moves the backdrop directly behind it and plays the
    open sound. The popup then reads `data` once, draws it and scales in — all in the same frame,
    so the player never sees it empty. The caller is now suspended at `await`.
@@ -116,7 +116,7 @@ One open, start to finish:
    screen.
 4. A button calls `Choose(ConfirmPopupChoice.Confirm)` — the caller resumes **on that tap**, with
    the choice. `Ask` then closes the popup.
-5. Closing — the manager is told first: it drops the popup from the stack and moves the backdrop
+5. Closing — `PopupSystem` is told first: it drops the popup from the stack and moves the backdrop
    behind the next one (or fades it out). Then the caller is released. The popup animates out on
    top of everything and destroys itself.
 
@@ -125,10 +125,10 @@ One open, start to finish:
 ## 3. Layout
 
 ```
-Shared/Popups/
+Systems/Popups/
   Scripts/
     Core/                the mechanism — nothing here knows any specific popup
-      PopupManager         opens popups, owns the stack and the backdrop
+      PopupSystem         creates popups, owns the stack and the backdrop
       Popup                the non-generic base: animation, closing (Popup.cs)
       Popup<TData,TChoice> the base every popup derives from (Popup.Generic.cs)
       PopupRegistry        every popup prefab in the game
@@ -154,7 +154,7 @@ registry. A serialized reference crosses assemblies freely, so this creates no a
 3. A **view** — `XPopup : Popup<XPopupData, XPopupChoice>`: implement `Render(data)`, and in
    `Awake` wire each button to `Choose(...)`.
 4. A **prefab**: the view on a full-screen root, with a `Panel` child that scales in. No
-   backdrop — the manager owns the only one.
+   backdrop — `PopupSystem` owns the only one.
 5. Add the prefab to `PopupRegistry.asset`.
 
 Fixed labels (button text) are `LocalizeStringEvent` components on the prefab; text built from
@@ -175,7 +175,7 @@ stale data. Capture the id of the thing (`() => BuildBusinessData(id)`) and read
 after `Confirm`, through the Manager, which re-reads and re-validates the price at that moment —
 never a price captured when the popup opened.
 
-**One stack, one backdrop.** `PopupManager`'s list is the only record of what is open, and its
+**One stack, one backdrop.** `PopupSystem`'s list is the only record of what is open, and its
 single dimmer sits directly behind the topmost popup, so older popups are dimmed and unreachable.
 
 **No haptic on open.** `GDD.md` §3 limits haptics to swipes, purchase confirmations and level-ups.
@@ -201,12 +201,12 @@ refresh; give it `IEquatable` if that ever matters.
 **No "declined vs dismissed".** Every caller treated both as "don't do it". Closing without a
 choice is simply `null`; a popup that needs an explicit "later" option makes it a button.
 
-**`Create`, not `Open`, and hidden until shown.** The manager's method used to be `Open`, and it
+**`Create`, not `Open`, and hidden until shown.** `PopupSystem`'s method used to be `Open`, and it
 already put the prefab on screen — dimmed, with a sound — before it had any data, so a forgotten
 `Show` left a blank popup over a dark screen. Now the name says what happens and the behaviour
 matches it: `Create` only builds the popup, inactive; `Show` / `Ask` are what display it. The
-backdrop, the stack and the sounds stay the manager's alone — the popup merely raises `Shown`, as
-it already raised `Closed`, and the manager reacts. A popup created and never shown is invisible
+backdrop, the stack and the sounds stay `PopupSystem`'s alone — the popup merely raises `Shown`, as
+it already raised `Closed`, and `PopupSystem` reacts. A popup created and never shown is invisible
 and is never stacked, so the worst a forgotten `Show` can do is leave an inert object behind.
 `GetPopup` was considered and rejected: "get" suggests fetching one that exists, while every call
 makes a new one.
@@ -217,7 +217,7 @@ Closing is part of asking: a question is over once it is answered. The contrast 
 `Ask` (one answer, done) against `Show` (stays open), and the doc comments spell out the rest.
 
 **One expression, `Create<T>().Ask(data)`, rather than `Create<T>(data)`.** Passing the data to
-the manager would need its type, which C# cannot infer from `T`: the call would spell out
+`PopupSystem` would need its type, which C# cannot infer from `T`: the call would spell out
 `Create<ConfirmPopup, ConfirmPopupData, ConfirmPopupChoice>(…)`, or the data would degrade to
 `object`, or the data type would have to name its choice type again. Fixing `T` first lets `Ask`
 know the exact data and choice types, all checked at compile time.
@@ -233,7 +233,7 @@ way, so it still fails closed.
 **The choice arrives on the tap**, before the close animation — so the purchase, its sound and its
 haptic are not delayed by ~130 ms of tween.
 
-**The manager hears about a close before the caller resumes**, so a caller that opens the next
+**`PopupSystem` hears about a close before the caller resumes**, so a caller that opens the next
 popup straight away gets it on top of a stack that is already correct.
 
 **A press with nobody waiting is ignored.** Between one `WaitForChoice` and the next the caller is
@@ -251,7 +251,7 @@ refresh clock or the "destroyed means closed" guarantee. Making them virtual tur
 into a compiler warning; override and call the base.
 
 **The caller holds a View.** A Presenter calls `Ask` on a popup MonoBehaviour directly. It
-already depended on the `PopupManager` MonoBehaviour, popup flows were never EditMode-testable,
+already depended on the `PopupSystem` MonoBehaviour, popup flows were never EditMode-testable,
 and an interface invented only for a fake is what `ARCHITECTURE.md` §8 rules out.
 
 **No `CancellationToken` parameter.** `closeWhen` covers "the question stopped making sense", the
@@ -261,8 +261,11 @@ to.
 **`Popup.Generic.cs`.** `Popup` and `Popup<TData, TChoice>` share a name, like `Task` and
 `Task<T>`, and two files cannot both be `Popup.cs`.
 
-**The manager is a MonoBehaviour in the Bootstrap scene**, so anything constructed at startup can
-be given it directly. Elsewhere "Manager" means a plain-C# module Model; this one owns a canvas.
+**`PopupSystem`, not `PopupManager`.** It was `PopupManager`, the one class that broke the
+project's rule that "Manager" means a plain-C# module Model. Renamed when the popups moved into
+`Systems/`: it *is* the popup system. Call sites did not change — they go through the `_popups`
+field. It is a MonoBehaviour because it owns the popup canvas, and it lives in the Bootstrap scene
+so anything constructed at startup can be given it directly.
 
 ---
 
@@ -308,6 +311,6 @@ unfocused, so nothing animates and no graphic is raycastable (`depth == -1`) unt
 | Input during the open animation | A very fast tap can answer a popup that is still scaling in. |
 | Up to 0.25 s stale buttons | `CanConfirm` follows the data at the refresh rate; harmless because the purchase re-validates. |
 | Custom button labels | Labels come from the prefab; a popup needing different ones carries them in its data. |
-| Android back | Not wired. Should close the top popup through `PopupManager`. |
+| Android back | Not wired. Should close the top popup through `PopupSystem`. |
 | No pooling | Instantiate and destroy per popup — fine at this frequency. |
 | Trade's confirm panel | Still a screen-local panel (`docs/modules/Trade.md`); moving it to a `TradeOfferPopup` is the next migration. |

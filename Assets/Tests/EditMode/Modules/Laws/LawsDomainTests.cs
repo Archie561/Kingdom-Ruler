@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using NUnit.Framework;
-using KingdomRuler.Core;
-using KingdomRuler.Shared.Ledger;
-using KingdomRuler.Shared.Services;
+using KingdomRuler.Systems.Events;
+using KingdomRuler.Systems.Ledger;
+using KingdomRuler.Systems.Clock;
 using KingdomRuler.Modules.Laws;
 using KingdomRuler.Modules.Laws.Domain;
 using UnityEngine;

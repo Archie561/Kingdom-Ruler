@@ -1,0 +1,19 @@
+{
+    "name": "KingdomRuler.Modules.Navigation",
+    "rootNamespace": "KingdomRuler.Modules.Navigation",
+    "references": [
+        "KingdomRuler.Systems",
+        "VContainer",
+        "Unity.TextMeshPro",
+        "DOTween.Modules"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

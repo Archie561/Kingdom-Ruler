@@ -5,19 +5,15 @@ namespace KingdomRuler.Modules.Trade
     /// code — the blocker and warning messages, which take arguments and are chosen at runtime.
     /// </summary>
     /// <remarks>
-    /// <para><b>This is where Trade must not copy Laws.</b> <c>LawsUITable</c> has no code owner:
-    /// every string on that screen is fixed chrome rendered by a <c>LocalizeStringEvent</c>
-    /// component, so <c>ARCHITECTURE.md</c> §2 lets its validator name the table directly. Trade
-    /// resolves several of its strings <em>from code</em>, because "You need 12 more Stone" is
-    /// composed at runtime from an amount and a resource name. §2 says that is exactly the
-    /// moment the keys type appears.</para>
+    /// <para>Trade resolves several of its strings <em>from code</em>, because "You need 12 more
+    /// Stone" is composed at runtime from an amount and a resource name. <c>ARCHITECTURE.md</c> §2
+    /// says that is exactly the moment the keys type appears.</para>
     ///
     /// <para><b>Public, and a type of its own — not internal, not nested inside the Presenter.</b>
-    /// The Editor validator lives in the separate <c>KingdomRuler.Modules.Trade.Editor</c>
-    /// assembly, so either of those would be invisible to it and the validator would be forced
-    /// back into re-typing the literals — which is the precise failure this shape prevents. A
-    /// validator that agrees with itself while disagreeing with the game gives a green menu item
-    /// and a blank message on screen.</para>
+    /// <c>TradeTextTests</c> lives in the separate EditMode test assembly, so either of those
+    /// would be invisible to it and the test would be forced back into re-typing the literals —
+    /// which is the precise failure this shape prevents. A check that agrees with itself while
+    /// disagreeing with the game passes, and leaves a blank message on screen.</para>
     ///
     /// <para>Fixed chrome — the panel titles, the column headings, the button captions — is NOT
     /// here. Those stay as <c>LocalizeStringEvent</c> components on the prefab, which also keeps
@@ -59,25 +55,16 @@ namespace KingdomRuler.Modules.Trade
         /// <summary>{0} = formatted mm:ss.</summary>
         public const string RefreshIn = "ui.refresh_in";
 
-        /// <summary>Every key this module resolves from code. The validator checks these.</summary>
+        /// <summary>
+        /// Every key this module resolves from code. <c>TradeTextTests</c> checks each one exists
+        /// in every locale — add a new key here, or the test cannot see it.
+        /// </summary>
         public static readonly string[] AllKeys =
         {
             BlockerInsufficient, WarningOverflow, BlockerUnavailable,
             WarehouseAmount, WarehouseLevel,
             UpgradeCostCrystals, UpgradeCostPaired, UpgradeMaxed,
             RefreshIn
-        };
-
-        /// <summary>
-        /// Fixed chrome resolved by <c>LocalizeStringEvent</c> components on the prefab. Listed
-        /// here only so the validator can catch a missing entry with a menu click rather than
-        /// leaving it to surface as a <c>[ui.x]</c> placeholder on screen.
-        /// </summary>
-        public static readonly string[] ChromeKeys =
-        {
-            "ui.trade_title", "ui.warehouses", "ui.offers", "ui.no_offers",
-            "ui.you_give", "ui.you_get", "ui.confirm", "ui.cancel",
-            "ui.refresh_now", "ui.upgrade", "ui.next_refresh"
         };
     }
 }

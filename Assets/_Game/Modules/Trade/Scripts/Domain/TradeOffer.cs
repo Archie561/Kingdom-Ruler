@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Ledger;
 
 namespace KingdomRuler.Modules.Trade.Domain
 {

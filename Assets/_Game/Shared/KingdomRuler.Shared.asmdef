@@ -1,16 +1,7 @@
 {
     "name": "KingdomRuler.Shared",
     "rootNamespace": "KingdomRuler.Shared",
-    "references": [
-        "KingdomRuler.Core",
-        "VContainer",
-        "Unity.Localization",
-        "Unity.ResourceManager",
-        "Unity.TextMeshPro",
-        "DOTween.Modules",
-        "UniTask",
-        "UniTask.DOTween"
-    ],
+    "references": [],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

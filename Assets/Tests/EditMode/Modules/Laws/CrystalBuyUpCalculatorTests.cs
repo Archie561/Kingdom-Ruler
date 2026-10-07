@@ -5,7 +5,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 {
     /// <summary>
     /// Buy-up pricing is Laws-owned (GDD §6), so these live under Modules/Laws rather
-    /// than Shared/Ledger — see the placement test in ARCHITECTURE.md §4.3.
+    /// than Systems/Ledger — see the placement test in ARCHITECTURE.md §4.3.
     /// </summary>
     [TestFixture]
     public sealed class CrystalBuyUpCalculatorTests

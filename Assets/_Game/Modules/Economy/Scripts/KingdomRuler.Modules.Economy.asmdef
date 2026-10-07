@@ -2,7 +2,7 @@
     "name": "KingdomRuler.Modules.Economy",
     "rootNamespace": "KingdomRuler.Modules.Economy",
     "references": [
-        "KingdomRuler.Core",
+        "KingdomRuler.Systems",
         "KingdomRuler.Shared",
         "VContainer",
         "Unity.InputSystem",

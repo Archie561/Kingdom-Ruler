@@ -22,8 +22,8 @@ stock.
 ## 2. Layers and dependency direction
 
 ```
-                    ┌──────────────── outside the module ────────────────┐
-                    │ Shared.Ledger          Shared.Services    Core     │
+                    ┌─────── outside the module · all in Systems/ ───────┐
+                    │ Ledger                 Clock/Audio/Haptics Events  │
                     │  KingdomLedger          IClock             EventBus│
                     │  TradeResourceType      IAudioService              │
                     │  TradeResourceRegistry  IHapticService             │
@@ -61,7 +61,7 @@ a display struct built by the Presenter — already localized, icons already res
 20-minute lifetime and no authored text; they are built from resource names and numbers. The
 tempting wrong inference is "Laws has a content table, so Trade needs one" — it does not.
 `SharedTable` (`resource.*`) plus `TradeUITable` covers every string on the screen, and the six
-resource icons live in `Shared/Ledger/ScriptableObjects/TradeResources/` because they are
+resource icons live in `Systems/Ledger/ScriptableObjects/TradeResources/` because they are
 Ledger-owned shared display data (`ARCHITECTURE.md` §4.4).
 
 ---
@@ -141,13 +141,14 @@ The 20-minute auto-refresh can land between tapping a row and pressing Confirm. 
 accept would execute a *different* trade than the one on screen; an id turns that into a clean
 `OfferUnavailable`.
 
-### 3.9 `TradeUIText` exists; a Laws equivalent does not
+### 3.9 `TradeUIText` is public and lists every key
 
-`LawsUITable` has no code owner — every string on that screen is fixed chrome rendered by a
-`LocalizeStringEvent`, so §2 lets its validator name the table directly. Trade composes strings
-from arguments at runtime ("You need 12 more Stone"), which §2 says is the moment the keys type
-appears. It is `public` and in its own file because the Editor validator lives in a separate
-assembly and would otherwise have to re-type the literals.
+Trade composes strings from arguments at runtime ("You need 12 more Stone"), which §2 says is
+the moment the keys type appears. It is `public` and in its own file because `TradeTextTests`
+lives in the separate test assembly and would otherwise have to re-type the literals. Its
+`AllKeys` array is what that test walks, so **a new code-resolved key goes into `AllKeys` too**,
+or nothing checks it. The screen's fixed chrome is not listed and not checked — it is on screen
+whenever the Trade tab is. Laws has the same shape, `LawsUIText`, for the refill popup.
 
 ### 3.10 Five canvases, each for a reason
 
@@ -235,6 +236,7 @@ TradeOfferRowView tapped → TradeView.HandleOfferPressed
 | `TradeOfferGeneratorTests` | The 30/45/25 ratio across 2000 seeded batches, per-batch floors, no overlap, every share ≥ 1 |
 | `TradeDomainTests` | Pairing, upgrade pricing, the accept transaction, both upgrade paths, the level ceiling, save/load including a real JSON round-trip |
 | `TradePresenterTests` | Display data, "never disable an offer", price shown == price charged ×3, audio gating, `Dispose` unsubscribing all three sources |
+| `TradeTextTests` | Every message in `TradeUIText.AllKeys` exists in every locale (untranslated only warns) |
 
 The Views have **no automated coverage** — MonoBehaviour plus DOTween is PlayMode territory.
 Enter Play mode from **Bootstrap, never Main**: `Main` is loaded additively and only then are its
@@ -247,9 +249,9 @@ Views injected.
 **Retune the economy** — `TradeConfig`. Nothing hardcodes 10, 1200, or the curve coefficients.
 
 **Add a resource** — add to `TradeResourceType`, create a `TradeResourceDefinition` in
-`Shared/Ledger/ScriptableObjects/TradeResources/`, add it to `TradeResourceRegistry`, add a
+`Systems/Ledger/ScriptableObjects/TradeResources/`, add it to `TradeResourceRegistry`, add a
 `resource.<name>` row to `SharedTable`, add a pairing to `TradeResourcePair`, and author a
-seventh tile. `Kingdom Ruler/Validate Shared Data` reports what is missing. The generator clamps
+seventh tile. `LedgerDataTests` reports what is missing. The generator clamps
 its per-side counts, so an odd resource count degrades rather than breaking.
 
 **Add displayed text** — fixed chrome gets a `LocalizeStringEvent` on the prefab plus a key in
@@ -266,7 +268,7 @@ resolved in the Presenter. Never spell a table name or a key at a call site.
 | Gap | Status |
 |---|---|
 | No resource icons | The registry, display structs, prefab slots and render path are wired and tested; the six `TradeResourceDefinition` assets just have no sprite. Tiles hide the slot until one lands. |
-| Confirmation is a screen-local panel, not a popup | `Shared/Popups` landed separately, and its live-data `Ask(() => …, closeWhen: …)` already has the "re-read while open, self-close when stale" semantics `TradeView.RefreshOpenConfirmPanel` hand-rolls. Migrating is the obvious follow-up; deliberately not done in this pass. |
+| Confirmation is a screen-local panel, not a popup | `Systems/Popups` landed separately, and its live-data `Ask(() => …, closeWhen: …)` already has the "re-read while open, self-close when stale" semantics `TradeView.RefreshOpenConfirmPanel` hand-rolls. Migrating is the obvious follow-up; deliberately not done in this pass. |
 | Prefab is greybox | Functional and re-styleable; no pixel art. |
 | SFX ids are magic strings in `TradePresenter.SfxIds` | Blocked on the audio system, same as Laws. |
 | No offer-profitability badge | Deliberate — totals are visible and all resources are valued 1:1, so the arithmetic is the player's to do. A verdict label is a design change, not a UI detail. |

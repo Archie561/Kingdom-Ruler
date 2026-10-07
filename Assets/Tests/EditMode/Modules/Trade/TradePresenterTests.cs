@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
-using KingdomRuler.Core;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Events;
+using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Modules.Trade;
 using KingdomRuler.Modules.Trade.Domain;
 using KingdomRuler.Modules.Trade.Presenters;
-using KingdomRuler.Tests.EditMode.Shared;
-using KingdomRuler.Tests.EditMode.Shared.Ledger;
+using KingdomRuler.Tests.EditMode.Systems;
+using KingdomRuler.Tests.EditMode.Systems.Ledger;
 
 namespace KingdomRuler.Tests.EditMode.Modules.Trade
 {
@@ -129,7 +129,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
         [Test]
         public void WarehouseDisplay_AtTheCeiling_ReportsMaxedRatherThanAPrice()
         {
-            var dto = new KingdomRuler.Shared.Services.TradeStateDto();
+            var dto = new KingdomRuler.Systems.Save.TradeStateDto();
             dto.WarehouseLevels[TradeResourceType.Clay.ToString()] = WarehouseCurve.MaxSupportedLevel;
             _manager.LoadFromDto(dto);
 

@@ -25,8 +25,8 @@ Dependencies point **downward only**. Nothing in `Domain/` references a Presente
 this is worth preserving, and is easy to verify with a grep.
 
 ```
-                    ┌──────────────── outside the module ────────────────┐
-                    │ Shared.Ledger    Shared.Services    Core           │
+                    ┌─────── outside the module · all in Systems/ ───────┐
+                    │ Ledger           Clock/Audio/Haptics Events        │
                     │  KingdomLedger    IClock             EventBus      │
                     │  CharacteristicType                                │
                     │                   IAudioService                    │
@@ -236,7 +236,7 @@ AccrualDriver.Tick()  (~4 Hz)
 
 ### Save / load
 `GameStateCoordinator` calls `ToDto()` / `LoadFromDto()`. The DTO
-(`Shared/Services/Save/Scripts/Dto/LawsStateDto`) holds five fields, each restoring one
+(`Systems/Save/Scripts/Dto/LawsStateDto`) holds five fields, each restoring one
 guarantee:
 
 | Field | Restores |
@@ -255,14 +255,14 @@ These are the ones a future change is most likely to undo by accident.
 
 ### 6.1 The leveling curve is Ledger-owned; buy-up pricing is Laws-owned
 Two mechanics award characteristic points (Laws, and Random Occurrences per GDD §10), so the
-**rate must match** — the curve lives in `Shared/Ledger` and callers cannot supply their own.
+**rate must match** — the curve lives in `Systems/Ledger` and callers cannot supply their own.
 This was a live bug once: `LawsManager` used a config array while the occurrences module
 passed `level => 100f`, so the same characteristic levelled at two different rates.
 
 Buy-up *pricing* is the opposite: only Laws prices a buy-up, and per GDD §10 occurrences can
 never touch crystals, so it can't acquire a second consumer. It stays in `Modules/Laws/Domain`.
 
-**The test:** *if a second mechanic did this, would the result have to match?* Yes → `Shared/Ledger`.
+**The test:** *if a second mechanic did this, would the result have to match?* Yes → `Systems/Ledger`.
 No → the module's own `Domain/`. (`ARCHITECTURE.md` §4.3.)
 
 ### 6.2 The timer stores a deadline, not a remaining duration
@@ -450,23 +450,23 @@ Only the per-card summary and its `effect.line` Smart String were removed.
 
 Card text lives at `{CardId}.title` / `{CardId}.flavor` in `LawCardsTable`. **Keys are derived
 from data — `LawCardDefinition` carries no key fields at all.** Adding a card means adding two
-table entries named after its id, and `Kingdom Ruler/Validate Laws Localization` reports any
-that are missing.
+table entries named after its id, and `LawsContentTests` fails if one exists in no locale
+and warns if one is untranslated.
 
 **Nothing else spells those strings.** `LawCardDefinition` owns `StringTable`, `TitleKey`,
 `FlavorKey` and the static `BuildTitleKey`/`BuildFlavorKey`; the Presenter resolves through
-them and the validator checks through them. That is not tidiness — a validator holding its own
+them and `LawsContentTests` checks through them. That is not tidiness — a test holding its own
 `id + ".title"` would keep passing while the game asked for something else, giving a green
-menu item and blank text on screen. Verified by temporarily changing the derivation and
+test and blank text on screen. Verified by temporarily changing the derivation and
 watching the Presenter's output change with it, which is what proves no second copy survives.
 
 Characteristic names and icons are **not Laws-owned**: they come from `CharacteristicRegistry`
-(`Shared/Ledger/`), which the Presenter injects and which owns both the table name and the key
+(`Systems/Ledger/`), which the Presenter injects and which owns both the table name and the key
 derivation (`ARCHITECTURE.md` §4.4). Laws is just its first consumer — Cities and Random
 Occurrences will resolve the identical strings and sprites through the same object. Anything
-wrong there is reported by `Kingdom Ruler/Validate Shared Data`, deliberately a *shared*
-validator: a Laws-owned tool checking Ledger-owned keys was the previous arrangement and it
-would have left those keys unchecked the moment a second module needed them.
+wrong there is reported by `LedgerDataTests`, deliberately not a Laws test: a Laws-owned check
+of Ledger-owned keys was an earlier arrangement, and it would have left those keys unchecked
+the moment a second module needed them.
 
 Fixed chrome (ACCEPT, REJECT, the waiting line) uses `LocalizeStringEvent` components in the
 prefab. Everything data-derived is resolved in `LawsPresenter` and delivered through the
@@ -508,8 +508,8 @@ the verification for it is a Play-mode pass in both locales.
 **Add a law card** — create a `LawCardDefinition` in `ScriptableObjects/LawCards/`, fill in its
 `CardId` and effect arrays, and add it to `LawsConfig.AllCards`. Then add **two entries per
 locale** to `LawCardsTable`, named `{CardId}.title` and `{CardId}.flavor` — the asset holds no
-text and no keys, the id *is* the key. Run `Kingdom Ruler/Validate Laws Localization` to
-confirm nothing is missing. No code change.
+text and no keys, the id *is* the key. Run the EditMode tests: `LawsContentTests` confirms
+the id is unique and its text exists. No code change.
 
 **Change queue size or timing** — `LawsConfig`. Nothing hardcodes 8 or 120.
 
@@ -528,17 +528,17 @@ Unity types, it belongs in `Domain/` and gets direct unit tests.
 is derived, so a new locale is pure content. Check the TMP font asset actually has the glyphs.
 
 **Give a characteristic its icon** — drop a sprite on its `CharacteristicDefinition` in
-`Shared/Ledger/ScriptableObjects/Characteristics/`. No code, no prefab edit, and every module
-that displays that characteristic picks it up. `Kingdom Ruler/Validate Shared Data` lists which
-ones are still missing art.
+`Systems/Ledger/ScriptableObjects/Characteristics/`. No code, no prefab edit, and every module
+that displays that characteristic picks it up. `LedgerDataTests` lists which ones are still
+missing art, as a warning.
 
 **Add new displayed text** — if it is fixed chrome, add a `LocalizeStringEvent` in the prefab
-pointing at a new `LawsUITable` entry, and add the key to
-`LawsLocalizationValidator.RequiredUIKeys` so a missing entry is caught by a menu click rather
-than by a player. If it is data-derived, put the table name and the key derivation on the
-**data type** it belongs to — the way `LawCardDefinition` does — then resolve through those
+pointing at a new `LawsUITable` entry; nothing checks it, because it is on screen whenever the
+Laws tab is. If it is built in code (a popup message), add the key to `LawsUIText` and require
+it in `LawsContentTests`. If it is data-derived, put the table name and the key derivation on
+the **data type** it belongs to — the way `LawCardDefinition` does — then resolve through those
 members from `LawsPresenter` and carry the result on a display struct (§6.12). Do not spell a
-table name or a key suffix in the Presenter or the validator.
+table name or a key suffix in the Presenter or a test.
 
 **Show several cards at once** — `LawsManager._activeCard` is the field that becomes a
 collection, and the save gains an id per displayed card instead of just one.
@@ -557,10 +557,11 @@ collection, and the save gains an id per displayed card instead of just one.
 | `CrystalBuyUpCalculatorTests` | Rounding, the minimum of 1, and zero-when-nothing-remains |
 | `LawsDomainTests` | `LawsManager` orchestration, queue arithmetic, save/load |
 | `LawsPresenterTests` | View-facing state, visibility gating, **price shown == price charged**, per-row icon binding |
+| `LawsContentTests` | The **real** cards: every `CardId` present and unique, every title and flavor plus the refill text in every locale (untranslated only warns) |
 
-Shared data used by this module is covered next door in
-`Tests/EditMode/Shared/Ledger/CharacteristicRegistryTests` — lookup, gaps, duplicates, null
-entries, and that the registry's key agrees with the static derivation the validator checks.
+Ledger data used by this module is covered next door in
+`Tests/EditMode/Systems/Ledger/CharacteristicRegistryTests` — lookup, gaps, duplicates, null
+entries, and that the registry's key agrees with the static derivation the content tests check.
 
 The Views have **no automated coverage** — MonoBehaviour + DOTween is PlayMode territory.
 Swipe handling, the level-up fill sequence and the timer throttle are verified by playing the

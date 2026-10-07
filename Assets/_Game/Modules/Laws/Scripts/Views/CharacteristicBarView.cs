@@ -5,7 +5,7 @@ using UnityEngine.Serialization;
 using UnityEngine.UI;
 using DG.Tweening;
 using KingdomRuler.Modules.Laws.Presenters;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Ledger;
 
 namespace KingdomRuler.Modules.Laws.Views
 {

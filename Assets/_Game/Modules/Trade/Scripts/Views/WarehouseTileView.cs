@@ -3,7 +3,7 @@ using DG.Tweening;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Modules.Trade.Presenters;
 
 namespace KingdomRuler.Modules.Trade.Views

@@ -12,21 +12,22 @@
    curves, save/load — none of it needs `GameObject`, none of it should require the Unity
    Editor to be open to unit test.
 2. **One source of truth per piece of state.** The resource ledger (crystals, gold, 6
-   characteristics, 6 trade resources) lives in exactly one place (`Shared/Ledger`, §4.3).
+   characteristics, 6 trade resources) lives in exactly one place (`Systems/Ledger`, §4.3).
    Every module reads and writes it through that one API — nobody keeps a private duplicate
    of "how much wood the player has."
 3. **Decoupling via events, not direct references.** The Trade module doesn't need a
    reference to the Laws module. Systems publish domain events on a lightweight event bus
-   (`Core/EventBus`); anyone who cares subscribes.
+   (`Systems/Events`); anyone who cares subscribes.
 4. **Time is a seam, not `Time.time`.** Every timer in this game (law queue, trade refresh,
    resource regen, business storage) must survive the app being closed. Model these as
    "last-updated UTC timestamp + rate," compute elapsed progress on load/resume. Never use a
    countdown that only ticks while a MonoBehaviour's `Update()` is running.
 5. **Feature-first folder structure.** The project is organized primarily by *module*
-   (Laws, Trade, Economy, Cities, Events, Shop), not by technical role. Changing Trade
-   should mean working inside one folder, not hunting across scattered top-level
-   role-based folders. This is what actually delivers "modifying one module shouldn't
-   affect another" — see §3.
+   (Laws, Trade, Economy, Cities, RandomOccurrences, Shop, Navigation), not by technical role,
+   with the systems they all use (Ledger, popups, sound, save…) in `Systems/` and passive
+   building blocks in `Shared/`. Changing Trade should mean working inside one folder, not
+   hunting across scattered top-level role-based folders. This is what actually delivers
+   "modifying one module shouldn't affect another" — see §3.
 6. **DI via VContainer, MVP for UI.** One root `LifetimeScope`, created in the Bootstrap
    scene, registers every shared service and every module's Manager. UI follows
    Model–View–Presenter: **Manager** (plain C#, the Model — owns a module's behavior and
@@ -98,24 +99,24 @@
   `{CardId}.title` / `{CardId}.flavor`; a characteristic's name at
   `characteristic.{enumname}`. Content assets therefore carry *no* `TitleKey`-style fields —
   the id already is the key. Nothing to wire, nothing to mistype, nothing to drift. The cost
-  is that a missing *table* entry only shows up at runtime, which is what the Editor
-  validators exist to catch (`Kingdom Ruler/Validate Shared Data` for anything Ledger-owned,
-  `Validate Laws Localization` for Laws' own keys).
+  is that a missing *table* entry only shows up at runtime, which is what the **content
+  tests** exist to catch (§8): `LedgerDataTests` for anything Ledger-owned, `LawsContentTests`
+  and `TradeTextTests` for each module's own keys.
 
   **A table name and its key derivation are owned by the type whose text they address** —
   together, on the same type, and never re-declared by the code that reads them.
   `LawCardDefinition` owns `StringTable` + `TitleKey`/`FlavorKey` +
   `BuildTitleKey`/`BuildFlavorKey`; `CharacteristicDefinition` owns `StringTable` + `NameKey`
-  + `BuildNameKey`. Presenters and Editor validators both resolve *through those members*.
+  + `BuildNameKey`. Presenters and the content tests both resolve *through those members*.
 
   A **registry is an index, not an owner**: `CharacteristicRegistry` maps an enum to its
   definition and offers convenience lookups, but declares no table name of its own. Splitting
   the table onto the registry and the key onto the definition makes it ambiguous which type
   owns the convention — they are one fact and belong together.
 
-  This matters more than it looks. A validator that re-spells `id + ".title"` locally still
-  passes while the game asks for something else — a green menu item and blank text on screen,
-  which is the exact failure the validator exists to prevent. Resolving through one definition
+  This matters more than it looks. A test that re-spells `id + ".title"` locally still
+  passes while the game asks for something else — a green test and blank text on screen,
+  which is the exact failure the test exists to prevent. Resolving through one definition
   makes that divergence impossible rather than merely unlikely.
 
   **Text with no data asset behind it** — a confirmation popup, an error toast, "Upgrade
@@ -133,31 +134,31 @@
   ```
 
   **`public`, and a type of its own — not `internal`, and not nested inside the Presenter.**
-  The module's validator lives in a *separate* assembly (`…Modules.Laws.Editor`), so an
-  `internal` or privately-nested holder is invisible to it, and the validator would be forced
-  back into re-typing the literals — which is the entire failure this rule prevents. The old
+  The content tests live in a *separate* assembly (`KingdomRuler.Tests.EditMode`), so an
+  `internal` or privately-nested holder is invisible to them, and they would be forced back
+  into re-typing the literals — which is the entire failure this rule prevents. The old
   `LawsPresenter.Tables` class was privately nested for exactly that reason and had to be
   replaced.
 
   Same rule, same shape as a `*Definition` — one declaration, imported by both the Presenter
-  and the module's validator (whose `RequiredUIKeys` then reads from it instead of repeating
-  literals). Put it beside the Presenter that uses it; promote it to `Shared/UI/` only if the
-  popup itself becomes a shared UI atom, by the usual ownership test.
+  and the module's content test (`TradeTextTests` walks `TradeUIText.AllKeys` instead of
+  repeating literals). Put it beside the Presenter that uses it; promote it out of the module
+  only if the text itself becomes something a second module needs, by the usual ownership test.
 
-  Until such a type exists, a table resolved **only** by `LocalizeStringEvent` components in a
-  prefab — `LawsUITable` today — may name itself in the module's validator, since that is its
-  single code reference rather than a duplicate of one. The moment the first line of that
-  table is resolved from code, introduce the keys type and move the name into it.
+  A string resolved **only** by a `LocalizeStringEvent` component on a prefab — a button
+  caption, a tab label — has no code reference at all and is not checked: fixed chrome is on
+  screen the moment its screen opens, so a gap there cannot go unnoticed. The moment a string
+  is resolved from code, it goes on the module's keys type, and from there into its test.
 
   **Which table** — same ownership test as the leveling curve (§4.3): *would a second
   mechanic need the identical string?*
 
   | Table | Holds | Because |
   |---|---|---|
-  | `Shared/Localization/SharedTable` | characteristic names, cross-cutting words | Cities and Random Occurrences need the identical strings |
+  | `Systems/Localization/Tables/SharedTable` | characteristic names, cross-cutting words | Cities and Random Occurrences need the identical strings |
   | `Modules/<X>/Localization/<X>UITable` | that screen's fixed chrome | small, stable, changes with the screen |
   | `Modules/Trade/Localization/TradeUITable` | Trade's chrome **and** its arg-taking messages | the first table in the project resolved from code, so it owns a `TradeUIText` keys type — see below |
-  | `Shared/Navigation/Localization/NavigationUITable` | the bottom bar's tab labels | the middle row's pattern, for a screen that is shared rather than a module (§4.6). Nothing outside the nav bar draws the word "Laws", so these are chrome, not cross-cutting words. Like `LawsUITable`, it is resolved only by `LocalizeStringEvent` components, so it names itself in `SharedLocalizationValidator` |
+  | `Modules/Navigation/Localization/NavigationUITable` | the bottom bar's tab labels | the middle row's pattern — Navigation is a module (§4.6). Nothing outside the nav bar draws the word "Laws", so these are chrome, not cross-cutting words. It is resolved only by `LocalizeStringEvent` components, so no code names it and no test checks it — the tabs are on screen from the first frame |
   | `Modules/<X>/Localization/<X>…Table` | that module's content, keyed by id | grows with authored content; what a translator is handed in bulk |
 
   **Who resolves it** — two paths, and the split is not stylistic:
@@ -208,35 +209,44 @@
 
 ## 3. Folder structure
 
+`_Game/` has four top-level folders. Each has a one-line test, so a new piece of code has exactly
+one place to go:
+
+| Folder | Holds | The test |
+|---|---|---|
+| `Modules/` | one game mechanic or screen each — Laws, Trade, Navigation… | **nothing else may call it.** A module is a leaf. |
+| `Systems/` | what any module may use — the Ledger, popups, sound, haptics, save… | **it does something:** it has state or behaviour, and you get it through injection |
+| `Shared/` | passive building blocks — fonts, UI atoms, static helpers | **it is used directly:** referenced on a prefab or called statically, with no state of its own |
+| `Core/` | the composition root (`Bootstrap/`) | the one place allowed to know every module, because it registers them (§4.1) |
+
+**Dependencies run one way: `Core → Modules → Systems → Shared`.** One assembly per folder makes
+the compiler enforce it — `KingdomRuler.Shared` references nothing of ours, `KingdomRuler.Systems`
+references only packages, and each `KingdomRuler.Modules.<X>` references Systems and Shared but no
+other module. A Shared helper that reached for the Ledger, or a system that reached for a module,
+simply does not compile.
+
+The test that settles the borderline cases: **if a module would need to call it, it cannot be a
+module**, because modules never reference each other. Navigation is a module today because nothing
+calls it; the first module that needs to switch screens itself (a "go to the Shop" button in a
+popup, say) is the trigger to move it into `Systems/`.
+
+A system keeps everything it owns together, even when part of it looks like something else:
+`ConfirmPopup` stays in `Systems/Popups` although it is a UI component, and `SharedTable` stays in
+`Systems/Localization/Tables` although it is data. Module-specific popups and string tables stay in
+their module.
+
 ```
 Assets/
   _Game/
     Core/
       Scripts/
-        Bootstrap/         # Bootstrap scene entry point, root VContainer LifetimeScope,
-                           # GameStateCoordinator and AccrualDriver — the two classes that
-                           # legitimately know every module (§4.5)
-        EventBus/           # the pub/sub MECHANISM only — no event message types (§4.2)
-    Shared/
-      Fonts/
-      UI/                   # shared UI atoms: buttons, toasts, currency pips, popups
-        Scripts/            # SafeAreaFitter — notch/gesture-bar insets (§4.6)
-        Prefabs/
-      Services/
-        Save/
-          Scripts/          # ISaveService, LocalJsonSaveService, versioned DTOs
-        Purchasing/
-          Scripts/          # IPurchasingService, MockPurchasingService
-        Audio/
-          Scripts/
-          ScriptableObjects/  # AudioConfig + sound-clip registry
-        Haptics/
-          Scripts/
-        Clock/
-          Scripts/          # IClock abstraction — makes time-based logic testable
-        Localization/
-          Scripts/          # ILocalizationService, UnityLocalizationService
-      Localization/         # SharedTable — strings more than one module needs (§2)
+        Bootstrap/          # Bootstrap scene entry point, root VContainer LifetimeScope,
+                            # GameStateCoordinator and AccrualDriver — the classes that
+                            # legitimately know every module (§4.5). Namespace KingdomRuler.Core.
+    Systems/                # assembly KingdomRuler.Systems
+      Events/               # EventBus — the pub/sub MECHANISM only, no message types (§4.2).
+                            # Named Events, not EventBus: a namespace may not share its
+                            # class's name, or C# resolves `EventBus` to the namespace.
       Ledger/
         Scripts/            # KingdomLedger (the one source of truth) + state types +
                             # leveling math (the points-required formula) — shared by any
@@ -246,19 +256,37 @@ Assets/
         ScriptableObjects/  # starting-values config + leveling-curve coefficients
           Characteristics/  # one CharacteristicDefinition per characteristic, plus the
                             # CharacteristicRegistry that indexes them — see §4.4
-      Navigation/           # the bottom-nav mini-module — see §4.6. Belongs to no single
-        Scripts/            # module: 4 classes, and it deals only in ScreenId
-        Prefabs/            # BottomNavBar.prefab
-        Localization/       # NavigationUITable — the tab labels
-      Popups/               # shared popup system — see §4.7
+      Popups/               # the popup system — see §4.7
         Scripts/
-          Core/             # the mechanism: manager, popup base classes, registry
+          Core/             # the mechanism: PopupSystem, popup base classes, registry
           ConfirmPopup/     # one folder per kind of popup — see "Systems with variants"
         Prefabs/
         ScriptableObjects/  # PopupRegistry.asset
-      Editor/               # editor-only tooling for shared data, own Editor asmdef
-                            # (SharedLocalizationValidator)
+      Localization/
+        Scripts/            # ILocalizationService, UnityLocalizationService
+        Tables/             # SharedTable — strings more than one module needs (§2)
+      Save/
+        Scripts/            # ISaveService, LocalJsonSaveService, versioned DTOs, link.xml
+      Purchasing/
+        Scripts/            # IPurchasingService, MockPurchasingService
+      Audio/
+        Scripts/
+        ScriptableObjects/  # AudioConfig + sound-clip registry
+      Haptics/
+        Scripts/
+      Clock/
+        Scripts/            # IClock abstraction — makes time-based logic testable
+    Shared/                 # assembly KingdomRuler.Shared
+      Fonts/
+      UI/                   # UI atoms: buttons, toasts, currency pips
+        Scripts/            # SafeAreaFitter — notch/gesture-bar insets (§4.6)
+        Prefabs/
+      Text/                 # TimeFormat — static formatting helpers
     Modules/
+      Navigation/           # the bottom nav bar — see §4.6. 4 classes; it deals only in
+        Scripts/            # ScreenId, and binds screens as plain GameObjects
+        Prefabs/            # BottomNavBar.prefab
+        Localization/       # NavigationUITable — the tab labels
       Laws/
         Scripts/
           Domain/           # pure C#: card-queue and card-effect resolution specific
@@ -270,9 +298,6 @@ Assets/
           LawsManager.cs    # Model: orchestrates Domain + Ledger + queue timers
           Presenters/
           Views/
-        Editor/             # editor-only tooling for this module, with its own Editor
-                            # asmdef — e.g. LawsLocalizationValidator. Optional: add it
-                            # when a module has tooling, don't stub it empty.
         Localization/       # this module's String Tables: one for UI chrome, one per
                             # content type keyed by id (§2)
         ScriptableObjects/
@@ -280,7 +305,7 @@ Assets/
           Data/             # one LawCardDefinition asset per card
         Prefabs/
         Images/             # sprites/textures for this mechanic (see note below)
-      Trade/                # same internal shape as Laws, plus Editor/ and Localization/.
+      Trade/                # same internal shape as Laws.
                             # ScriptableObjects/Data/ stays empty: offers are generated, not
                             # authored, so there is no content table either (docs/modules/Trade.md)
       Economy/              # same internal shape as Laws
@@ -294,8 +319,8 @@ Assets/
   Tests/
     EditMode/
       Modules/               # mirrors Modules/ — one test folder per module
-      Shared/
-        Ledger/
+      Systems/               # mirrors Systems/ — Ledger/ plus the service tests and the
+                             # shared test fakes (TestServiceFakes)
     PlayMode/                 # sparse — only for things that need the Unity runtime
 docs/
   GDD.md
@@ -303,14 +328,17 @@ docs/
   modules/
     Laws.md              # per-module architecture — see note below
     Trade.md             # ditto, for the Trade mechanic
+    Popups.md            # the popup system
 CLAUDE.md
 ```
 
 The rule from the brief generalizes cleanly: **group by type within whatever folder you're
 in.** Inside a module: `Scripts/` (further split by role — Domain, Events, Manager, Presenters,
-Views) and `ScriptableObjects/` (further split into `Config/` and `Data/`). Inside
-`Shared/Services/Audio`: `Scripts/` and `ScriptableObjects/`. Same pattern, applied
-consistently, all the way down.
+Views) and `ScriptableObjects/` (further split into `Config/` and `Data/`). Inside a system:
+`Scripts/`, plus `Prefabs/` or `ScriptableObjects/` only if it has any. **Each module and system
+holds what it actually contains** — the folders are not stamped out identically, and an empty one
+is not created for symmetry. Namespaces mirror the folders: `KingdomRuler.Systems.Ledger`,
+`KingdomRuler.Modules.Navigation`, `KingdomRuler.Shared.UI`.
 
 **This tree is the recommended shape, not an exhaustive whitelist.** A module may add asset folders
 the tree doesn't list — `Images/` for that mechanic's sprites and textures, `Audio/`, `Fonts/` —
@@ -327,9 +355,9 @@ Group by type at the top level as everywhere else — `Scripts/`, `Prefabs/`,
 kinds of popup, kinds of offer — split `Scripts/` further, by variant:
 
 ```
-Shared/Popups/
+Systems/Popups/
   Scripts/
-    Core/            the mechanism itself: base classes, interfaces, the manager
+    Core/            the mechanism itself: base classes, the registry, PopupSystem
     ConfirmPopup/    everything code-side for one variant
     <Variant>Popup/  the next one, laid out the same way
   Prefabs/
@@ -369,7 +397,7 @@ follow the folders (`…Popups` for the core, `…Popups.Confirm` for the varian
 This document covers rules that apply to *every* module. Once a module grows past a handful of
 classes, it gets its own file under `docs/modules/` describing its layers, its state model, its data
 flows, and — most importantly — the decisions inside it that look arbitrary from the outside and
-would otherwise be undone by accident. A **shared system** that grows past a handful of classes
+would otherwise be undone by accident. A **system** (`Systems/`) that grows past a handful of classes
 gets one too — `docs/modules/Popups.md` — even though it is not a module; the folder is
 "per-system architecture", not "per-module" in the §3 sense.
 `docs/modules/Laws.md` is the worked example and the template
@@ -403,7 +431,7 @@ A service that needs asynchronous startup hooks into step 2 rather than inventin
 gate. If a second one ever appears, that is the point to generalize `WhenReady` into a list
 of awaited services — not before.
 
-### 4.2 Event bus (`Core/EventBus`) and where event types live
+### 4.2 Event bus (`Systems/Events`) and where event types live
 
 A minimal typed pub/sub, registered as a singleton in the root scope so anyone can inject it.
 Presenters subscribe to update Views without polling.
@@ -414,18 +442,21 @@ for that mechanic.
 
 Event *types* live in one of three places, by who is allowed to subscribe:
 
-**Tier 1 — `Core/EventBus/`: the mechanism only.** `EventBus.cs` and nothing else. No message types
+**Tier 1 — `Systems/Events/`: the mechanism only.** `EventBus.cs` and nothing else. No message types
 live here.
 
-**Tier 2 — `Shared/Ledger/Scripts/Events/`: cross-module ledger events.**
+**Tier 2 — `Systems/Ledger/Scripts/Events/`: cross-module ledger events.**
 `CharacteristicLeveledUp`, `ResourceChanged`, `GoldChanged`, `CrystalsChanged`, `CityPurchased`,
 `RegionCompleted`. These describe changes to the one shared source of truth, so any module may
 subscribe — this is the tier the Random Occurrences mechanic reaches across modules through.
 
-They live in `Shared`, not `Core`, and this is a hard constraint rather than a preference: they carry
-`CharacteristicType` / `TradeResourceType`, which are `Shared.Ledger` types. `KingdomRuler.Shared`
-references `KingdomRuler.Core`, so putting them in `Core` would require the reverse reference too —
-an assembly-definition cycle Unity will reject.
+They live beside the Ledger rather than beside the bus because they are *about* the Ledger: they
+carry `CharacteristicType` / `TradeResourceType`, and whoever changes how a characteristic levels
+should find the events that announce it in the same folder. The bus and the Ledger share the
+`KingdomRuler.Systems` assembly, so this is a choice of folder, not an assembly constraint — which
+is exactly why tier 1's "mechanism only" rule has to be stated rather than enforced. (Before the
+Systems split, the bus sat in a separate `KingdomRuler.Core` assembly that the Ledger referenced,
+and putting these events there would have been an assembly cycle.)
 
 **Tier 3 — `Modules/<X>/Scripts/Events/`: module-local events.** Namespace
 `KingdomRuler.Modules.<X>`. Published and subscribed entirely inside one module. If something outside
@@ -444,7 +475,7 @@ is now `LawsManager.QueueChanged`, a plain event, and `LawsManager` no longer ta
 all. The trigger to promote it back to tier 2 would be a subscriber outside Laws, such as a
 bottom-nav badge showing how many cards are waiting.
 
-### 4.3 The Ledger (`Shared/Ledger`)
+### 4.3 The Ledger (`Systems/Ledger`)
 
 One class, `KingdomLedger`, owns:
 - Gold and Crystals (simple amounts)
@@ -460,10 +491,10 @@ crystal buy-up divisor), but the curve itself is Ledger-owned.
 **The curve is a formula, not a table, and the Ledger holds it — callers do not pass it in.**
 Concretely:
 
-- `LevelingCurve` is a plain C# value type in `Shared/Ledger` holding `basePoints`, `growthFactor`,
+- `LevelingCurve` is a plain C# value type in `Systems/Ledger` holding `basePoints`, `growthFactor`,
   and `roundToNearest`, with the formula from `GDD.md` §6. Keeping it a struct rather than a
   `ScriptableObject` keeps `KingdomLedger` free of `UnityEngine` types and trivially unit-testable.
-- A `LevelingConfig` SO in `Shared/Ledger/ScriptableObjects/` holds the designer-editable
+- A `LevelingConfig` SO in `Systems/Ledger/ScriptableObjects/` holds the designer-editable
   coefficients and produces that struct. It validates in `OnValidate` — a non-positive base or
   growth would make the level-up loop non-terminating.
 - `KingdomLedger` is constructed with the curve. `AddCharacteristicPoints` and
@@ -487,11 +518,11 @@ a loop that is still applying changes, or a Presenter can render a half-applied 
 #### Where new math goes — the ownership test
 
 Every mechanic brings its own calculations (warehouse upgrade costs, business profit, offer
-valuation). Almost none of them belong in `Shared/Ledger`. Ask one question:
+valuation). Almost none of them belong in `Systems/Ledger`. Ask one question:
 
 > **If a second mechanic performed this same operation, would the result have to match?**
 
-- **Yes → `Shared/Ledger`.** The math governs how shared state changes, and divergence would be a
+- **Yes → `Systems/Ledger`.** The math governs how shared state changes, and divergence would be a
   bug. This set is small and mostly closed: the characteristic leveling curve (Laws and Random
   Occurrences both award points) and the trade-resource regen rate derived from warehouse capacity.
 - **No → the module's own `Domain/`.** The math produces a number *that module* then asks the Ledger
@@ -504,8 +535,8 @@ and a stat must level at one rate. Crystal buy-up pricing sits in `Modules/Laws/
 *about* levelling, because only Laws prices a buy-up — and per `GDD.md` §10 occurrences can never
 touch crystals, so it cannot acquire a second consumer.
 
-**Do not inject module calculators into the Ledger.** Two reasons. Structurally, `KingdomRuler.Shared`
-is referenced *by* the modules; for the Ledger to hold a Trade calculator, `Shared` would need a
+**Do not inject module calculators into the Ledger.** Two reasons. Structurally, `KingdomRuler.Systems`
+is referenced *by* the modules; for the Ledger to hold a Trade calculator, `Systems` would need a
 reference back to `Modules.Trade` — an assembly-definition cycle Unity rejects. Semantically, letting
 one module supply the policy for shared state makes every other mechanic depend on that module's
 rules, which is the drift the Ledger exists to prevent. Modules compute a number and hand it to the
@@ -518,7 +549,7 @@ snapshot plus a `CityCost` data object.
 #### Shared *display* data: the registry pattern
 
 The same ownership test decides where a thing's **presentation** lives, not just its math.
-`CharacteristicRegistry` + `CharacteristicDefinition` (`Shared/Ledger/`) hold the icon and
+`CharacteristicRegistry` + `CharacteristicDefinition` (`Systems/Ledger/`) hold the icon and
 name key for each of the 6 characteristics, because Laws draws them on its bars, Cities needs
 them for purchase requirements, and Random Occurrences for outcome text. A module injects the
 registry and asks; it does not re-derive.
@@ -536,8 +567,8 @@ trade resources were the obvious next one, and `TradeResourceRegistry` +
    from the asset that declares it — the same reason `LawCardDefinition` has no `TitleKey`
    (§2). Only what genuinely cannot be derived — a sprite reference — is authored.
 3. **A registry of separate assets, not one asset with inline blocks** (`CLAUDE.md` §7), and
-   it validates itself: missing types, duplicate types and unassigned art are all reported by
-   `Kingdom Ruler/Validate Shared Data`. A half-wired registry degrades rather than breaking —
+   it is checked: a missing or duplicate type fails `LedgerDataTests`, and unassigned art is
+   reported there as a warning (§8). A half-wired registry degrades rather than breaking —
    `NameKeyFor` falls back to the derivation, so text keeps working and only the icon is
    absent.
 
@@ -611,12 +642,17 @@ changes, the same way the Laws countdown is rendered. Accepting an offer, upgrad
 and a Cities purchase all still publish normally. **"This mutation doesn't publish an event"
 reads like a bug and is not** — see the doc block on that method.
 
-### 4.6 Screen navigation (`Shared/Navigation`)
+### 4.6 Screen navigation (`Modules/Navigation`)
 
-The bottom tab bar from `GDD.md` §13. It lives in `Shared/` rather than in a module because it
-belongs to none of them — and its own folder rather than under `Shared/UI/`, because `UI/` is
-for reusable UI atoms (buttons, toasts, popups, `SafeAreaFitter`) while this is a small system
-with a Model, Views and its own String Table.
+The bottom tab bar from `GDD.md` §13. It is a **module** — `Modules/Navigation`, assembly
+`KingdomRuler.Modules.Navigation` — because nothing calls it: only the composition root registers
+it, and it reaches the screens through serialized references rather than code (below). It is not
+`Shared/UI/` either, because that is for passive UI atoms (buttons, toasts, `SafeAreaFitter`) while
+this has a Model, Views and its own String Table.
+
+**The trigger to move it into `Systems/`** is the first module that needs to switch screens in
+code — a "Not enough crystals — go to the Shop?" button in a popup, say. A module cannot call
+another module, so at that point Navigation stops being one (§3).
 
 **Four classes, and that is the whole system:**
 
@@ -650,18 +686,18 @@ three were removed as ceremony. Recording why, so they don't come back by reflex
   the reference on each tab does the same job in one place instead of two. Reintroduce it only if
   something needs to ask a GameObject *which screen it is* at runtime; nothing does.
 - **`ScreenSwitcherView`** did nothing but the `SetActive` loop, and `BottomNavBarView` was
-  already subscribed to the same event. The cost of merging is that the `Shared` nav-bar prefab
+  already subscribed to the same event. The cost of merging is that the nav-bar prefab
   carries a screens array overridden per scene — acceptable while `Main` is the only scene with a
   bar. If a second scene ever needs one, splitting it out again is the fix.
 - **`NavigationUIText`** held a table name and a `"nav." + id` concat with **zero runtime
   callers** — the prefab stores literal keys in its YAML. Its only consumer was the Editor
-  validator, which is exactly the case §2 says should name the table itself, as `LawsUITable`
-  already does.
+  validator, which no longer exists: tab labels are fixed chrome, on screen from the first
+  frame, and §2 does not check those.
 
-**`Shared` cannot reference a module.** `KingdomRuler.Shared` is referenced *by* `Modules.*`; for
-the nav bar to hold a `LawsView` the reference would have to run backwards, and Unity rejects the
-cycle. Screens are therefore bound as plain `GameObject`s tagged with a `ScreenId`. The payoff is
-concrete: **adding navigation required no change to `LawsView` at all.**
+**Navigation cannot reference another module.** Modules never reference each other (§3), so the
+nav bar cannot hold a `LawsView`. Screens are therefore bound as plain `GameObject`s tagged with
+a `ScreenId`. The payoff is concrete: **adding navigation required no change to `LawsView` at
+all**, and moving Navigation between folders changed none of the screens either.
 
 **Switching is `SetActive`, not a Canvas toggle.** That is what makes a screen's own
 `OnEnable`/`OnDisable` fire, which is how `LawsView` already tells its Presenter to gate audio —
@@ -750,9 +786,9 @@ so the bar can never be asked for a screen that isn't there. **Active tab is
 not persisted** — no save DTO involvement, no `schemaVersion` bump. The launch screen is a const
 on `ScreenNavigator`, and should become `Kingdom` once that screen exists.
 
-### 4.7 Popups (`Shared/Popups`)
+### 4.7 Popups (`Systems/Popups`)
 
-A shared system every mechanic uses. Full detail: `docs/modules/Popups.md`.
+A system every mechanic uses. Full detail: `docs/modules/Popups.md`.
 
 A caller creates a popup by its type, gives it data, and awaits the button the player pressed;
 the popup being open is a pause in the middle of one method:
@@ -765,7 +801,7 @@ if (choice == ConfirmPopupChoice.Confirm) DoTheThing();
 `Create` only builds the popup, hidden and without data. `Ask` (one question: show, wait for one
 choice, close) or `Show` (a panel that stays open) is what fills it and puts it on screen.
 
-`PopupManager` lives in the Bootstrap scene so anything built at startup can use it. It owns the
+`PopupSystem` lives in the Bootstrap scene so anything built at startup can use it. It owns the
 stack and a single backdrop kept behind the topmost popup. Every kind of popup derives from
 `Popup<TData, TChoice>` and differs only in the data it shows and the buttons it has.
 
@@ -856,6 +892,24 @@ instead; `docs/modules/Popups.md` §7 is the worked example.
   test instead of the real one.
 - **PlayMode tests are the exception** — only for things that genuinely need the Unity
   runtime (a scene loads and wires up without null refs).
+- **Content tests check what is authored**, not data a test builds for itself:
+  `LedgerDataTests` (the registries and the names in `SharedTable`), `LawsContentTests` (every
+  card's id and text, the refill messages) and `TradeTextTests` (every message in
+  `TradeUIText.AllKeys`). They load the project's real assets and String Tables, so they run
+  with every test pass — there is no menu item to remember. They replaced four Editor
+  validators that did the same checks only when someone clicked them.
+
+  **A wiring mistake fails; unfinished content warns.** A key the game asks for that exists in
+  no locale, a missing string table, a type with no registry definition, two cards sharing a
+  `CardId` — these are never a normal state, so the test fails. An untranslated entry or a
+  missing icon is normal mid-project, so the test logs **one grouped warning** and passes.
+  (Unity's NUnit is 3.5, which has no `Assert.Warn`; the Test Framework fails only on logged
+  errors, so a logged warning shows in the console and the test output without failing.)
+  `LocalizationCheck` in `Tests/EditMode/Systems/` implements that split for String Tables.
+
+  Every module with authored content or code-resolved text gets one — Cities and Random
+  Occurrences next. Fixed chrome on a prefab is not checked: it is on screen the moment its
+  screen opens.
 - **Not worth testing:** exact pixel layout, DOTween easing feel, art. Polish is verified by
   playing the game.
 
@@ -876,9 +930,11 @@ instead; `docs/modules/Popups.md` §7 is the worked example.
 
 ## 10. Coding conventions
 
-- Namespaces mirror the folder structure: `KingdomRuler.Core`,
-  `KingdomRuler.Shared.Services.Audio`, `KingdomRuler.Shared.Ledger`,
-  `KingdomRuler.Modules.Laws`, etc.
+- Namespaces mirror the folder structure: `KingdomRuler.Core` (the composition root),
+  `KingdomRuler.Systems.Audio`, `KingdomRuler.Systems.Ledger`, `KingdomRuler.Shared.UI`,
+  `KingdomRuler.Modules.Laws`, etc. A folder must not share its main class's name
+  (`Systems/Events/EventBus.cs`, not `Systems/EventBus/EventBus.cs`): C# would resolve the
+  class name to the namespace inside every sibling namespace.
 - PascalCase for types and public members, camelCase for locals/parameters, `_camelCase` for
   private fields.
 - One public type per file, file name matches type name.

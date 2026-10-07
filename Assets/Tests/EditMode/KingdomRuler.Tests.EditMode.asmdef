@@ -2,7 +2,7 @@
     "name": "KingdomRuler.Tests.EditMode",
     "rootNamespace": "KingdomRuler.Tests.EditMode",
     "references": [
-        "KingdomRuler.Core",
+        "KingdomRuler.Systems",
         "KingdomRuler.Shared",
         "KingdomRuler.Modules.Laws",
         "KingdomRuler.Modules.Trade",
@@ -10,10 +10,13 @@
         "KingdomRuler.Modules.Cities",
         "KingdomRuler.Modules.RandomOccurrences",
         "KingdomRuler.Modules.Shop",
+        "KingdomRuler.Modules.Navigation",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "VContainer",
-        "UniTask"
+        "UniTask",
+        "Unity.Localization",
+        "Unity.Localization.Editor"
     ],
     "includePlatforms": [
         "Editor"

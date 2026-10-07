@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using KingdomRuler.Core;
-using KingdomRuler.Shared.Ledger;
-using KingdomRuler.Shared.Services;
+using KingdomRuler.Systems.Events;
+using KingdomRuler.Systems.Ledger;
+using KingdomRuler.Systems.Save;
 using KingdomRuler.Modules.Cities.Domain;
 
 namespace KingdomRuler.Modules.Cities

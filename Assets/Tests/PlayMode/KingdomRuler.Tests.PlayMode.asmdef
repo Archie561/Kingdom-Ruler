@@ -2,7 +2,7 @@
     "name": "KingdomRuler.Tests.PlayMode",
     "rootNamespace": "KingdomRuler.Tests.PlayMode",
     "references": [
-        "KingdomRuler.Core",
+        "KingdomRuler.Systems",
         "KingdomRuler.Shared",
         "KingdomRuler.Modules.Laws",
         "KingdomRuler.Modules.Trade",
@@ -10,6 +10,7 @@
         "KingdomRuler.Modules.Cities",
         "KingdomRuler.Modules.RandomOccurrences",
         "KingdomRuler.Modules.Shop",
+        "KingdomRuler.Modules.Navigation",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "VContainer"

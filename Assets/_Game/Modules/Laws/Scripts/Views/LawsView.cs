@@ -4,7 +4,7 @@ using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 using VContainer;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Shared.Text;
 using KingdomRuler.Modules.Laws.Presenters;
 

@@ -208,7 +208,7 @@ here.
 ## 10. Mechanic 5 — Random Occurrences
 
 > **Naming.** This mechanic is called *Random Occurrences*, not "Random Events", throughout the
-> codebase and these docs. "Event" is reserved for messages on the `Core/EventBus` pub/sub
+> codebase and these docs. "Event" is reserved for messages on the `Systems/Events` pub/sub
 > (`CharacteristicLeveledUp`, `GoldChanged`, …) — see `ARCHITECTURE.md` §4.2. The two meanings
 > collided constantly in code (`EventsManager` vs. event-bus events), so the mechanic gets the
 > distinct word.

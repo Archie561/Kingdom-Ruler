@@ -6,19 +6,18 @@ using Cysharp.Threading.Tasks;
 using NUnit.Framework;
 using UnityEngine.TestTools;
 using UnityEngine;
-using KingdomRuler.Core;
-using KingdomRuler.Shared.Ledger;
-using KingdomRuler.Shared.Popups;
-using KingdomRuler.Shared.Services;
+using KingdomRuler.Systems.Events;
+using KingdomRuler.Systems.Ledger;
+using KingdomRuler.Systems.Popups;
 using KingdomRuler.Modules.Laws;
 using KingdomRuler.Modules.Laws.Domain;
 using KingdomRuler.Modules.Laws.Presenters;
-using KingdomRuler.Tests.EditMode.Shared;
-using KingdomRuler.Tests.EditMode.Shared.Ledger;
+using KingdomRuler.Tests.EditMode.Systems;
+using KingdomRuler.Tests.EditMode.Systems.Ledger;
 
 namespace KingdomRuler.Tests.EditMode.Modules.Laws
 {
-    // Test fakes live in Tests/EditMode/Shared/TestServiceFakes.cs — promoted there once
+    // Test fakes live in Tests/EditMode/Systems/TestServiceFakes.cs — promoted there once
     // Trade needed the identical ones. FakeClock is still declared in LawsDomainTests.cs
     // in this namespace.
 
@@ -37,7 +36,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         private FakeHapticService _haptics;
         private FakeLocalizationService _localization;
         private CharacteristicRegistry  _characteristics;
-        private PopupManager            _popups;
+        private PopupSystem            _popups;
         private LawsPresenter     _presenter;
 
         private readonly List<ScriptableObject> _createdAssets = new();
@@ -67,7 +66,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             // Flows that actually open one are verified in Play mode (ARCHITECTURE.md §8).
             var popupHost = new GameObject("popups");
             _createdObjects.Add(popupHost);
-            _popups = popupHost.AddComponent<PopupManager>();
+            _popups = popupHost.AddComponent<PopupSystem>();
             _presenter = new LawsPresenter(
                 _manager, _ledger, _eventBus, _audio, _haptics, _localization, _characteristics, _popups);
         }
@@ -146,9 +145,9 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         }
 
         /// <summary>
-        /// The Presenter resolves through <c>card.TitleKey</c> and the Editor validator checks
-        /// the table through the same properties. If they ever diverged, the validator would
-        /// confirm entries the game never asks for — a green menu item and blank text on
+        /// The Presenter resolves through <c>card.TitleKey</c> and the content tests check
+        /// the table through the same properties. If they ever diverged, the content tests would
+        /// confirm entries the game never asks for — a passing test and blank text on
         /// screen. This pins them together.
         /// </summary>
         [Test]
@@ -428,7 +427,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             int arrivals = 0;
             _presenter.OnCardArrived += () => arrivals++;
 
-            // The fixture's PopupManager has no registry, so opening the popup throws — loudly,
+            // The fixture's PopupSystem has no registry, so opening the popup throws — loudly,
             // as a setup mistake should. Expect that rather than let it fail the run.
             LogAssert.Expect(LogType.Exception, new Regex("No popup registry"));
             _presenter.OnCrystalRefillRequested().Forget();

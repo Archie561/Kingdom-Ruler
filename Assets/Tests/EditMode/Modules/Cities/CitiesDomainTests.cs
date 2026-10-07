@@ -2,8 +2,8 @@ using System;
 using NUnit.Framework;
 using UnityEngine;
 using System.Collections.Generic;
-using KingdomRuler.Core;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Events;
+using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Modules.Cities.Domain;
 using KingdomRuler.Modules.Cities;
 

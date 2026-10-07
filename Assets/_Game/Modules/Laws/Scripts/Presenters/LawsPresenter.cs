@@ -1,12 +1,14 @@
 using System;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
-using KingdomRuler.Core;
-using KingdomRuler.Shared.Ledger;
-using KingdomRuler.Shared.Popups;
-using KingdomRuler.Shared.Popups.Confirm;
+using KingdomRuler.Systems.Events;
+using KingdomRuler.Systems.Ledger;
+using KingdomRuler.Systems.Popups;
+using KingdomRuler.Systems.Popups.Confirm;
 using KingdomRuler.Shared.Text;
-using KingdomRuler.Shared.Services;
+using KingdomRuler.Systems.Audio;
+using KingdomRuler.Systems.Haptics;
+using KingdomRuler.Systems.Localization;
 
 namespace KingdomRuler.Modules.Laws.Presenters
 {
@@ -30,7 +32,7 @@ namespace KingdomRuler.Modules.Laws.Presenters
         // No table names are declared here, deliberately. Each one is owned by the type whose
         // text it holds — LawCardDefinition for card content, CharacteristicRegistry for
         // characteristic names — together with the key derivation, so the Presenter and the
-        // Editor validators resolve through one definition instead of matching copies.
+        // content tests resolve through one definition instead of matching copies.
         // See ARCHITECTURE.md §2.
         //
         // LawsUITable appears nowhere in code: this screen's chrome is resolved by
@@ -53,7 +55,7 @@ namespace KingdomRuler.Modules.Laws.Presenters
         private readonly IHapticService _haptics;
         private readonly ILocalizationService   _localization;
         private readonly CharacteristicRegistry _characteristics;
-        private readonly PopupManager           _popups;
+        private readonly PopupSystem           _popups;
 
         /// <summary>Whether a card was active as of the last notification, to spot arrivals.</summary>
         private bool _hadActiveCard;
@@ -160,7 +162,7 @@ namespace KingdomRuler.Modules.Laws.Presenters
             IHapticService haptics,
             ILocalizationService   localization,
             CharacteristicRegistry characteristics,
-            PopupManager           popups)
+            PopupSystem           popups)
         {
             _manager  = manager  ?? throw new ArgumentNullException(nameof(manager));
             _ledger   = ledger   ?? throw new ArgumentNullException(nameof(ledger));
@@ -175,7 +177,7 @@ namespace KingdomRuler.Modules.Laws.Presenters
             if (characteristics == null) throw new ArgumentNullException(nameof(characteristics));
             _characteristics = characteristics;
 
-            // Explicit == null: PopupManager is a UnityEngine.Object, and ?? skips Unity's
+            // Explicit == null: PopupSystem is a UnityEngine.Object, and ?? skips Unity's
             // overloaded equality, so a destroyed manager would slip through.
             if (popups == null) throw new ArgumentNullException(nameof(popups));
             _popups = popups;

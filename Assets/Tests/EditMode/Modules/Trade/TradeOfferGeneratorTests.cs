@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Modules.Trade.Domain;
 
 namespace KingdomRuler.Tests.EditMode.Modules.Trade

@@ -1,5 +1,5 @@
 using System;
-using KingdomRuler.Shared.Ledger;
+using KingdomRuler.Systems.Ledger;
 
 namespace KingdomRuler.Modules.RandomOccurrences.Domain
 {
