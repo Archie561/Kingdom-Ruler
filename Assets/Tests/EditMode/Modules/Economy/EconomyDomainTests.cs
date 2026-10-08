@@ -14,6 +14,11 @@ namespace KingdomRuler.Tests.EditMode.Modules.Economy
     {
         public DateTime UtcNow { get; set; } = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         public void Advance(TimeSpan duration) => UtcNow += duration;
+
+        public event Action<DateTime> Ticked;
+
+        /// <summary>What GameClock does four times a second: tell every subscriber the time.</summary>
+        public void Tick() => Ticked?.Invoke(UtcNow);
     }
 
     [TestFixture]
@@ -170,7 +175,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Economy
             _manager.BuyBusiness("quarry");
             
             _clock.Advance(TimeSpan.FromMinutes(10));
-            _manager.ProcessAccrual();
+            _manager.AdvanceTo(_clock.UtcNow);
             
             var collected = _manager.CollectGold("quarry");
             Assert.AreEqual(100, collected);
@@ -183,7 +188,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Economy
             _manager.BuyBusiness("quarry");
             
             _clock.Advance(TimeSpan.FromMinutes(10));
-            _manager.ProcessAccrual();
+            _manager.AdvanceTo(_clock.UtcNow);
             _manager.CollectGold("quarry");
             
             Assert.AreEqual(100, _ledger.Gold);
@@ -204,14 +209,28 @@ namespace KingdomRuler.Tests.EditMode.Modules.Economy
         }
 
         [Test]
-        public void ProcessAccrual_UpdatesStoredGold()
+        public void AdvanceTo_UpdatesStoredGold()
         {
             _ledger.AddGold(100);
             _manager.BuyBusiness("quarry");
             
             _clock.Advance(TimeSpan.FromMinutes(5));
-            _manager.ProcessAccrual();
-            
+            _manager.AdvanceTo(_clock.UtcNow);
+
+            Assert.AreEqual(50, _manager.GetStoredGold("quarry"));
+        }
+
+        [Test]
+        public void AClockTick_FillsStorage()
+        {
+            // Before the game clock nothing ticked this module, so storage only filled at load
+            // or on collect. The manager now subscribes itself.
+            _ledger.AddGold(100);
+            _manager.BuyBusiness("quarry");
+
+            _clock.Advance(TimeSpan.FromMinutes(5));
+            _clock.Tick();
+
             Assert.AreEqual(50, _manager.GetStoredGold("quarry"));
         }
     }

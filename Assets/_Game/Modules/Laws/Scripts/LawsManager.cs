@@ -86,6 +86,10 @@ namespace KingdomRuler.Modules.Laws
 
             _deck  = new ShuffleBagDeck(rng);
             _slots = new ReplenishmentSlots();
+
+            // No unsubscribe: the manager and the clock are root-scope singletons and live
+            // exactly as long as each other.
+            _clock.Ticked += AdvanceTo;
         }
 
         // ── Initialization ────────────────────────────────────────────────────────
@@ -103,12 +107,12 @@ namespace KingdomRuler.Modules.Laws
         // ── Replenishment ─────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Settle the replenishment timers against the clock. Driven by
-        /// <c>AccrualDriver</c>; cheap to call repeatedly.
+        /// Settle the replenishment timers up to <paramref name="now"/>. Called on every clock
+        /// tick, and cheap when nothing has matured.
         /// </summary>
-        public void ProcessReplenishment()
+        public void AdvanceTo(DateTime now)
         {
-            int matured = _slots.Advance(_clock.UtcNow, _config.CardReplenishTimeSeconds);
+            int matured = _slots.Advance(now, _config.CardReplenishTimeSeconds);
             if (matured <= 0) return;
 
             // Only one card is ever displayed, so however many timers matured, at most one
@@ -254,7 +258,8 @@ namespace KingdomRuler.Modules.Laws
                 ParseUtcOr(dto.NextReplenishDueUtc,
                            _clock.UtcNow.AddSeconds(_config.CardReplenishTimeSeconds)));
 
-            ProcessReplenishment();
+            // Offline catch-up: settle everything that matured while the app was closed.
+            AdvanceTo(_clock.UtcNow);
         }
 
         /// <summary>Capture current state for saving.</summary>

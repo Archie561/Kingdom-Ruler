@@ -25,6 +25,10 @@ namespace KingdomRuler.Modules.Economy
             _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
             _clock = clock ?? throw new ArgumentNullException(nameof(clock));
             _config = config ?? throw new ArgumentNullException(nameof(config));
+
+            // No unsubscribe: the manager and the clock are root-scope singletons and live
+            // exactly as long as each other.
+            _clock.Ticked += AdvanceTo;
         }
 
         public void InitializeBusinesses(IEnumerable<BusinessDefinition> allBusinesses)
@@ -65,7 +69,7 @@ namespace KingdomRuler.Modules.Economy
             if (!_ledger.SpendGold(cost)) return false;
 
             // Accrue before changing count so we don't lose stored gold
-            AccrueBusiness(businessId);
+            AccrueBusiness(businessId, _clock.UtcNow);
             state.CountOwned++;
             return true;
         }
@@ -73,7 +77,7 @@ namespace KingdomRuler.Modules.Economy
         /// <summary>Collect stored gold from a business into the ledger.</summary>
         public long CollectGold(string businessId)
         {
-            AccrueBusiness(businessId);
+            AccrueBusiness(businessId, _clock.UtcNow);
             if (!_businessStates.TryGetValue(businessId, out var state)) return 0;
 
             long collected = state.StoredGold;
@@ -84,14 +88,17 @@ namespace KingdomRuler.Modules.Economy
             return collected;
         }
 
-        /// <summary>Process offline accrual for all businesses.</summary>
-        public void ProcessAccrual()
+        /// <summary>
+        /// Accrue every business's stored gold up to <paramref name="now"/>. Called on every clock
+        /// tick, so storage fills while the player watches; also the offline catch-up on load.
+        /// </summary>
+        public void AdvanceTo(DateTime now)
         {
             foreach (var kvp in _businessStates)
-                AccrueBusiness(kvp.Key);
+                AccrueBusiness(kvp.Key, now);
         }
 
-        private void AccrueBusiness(string businessId)
+        private void AccrueBusiness(string businessId, DateTime now)
         {
             if (!_definitions.TryGetValue(businessId, out var def)) return;
             if (!_businessStates.TryGetValue(businessId, out var state)) return;
@@ -99,8 +106,8 @@ namespace KingdomRuler.Modules.Economy
 
             state.StoredGold = BusinessAccrualCalculator.Accrue(
                 state.StoredGold, state.CountOwned, def.BaseGoldPerMinute,
-                state.LastAccruedUtc, _clock.UtcNow);
-            state.LastAccruedUtc = _clock.UtcNow;
+                state.LastAccruedUtc, now);
+            state.LastAccruedUtc = now;
         }
 
         // --- Save/Load ---
@@ -134,7 +141,7 @@ namespace KingdomRuler.Modules.Economy
                         ? parsed : _clock.UtcNow;
                 }
             }
-            ProcessAccrual();
+            AdvanceTo(_clock.UtcNow);
         }
 
         private sealed class BusinessRuntimeState

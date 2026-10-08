@@ -15,6 +15,11 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
     {
         public DateTime UtcNow { get; set; } = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         public void Advance(TimeSpan duration) => UtcNow += duration;
+
+        public event Action<DateTime> Ticked;
+
+        /// <summary>What GameClock does four times a second: tell every subscriber the time.</summary>
+        public void Tick() => Ticked?.Invoke(UtcNow);
     }
 
     // ── LawsManagerTests ──────────────────────────────────────────────────────────
@@ -72,7 +77,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _config.AllCards = new[] { card };
             _manager.InitializeCardPool();
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
             return card;
         }
 
@@ -139,7 +144,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             // Advance enough for all 8 slots to fill.
             _clock.Advance(TimeSpan.FromSeconds(120 * 8));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             // 1 active, 7 ready, 0 replenishing.
             Assert.IsTrue(_manager.HasActiveCard);
@@ -162,7 +167,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             // Only one replenishment cycle — 1 active, 0 ready, 7 replenishing.
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.IsTrue(_manager.HasActiveCard);
             Assert.AreEqual(7, _manager.CardsReplenishing);
 
@@ -173,10 +178,10 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             Assert.AreEqual(8, _manager.CardsReplenishing);
         }
 
-        // ── ProcessReplenishment ──────────────────────────────────────────────────
+        // ── AdvanceTo ──────────────────────────────────────────────────
 
         [Test]
-        public void ProcessReplenishment_AddsActiveCardAfterEnoughTime()
+        public void AdvanceTo_AddsActiveCardAfterEnoughTime()
         {
             var card = CreateCard("card");
             _config.AllCards = new[] { card };
@@ -185,11 +190,25 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             Assert.IsFalse(_manager.HasActiveCard);
 
             _clock.Advance(TimeSpan.FromSeconds(119));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.IsFalse(_manager.HasActiveCard);
 
             _clock.Advance(TimeSpan.FromSeconds(1));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
+            Assert.IsTrue(_manager.HasActiveCard);
+        }
+
+        [Test]
+        public void AClockTick_BringsTheNextCard()
+        {
+            // The manager subscribes itself to the clock — nothing else has to remember to.
+            var card = CreateCard("card");
+            _config.AllCards = new[] { card };
+            _manager.InitializeCardPool();
+
+            _clock.Advance(TimeSpan.FromSeconds(120));
+            _clock.Tick();
+
             Assert.IsTrue(_manager.HasActiveCard);
         }
 
@@ -201,7 +220,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         /// and timer stale until the player's next swipe.
         /// </summary>
         [Test]
-        public void ProcessReplenishment_SlotCompletesWhileCardHeld_RaisesQueueChanged()
+        public void AdvanceTo_SlotCompletesWhileCardHeld_RaisesQueueChanged()
         {
             var card = CreateCard("card");
             _config.AllCards = new[] { card };
@@ -209,7 +228,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             // Fill the active slot first.
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.IsTrue(_manager.HasActiveCard, "Precondition: a card is active.");
             Assert.AreEqual(1, _manager.AvailableCardCount, "Precondition: only the active card.");
 
@@ -219,7 +238,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _manager.QueueChanged += () => published++;
 
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.AreEqual(2, _manager.AvailableCardCount, "A slot matured into a held card.");
             Assert.IsTrue(_manager.HasActiveCard, "The active card is unchanged.");
@@ -228,7 +247,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         }
 
         [Test]
-        public void ProcessReplenishment_LastSlotCompletes_AnnouncesTimerStopped()
+        public void AdvanceTo_LastSlotCompletes_AnnouncesTimerStopped()
         {
             var card = CreateCard("card");
             _config.AllCards = new[] { card };
@@ -236,14 +255,14 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             // Draw the active card, then let 6 of the remaining 7 slots mature.
             _clock.Advance(TimeSpan.FromSeconds(120 * 7));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.AreEqual(1, _manager.CardsReplenishing, "Precondition: one slot still running.");
 
             int published = 0;
             _manager.QueueChanged += () => published++;
 
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.AreEqual(0, _manager.CardsReplenishing,
                 "The countdown has stopped — the timer label should hide.");
@@ -252,7 +271,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         }
 
         [Test]
-        public void ProcessReplenishment_NothingMatured_DoesNotPublish()
+        public void AdvanceTo_NothingMatured_DoesNotPublish()
         {
             var card = CreateCard("card");
             _config.AllCards = new[] { card };
@@ -262,13 +281,13 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _manager.QueueChanged += () => published++;
 
             _clock.Advance(TimeSpan.FromSeconds(30)); // well short of one slot
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.AreEqual(0, published, "No slot completed, so there is nothing to announce.");
         }
 
         [Test]
-        public void ProcessReplenishment_MultipleElapsedCycles_OnlyDrawsOneActiveCard()
+        public void AdvanceTo_MultipleElapsedCycles_OnlyDrawsOneActiveCard()
         {
             var card = CreateCard("card");
             _config.AllCards = new[] { card };
@@ -276,20 +295,20 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             // 3 slots worth of time — but only 1 active card can be shown.
             _clock.Advance(TimeSpan.FromSeconds(360));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.IsTrue(_manager.HasActiveCard);
             Assert.AreEqual(5, _manager.CardsReplenishing); // 8 - 1 active - 2 ready = 5 replenishing
         }
 
         [Test]
-        public void ProcessReplenishment_CapsAtMaxReplenishingSlots()
+        public void AdvanceTo_CapsAtMaxReplenishingSlots()
         {
             var card = CreateCard("card");
             _config.AllCards = new[] { card };
             _manager.InitializeCardPool();
 
             _clock.Advance(TimeSpan.FromSeconds(12000));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             // All 8 slots done: the player holds the full 8 (1 active + 7 behind it).
             Assert.IsTrue(_manager.HasActiveCard);
@@ -298,20 +317,20 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         }
 
         [Test]
-        public void ProcessReplenishment_NoCardsReplenishing_DoesNothing()
+        public void AdvanceTo_NoCardsReplenishing_DoesNothing()
         {
             var card = CreateCard("card");
             _config.AllCards = new[] { card };
             _manager.InitializeCardPool();
 
             _clock.Advance(TimeSpan.FromSeconds(1200));
-            _manager.ProcessReplenishment(); // fills all slots
+            _manager.AdvanceTo(_clock.UtcNow); // fills all slots
 
             bool hadCardBefore = _manager.HasActiveCard;
             int repBefore  = _manager.CardsReplenishing;
 
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.AreEqual(hadCardBefore, _manager.HasActiveCard);
             Assert.AreEqual(repBefore,  _manager.CardsReplenishing);
@@ -359,7 +378,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _manager.InitializeCardPool();
 
             _clock.Advance(TimeSpan.FromSeconds(1200));
-            _manager.ProcessReplenishment(); // all slots filled
+            _manager.AdvanceTo(_clock.UtcNow); // all slots filled
 
             _ledger.AddCrystals(100);
             Assert.IsFalse(_manager.RefillWithCrystals());
@@ -401,7 +420,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _manager.InitializeCardPool();
 
             _clock.Advance(TimeSpan.FromSeconds(20));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.AreEqual(100f, _manager.GetSecondsUntilNextCard(), 0.01f);
         }
@@ -414,7 +433,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _manager.InitializeCardPool();
 
             _clock.Advance(TimeSpan.FromSeconds(1200));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.AreEqual(0f, _manager.GetSecondsUntilNextCard());
         }
@@ -437,7 +456,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             {
                 // Advance one slot per iteration to get cards one-by-one.
                 _clock.Advance(TimeSpan.FromSeconds(120));
-                _manager.ProcessReplenishment();
+                _manager.AdvanceTo(_clock.UtcNow);
 
                 // Resolve the active card to make room for the next.
                 var active = _manager.ActiveCard;
@@ -468,7 +487,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             for (int i = 0; i < 2; i++)
             {
                 _clock.Advance(TimeSpan.FromSeconds(120));
-                _manager.ProcessReplenishment();
+                _manager.AdvanceTo(_clock.UtcNow);
                 var active = _manager.ActiveCard;
                 if (active != null)
                 {
@@ -481,7 +500,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             // Draw the first card of the new cycle (cycle 2).
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
             var firstOfNewCycle = _manager.ActiveCard;
 
             Assert.IsNotNull(firstOfNewCycle, "First card of new cycle was null.");
@@ -503,14 +522,14 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             for (int i = 0; i < n; i++)
             {
                 _clock.Advance(TimeSpan.FromSeconds(120));
-                _manager.ProcessReplenishment();
+                _manager.AdvanceTo(_clock.UtcNow);
                 var active = _manager.ActiveCard;
                 if (active != null) _manager.ResolveCard(active.CardId, true);
             }
 
             // Second cycle: can still draw.
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.IsNotNull(_manager.ActiveCard,
                 "No card available after deck exhaustion and reshuffle.");
         }
@@ -562,7 +581,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             // Draw one card.
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
             _manager.ResolveCard(_manager.ActiveCard.CardId, true);
 
             var dto = _manager.ToDto();

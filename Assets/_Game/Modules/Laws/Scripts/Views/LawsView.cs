@@ -18,7 +18,7 @@ namespace KingdomRuler.Modules.Laws.Views
     ///   - Subscribes to presenter events; drives sub-views on state changes.
     ///   - Forwards user intents (swipe, buttons) to the Presenter.
     ///   - Renders the countdown. It does NOT advance it: the replenishment timer is
-    ///     driven by AccrualDriver so the mechanic keeps running whether or not this
+    ///     driven by the game clock so the mechanic keeps running whether or not this
     ///     screen exists (ARCHITECTURE.md §4.5). This View is display-only.
     ///
     /// Animation contract (CRITICAL — no business logic gated on animations):
@@ -145,7 +145,7 @@ namespace KingdomRuler.Modules.Laws.Views
 
         private void Update()
         {
-            // Display only. The replenishment timer itself is advanced by AccrualDriver,
+            // Display only. The replenishment timer itself is advanced by the game clock,
             // not from here — the mechanic must keep running whether or not this screen
             // exists (ARCHITECTURE.md §4.5).
             if (!_presenter.IsReplenishing) return;

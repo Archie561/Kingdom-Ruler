@@ -9,7 +9,7 @@ namespace KingdomRuler.Systems.Save
     /// Only the active card and the remaining shuffle-bag deck are persisted. The queue
     /// behind the active card has no card identities — cards are drawn when shown, not
     /// when their timer matures — so it is recovered from a count plus a deadline, and
-    /// ProcessReplenishment() handles offline catch-up on load.
+    /// LawsManager.AdvanceTo handles offline catch-up on load.
     /// </summary>
     public sealed class LawsStateDto
     {

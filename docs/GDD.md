@@ -95,7 +95,8 @@ left = reject) plus a compact readout of all 6 characteristic bars/levels.
 - **Points required to reach level *N* is a formula, not a lookup table:**
   `required(N) = round(base × growth^(N-1) / roundTo) × roundTo`, with
   **[ASSUMED — CONFIRM]** `base = 100`, `growth = 1.35`, `roundTo = 10`. The three coefficients are
-  designer-editable on a config asset so the curve can be retuned without a code change; there is
+  constants in the Ledger's own code (`CharacteristicLevelingCurve`), so retuning the curve is a code
+  change — a deliberate trade for having the rule live with the only thing that applies it. There is
   deliberately **no** per-level value array or `AnimationCurve` — a formula keeps every level
   defined, including ones no designer has reached yet. Per-characteristic coefficient overrides can
   be layered on later if the curve needs to differ per stat.
@@ -209,7 +210,7 @@ here.
 
 > **Naming.** This mechanic is called *Random Occurrences*, not "Random Events", throughout the
 > codebase and these docs. "Event" is reserved for messages on the `Systems/Events` pub/sub
-> (`CharacteristicLeveledUp`, `GoldChanged`, …) — see `ARCHITECTURE.md` §4.2. The two meanings
+> (`CharacteristicLeveledUpEvent`, `GoldChangedEvent`, …) — see `ARCHITECTURE.md` §4.2. The two meanings
 > collided constantly in code (`EventsManager` vs. event-bus events), so the mechanic gets the
 > distinct word.
 
@@ -266,7 +267,7 @@ Bottom navigation, 5 tabs:
 5. **Shop** (§11)
 
 Tapping a tab shows that screen and hides the others; there is no back stack and no nested
-navigation. Switching tabs never pauses a mechanic — every timer runs off a tick driver and a
+navigation. Switching tabs never pauses a mechanic — every timer runs off the game clock and a
 stored timestamp (`ARCHITECTURE.md` §4.5), so the screen the player returns to is already
 correct. A screen the player is not looking at stays silent, though: passive sounds are gated on
 visibility, so a law card arriving on another tab updates the queue without making a noise.

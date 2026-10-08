@@ -239,23 +239,29 @@ their module.
 Assets/
   _Game/
     Core/
-      Scripts/
-        Bootstrap/          # Bootstrap scene entry point, root VContainer LifetimeScope,
-                            # GameStateCoordinator and AccrualDriver — the classes that
-                            # legitimately know every module (§4.5). Namespace KingdomRuler.Core.
+      Bootstrap/
+        Scripts/            # Bootstrap scene entry point, root VContainer LifetimeScope and
+                            # GameStateCoordinator — the classes that legitimately know every
+                            # module (§4.1). Namespace KingdomRuler.Core.
     Systems/                # assembly KingdomRuler.Systems
       Events/               # EventBus — the pub/sub MECHANISM only, no message types (§4.2).
                             # Named Events, not EventBus: a namespace may not share its
                             # class's name, or C# resolves `EventBus` to the namespace.
       Ledger/
-        Scripts/            # KingdomLedger (the one source of truth) + state types +
-                            # leveling math (the points-required formula) — shared by any
-                            # module that mutates a characteristic (Laws today, Random
-                            # Occurrences later)
-          Events/           # cross-module ledger events — see §4.2 tier 2
-        ScriptableObjects/  # starting-values config + leveling-curve coefficients
-          Characteristics/  # one CharacteristicDefinition per characteristic, plus the
-                            # CharacteristicRegistry that indexes them — see §4.4
+        Scripts/            # KingdomLedger (the one source of truth) at the root, then one
+                            # folder per game resource holding everything about it — type,
+                            # state, definition, registry and its rules. All one namespace,
+                            # KingdomRuler.Systems.Ledger: the folders organize, they do not
+                            # split the namespace (every caller would gain a using for nothing).
+          Characteristics/  # …incl. CharacteristicLevelingCurve (the points-required formula)
+                            # and CharacteristicLeveledUpEvent
+          TradeResources/   # …incl. TradeResourceChangedEvent
+          Gold/             # GoldChangedEvent — the rest of gold still lives in KingdomLedger
+          Crystals/         # CrystalsChangedEvent — likewise
+                            # Each resource's bus event lives in its folder (§4.2 tier 2).
+        ScriptableObjects/  # mirrors Scripts/: one folder per resource
+          Characteristics/  # the CharacteristicRegistry + one CharacteristicDefinition each
+          TradeResources/   # the TradeResourceRegistry + one TradeResourceDefinition each
       Popups/               # the popup system — see §4.7
         Scripts/
           Core/             # the mechanism: PopupSystem, popup base classes, registry
@@ -275,7 +281,8 @@ Assets/
       Haptics/
         Scripts/
       Clock/
-        Scripts/            # IClock abstraction — makes time-based logic testable
+        Scripts/            # IClock + GameClock — the time, and the 4 Hz tick every
+                            # time-driven system subscribes to (§4.5)
     Shared/                 # assembly KingdomRuler.Shared
       Fonts/
       UI/                   # UI atoms: buttons, toasts, currency pips
@@ -445,18 +452,33 @@ Event *types* live in one of three places, by who is allowed to subscribe:
 **Tier 1 — `Systems/Events/`: the mechanism only.** `EventBus.cs` and nothing else. No message types
 live here.
 
-**Tier 2 — `Systems/Ledger/Scripts/Events/`: cross-module ledger events.**
-`CharacteristicLeveledUp`, `ResourceChanged`, `GoldChanged`, `CrystalsChanged`, `CityPurchased`,
-`RegionCompleted`. These describe changes to the one shared source of truth, so any module may
-subscribe — this is the tier the Random Occurrences mechanic reaches across modules through.
+**Tier 2 — in the Ledger, next to the resource each one describes: cross-module ledger events.**
 
-They live beside the Ledger rather than beside the bus because they are *about* the Ledger: they
-carry `CharacteristicType` / `TradeResourceType`, and whoever changes how a characteristic levels
-should find the events that announce it in the same folder. The bus and the Ledger share the
-`KingdomRuler.Systems` assembly, so this is a choice of folder, not an assembly constraint — which
-is exactly why tier 1's "mechanism only" rule has to be stated rather than enforced. (Before the
-Systems split, the bus sat in a separate `KingdomRuler.Core` assembly that the Ledger referenced,
-and putting these events there would have been an assembly cycle.)
+| Event | Folder (`Systems/Ledger/Scripts/…`) |
+|---|---|
+| `CharacteristicLeveledUpEvent` | `Characteristics/` |
+| `TradeResourceChangedEvent` | `TradeResources/` |
+| `GoldChangedEvent` | `Gold/` |
+| `CrystalsChangedEvent` | `Crystals/` |
+
+These describe changes to the one shared source of truth, so any module may subscribe — this is the
+tier the Random Occurrences mechanic reaches across modules through. Each sits with its resource
+because it is *about* that resource: whoever changes how a characteristic levels finds the event
+that announces it in the same folder (§3, "one folder per resource"). The bus and the Ledger share
+the `KingdomRuler.Systems` assembly, so this is a choice of folder, not an assembly constraint —
+which is exactly why tier 1's "mechanism only" rule has to be stated rather than enforced.
+
+**Every bus message type ends in `Event`.** Beside definitions, states and registries in a resource
+folder, the name is the only thing that marks a type as a message on the bus — and it reinforces
+that "event" means exactly that here. Call sites still read as a sentence:
+`Subscribe<CharacteristicLeveledUpEvent>(…)`. (A plain C# `event Action` on a class is not a bus
+message and keeps a plain name, like `LawsManager.QueueChanged`.)
+
+**A cross-module event that is not about a Ledger resource has no home yet**, deliberately. Two such
+types, `CityPurchased` and `RegionCompleted`, sat in a shared `Ledger/Events/` folder with no
+publisher and no subscriber, and were deleted. Modules cannot reference each other, so the first real
+one — say, Random Occurrences reacting to a city purchase — has to live in `Systems/`; it decides
+where then, rather than a folder existing for it now.
 
 **Tier 3 — `Modules/<X>/Scripts/Events/`: module-local events.** Namespace
 `KingdomRuler.Modules.<X>`. Published and subscribed entirely inside one module. If something outside
@@ -491,14 +513,23 @@ crystal buy-up divisor), but the curve itself is Ledger-owned.
 **The curve is a formula, not a table, and the Ledger holds it — callers do not pass it in.**
 Concretely:
 
-- `LevelingCurve` is a plain C# value type in `Systems/Ledger` holding `basePoints`, `growthFactor`,
-  and `roundToNearest`, with the formula from `GDD.md` §6. Keeping it a struct rather than a
-  `ScriptableObject` keeps `KingdomLedger` free of `UnityEngine` types and trivially unit-testable.
-- A `LevelingConfig` SO in `Systems/Ledger/ScriptableObjects/` holds the designer-editable
-  coefficients and produces that struct. It validates in `OnValidate` — a non-positive base or
-  growth would make the level-up loop non-terminating.
-- `KingdomLedger` is constructed with the curve. `AddCharacteristicPoints` and
-  `ReduceCharacteristicPoints` take `(type, points)` only.
+- `CharacteristicLevelingCurve` (`Systems/Ledger/Scripts/Characteristics/`) is a **static class**:
+  three constants (`BasePoints`, `GrowthFactor`, `RoundToNearest`) and the `GDD.md` §6 formula,
+  `PointsRequired(level)`. These are rules of the Ledger, so they live in its code — nothing is
+  wired, injected or configured, and retuning is a code change (`GDD.md` §6 says so).
+- `PointsRequired` is **always strictly positive** — load-bearing, because the Ledger's level-up
+  loop would otherwise never terminate. With fixed positive constants that holds by construction,
+  and a test checks it across 200 levels so an edit to the constants cannot break it unnoticed.
+- Only `KingdomLedger` calls it. Callers ask the Ledger (`PointsRequiredForLevel`,
+  `PointsRemainingForNextLevel`), and `AddCharacteristicPoints` / `ReduceCharacteristicPoints` take
+  `(type, points)` only — no caller can supply a curve of its own.
+
+How it got here, so neither step is reintroduced: first a plain-C# `LevelingCurve` struct produced
+by a `LevelingConfig` asset (to keep `UnityEngine` types out of the Ledger), then a single
+`CharacteristicLevelingCurve` asset wired through the bootstrapper. Both cost wiring — a conversion
+factory, a bootstrapper field, a test-only Ledger constructor, runtime validation of
+designer-entered values — for something only the Ledger reads. Constants in its own code need none
+of it.
 
 The anti-pattern this replaces, and the reason it's spelled out: callers used to pass a
 `Func<int, float>` per call. Laws built one from its own config while the occurrences module shipped
@@ -527,7 +558,7 @@ valuation). Almost none of them belong in `Systems/Ledger`. Ask one question:
   Occurrences both award points) and the trade-resource regen rate derived from warehouse capacity.
 - **No → the module's own `Domain/`.** The math produces a number *that module* then asks the Ledger
   to move. The Ledger neither knows nor cares how it was derived, and nothing else computes it.
-  `WarehouseUpgradeCalculator`, `BusinessCostCalculator`, `BusinessAccrualCalculator`,
+  `TradeConfig`'s warehouse curves, `BusinessCostCalculator`, `BusinessAccrualCalculator`,
   `CityAffordabilityChecker` and `CrystalBuyUpCalculator` are all this kind.
 
 Worked example: the leveling curve is Ledger-owned because two mechanics award characteristic points
@@ -598,34 +629,64 @@ system computes `elapsed = now - lastUpdatedUtc` **once** and fast-forwards stat
 accordingly (capped where a cap applies). This must not be simulated tick-by-tick — a
 player who was away 10 hours shouldn't cause 10 hours of simulated frames.
 
-**The Manager owns its timer; the View only displays it.** A timer must never be advanced from a
-View's `Update()` — that couples the mechanic's progress to a UI object being alive and to which tab
-the player happens to be on. Drive accrual from a VContainer entry point (`ITickable`) plus an
-application-focus/pause hook, and persist the timestamp so the timer survives the app closing. A
-Presenter may read remaining time to render a countdown; it must not be what makes the countdown
-advance.
+**The Manager owns its timer and its schedule; the View only displays it.** A timer must never be
+advanced from a View's `Update()` — that couples the mechanic's progress to a UI object being alive
+and to which tab the player happens to be on. Persist the timestamp so the timer survives the app
+closing. A Presenter may read remaining time to render a countdown; it must not be what makes the
+countdown advance. A UI *sound* tied to a timer firing (a law card arriving, say) should only play
+when that screen is open; the state change itself happens either way.
 
-Pump these at a coarse interval (a few times a second), not every frame — these are minute-scale
-timers and per-frame work on them is wasted battery. Note also that a UI *sound* tied to a timer
-firing (a law card arriving, say) should only play when that screen is actually open; the state
-change itself still happens either way, so the screen is correct when the player returns to it.
+**The game clock ticks; time-driven systems subscribe.** `GameClock` (`Systems/Clock`) is the
+`IClock` every manager already receives. Four times a second, on unscaled time, it raises
+`Ticked(now)`, and each time-driven system settles itself to that `now`:
 
-**One driver pumps everything: `AccrualDriver` in `Core/Bootstrap`.** It replaced the per-module
-`LawsTickDriver` once Trade arrived needing two things pumped (its offer timer *and* Ledger
-warehouse regen). It lives beside `GameStateCoordinator` for the same stated reason — it knows
-every module, so it belongs with the composition root rather than inside any one of them.
+| Subscriber | Subscribed by | Settles |
+|---|---|---|
+| `LawsManager.AdvanceTo` | its own constructor | the replenishment slots |
+| `TradeManager.AdvanceTo` | its own constructor | the offer refresh |
+| `EconomyManager.AdvanceTo` | its own constructor | business storage |
+| `RandomOccurrenceManager.AdvanceTo` | its own constructor | occurrence spawning |
+| `KingdomLedger.AccruePassiveResourceRegen` | `GameBootstrapper` — the Ledger deliberately holds no clock | warehouse regen |
 
-The **order inside its `Tick` is deliberate and written down**: regeneration settles before any
-module's timer, so nothing reacts to a matured timer against stale amounts. That ordering is the
-whole point of merging the drivers. With an `ITickable` per system the relative order would be
-decided by VContainer's registration order, and a correctness dependency would live implicitly in
-the bootstrapper — which is exactly the class of bug that produced the old
-`GameStateCoordinator` / `TradeManager.LoadFromDto` capacity fight.
+**Adding a time-driven module is one line in its own constructor**, `_clock.Ticked += AdvanceTo;`.
+The clock knows none of its subscribers. This replaced `AccrualDriver`, a class in `Core` that
+called each manager by name — and had silently missed the two modules added after it: Economy's
+storage only filled on load and on collect, and occurrence letters only arrived at app start.
 
-Accepted cost: modules can no longer tune their own tick rate. Both want ~4 Hz today. **The
-trigger to split back out is a module that genuinely needs a different cadence**, and the trigger
-to reconsider the single driver at all was the *second* one — so if a third arrives, this stays
-as is.
+**Order between subscribers does not matter, and that is a rule rather than luck.** No tick reads
+another system's result: the offer refresh does not read amounts, and neither does law
+replenishment. **Whoever decides from a trade amount, or changes a capacity, settles regen
+itself first** — `AcceptOffer`, both warehouse upgrades, and `TradeManager.LoadFromDto`, which is
+the first moment capacities are final at load. Correctness therefore never depends on whether a
+tick happened to land first. (The old driver justified itself by fixing an order between regen
+and the timers; checked, that order protected nothing.)
+
+**A failing subscriber does not stop the others.** `GameClock` calls each one separately and logs
+an exception rather than letting it skip everyone after it — verified in Play mode with a
+deliberately throwing subscriber.
+
+**Subscribers never unsubscribe.** The managers and the clock are root-scope singletons with the
+same lifetime. A manager starts ticking once it is constructed; all of them are, at startup,
+because `GameStateCoordinator` needs them to load the save.
+
+**One rate, 4 Hz, for everything.** These are minute-scale timers, so per-frame work would be
+wasted battery (`GDD.md` §3). A subscriber that wanted less could count ticks; nothing does. UI in
+particular does not use the clock: a View polls its Presenter and redraws only when the displayed
+value changes, and popups refresh themselves (`docs/modules/Popups.md`). A slower "once a second"
+event was considered and rejected — its phase is arbitrary against a deadline, so a countdown
+driven by it would step unevenly and up to a second late. The tick rate also only decides how soon
+a change is *noticed*: every amount settles from its stored timestamp, so a slower tick (the Editor
+throttles unfocused) changes no result.
+
+**What it costs: nothing measurable.** Every system is ticked whether or not its screen is open,
+because GDD §13 says no mechanic pauses on another tab; each tick is a timestamp comparison until
+something is due. Measured in Play mode: a full tick, all five subscribers, takes ~1.3 µs in the
+Editor's Mono runtime (≈5 µs per second, against a 16 ms frame) and **allocates nothing** — no
+subscriber allocates in steady state, and `GameClock` keeps its subscribers in an array copied on
+subscribe rather than calling `GetInvocationList()` (~70 bytes) on every tick. While the app is in
+the background Unity runs no player loop, so there are no ticks at all; the first one after resume
+settles the absence. (Unity's Mono does not implement `GC.GetAllocatedBytesForCurrentThread` — it
+reports 0 for anything — so measure allocation by heap growth with the GC count held constant.)
 
 **No application focus/resume hook is needed, and its absence is deliberate.** Every system
 derives elapsed time from a stored UTC timestamp, so the first tick after the app returns settles
@@ -634,7 +695,7 @@ matching timestamp, so a tick that last ran a fraction of a second earlier persi
 stale pair that the next accrual covers exactly — no drift, no double-count.
 
 **Continuous drift is polled; discrete changes go on the bus.** `KingdomLedger.
-AccruePassiveResourceRegen` deliberately publishes **no** `ResourceChanged`: at 4 Hz across six
+AccruePassiveResourceRegen` deliberately publishes **no** `TradeResourceChangedEvent`: at 4 Hz across six
 resources that would be ~24 messages a second, forever, on every screen, to announce a delta of
 roughly a third of a thousandth of a warehouse — precisely the idle battery drain `GDD.md` §3
 forbids. The warehouse bars read the amount each frame and redraw only when the displayed value
@@ -934,7 +995,9 @@ instead; `docs/modules/Popups.md` §7 is the worked example.
   `KingdomRuler.Systems.Audio`, `KingdomRuler.Systems.Ledger`, `KingdomRuler.Shared.UI`,
   `KingdomRuler.Modules.Laws`, etc. A folder must not share its main class's name
   (`Systems/Events/EventBus.cs`, not `Systems/EventBus/EventBus.cs`): C# would resolve the
-  class name to the namespace inside every sibling namespace.
+  class name to the namespace inside every sibling namespace. One deliberate exception: the
+  Ledger's per-resource folders (`Characteristics/`, `TradeResources/`) all share
+  `KingdomRuler.Systems.Ledger` (§3).
 - PascalCase for types and public members, camelCase for locals/parameters, `_camelCase` for
   private fields.
 - One public type per file, file name matches type name.

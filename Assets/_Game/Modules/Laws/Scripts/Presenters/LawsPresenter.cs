@@ -184,10 +184,10 @@ namespace KingdomRuler.Modules.Laws.Presenters
 
             _hadActiveCard = _manager.HasActiveCard;
 
-            // CharacteristicLeveledUp is a cross-module ledger event, so it comes off the
+            // CharacteristicLeveledUpEvent is a cross-module ledger event, so it comes off the
             // bus. The queue change is Laws-internal, so it comes straight off the Manager
             // this Presenter already holds (ARCHITECTURE.md §4.2).
-            _eventBus.Subscribe<CharacteristicLeveledUp>(HandleCharacteristicLeveledUp);
+            _eventBus.Subscribe<CharacteristicLeveledUpEvent>(HandleCharacteristicLeveledUp);
             _manager.QueueChanged += HandleQueueChanged;
 
             // Everything handed to the View is resolved text, so a locale change — or
@@ -198,7 +198,7 @@ namespace KingdomRuler.Modules.Laws.Presenters
 
         public void Dispose()
         {
-            _eventBus.Unsubscribe<CharacteristicLeveledUp>(HandleCharacteristicLeveledUp);
+            _eventBus.Unsubscribe<CharacteristicLeveledUpEvent>(HandleCharacteristicLeveledUp);
             _manager.QueueChanged -= HandleQueueChanged;
             _localization.LocaleChanged -= NotifyStateChanged;
         }
@@ -359,7 +359,7 @@ namespace KingdomRuler.Modules.Laws.Presenters
             if (cardArrived) OnCardArrived?.Invoke();
         }
 
-        private void HandleCharacteristicLeveledUp(CharacteristicLeveledUp evt)
+        private void HandleCharacteristicLeveledUp(CharacteristicLeveledUpEvent evt)
         {
             _audio.PlaySfx(SfxIds.LevelUp);
             _haptics.TriggerLight();

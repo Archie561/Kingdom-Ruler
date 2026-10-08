@@ -14,6 +14,11 @@ namespace KingdomRuler.Tests.EditMode.Modules.RandomOccurrences
     {
         public DateTime UtcNow { get; set; } = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         public void Advance(TimeSpan duration) => UtcNow += duration;
+
+        public event Action<DateTime> Ticked;
+
+        /// <summary>What GameClock does four times a second: tell every subscriber the time.</summary>
+        public void Tick() => Ticked?.Invoke(UtcNow);
     }
 
     [TestFixture]
@@ -274,27 +279,37 @@ namespace KingdomRuler.Tests.EditMode.Modules.RandomOccurrences
         }
 
         [Test]
-        public void ProcessSpawning_AddsOccurrenceAfterInterval()
+        public void AdvanceTo_AddsOccurrenceAfterInterval()
         {
             Assert.AreEqual(0, _manager.PendingCount);
             _clock.Advance(TimeSpan.FromSeconds(3600));
-            _manager.ProcessSpawning();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.AreEqual(1, _manager.PendingCount);
         }
 
         [Test]
-        public void ProcessSpawning_CapsAtMaxPendingOccurrences()
+        public void AClockTick_DeliversAnOccurrence()
+        {
+            // Before the game clock nothing ticked this module, so letters only arrived at
+            // app start. The manager now subscribes itself.
+            _clock.Advance(TimeSpan.FromSeconds(3600));
+            _clock.Tick();
+            Assert.AreEqual(1, _manager.PendingCount);
+        }
+
+        [Test]
+        public void AdvanceTo_CapsAtMaxPendingOccurrences()
         {
             _clock.Advance(TimeSpan.FromSeconds(3600 * 10)); // 10 hours
-            _manager.ProcessSpawning();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.AreEqual(5, _manager.PendingCount); // Capped at MaxPendingOccurrences=5
         }
 
         [Test]
-        public void ProcessSpawning_HandlesMultipleIntervalsOffline()
+        public void AdvanceTo_HandlesMultipleIntervalsOffline()
         {
             _clock.Advance(TimeSpan.FromSeconds(3600 * 3)); // 3 hours
-            _manager.ProcessSpawning();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.AreEqual(3, _manager.PendingCount);
         }
 
@@ -303,7 +318,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.RandomOccurrences
         {
             _manager.InitializeOccurrencePool(new[] { _eventA });
             _clock.Advance(TimeSpan.FromSeconds(3600));
-            _manager.ProcessSpawning();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             bool result = _manager.ResolveOccurrence(0, 0);
             
@@ -316,7 +331,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.RandomOccurrences
         {
             _manager.InitializeOccurrencePool(new[] { _eventA });
             _clock.Advance(TimeSpan.FromSeconds(3600));
-            _manager.ProcessSpawning();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             bool result = _manager.ResolveOccurrence(0, 1);
             
@@ -328,7 +343,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.RandomOccurrences
         public void ResolveOccurrence_RemovesOccurrenceFromPending()
         {
             _clock.Advance(TimeSpan.FromSeconds(3600));
-            _manager.ProcessSpawning();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.AreEqual(1, _manager.PendingCount);
 
             _manager.ResolveOccurrence(0, 0);
@@ -340,7 +355,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.RandomOccurrences
         public void ResolveOccurrence_InvalidIndex_ReturnsFalse()
         {
             _clock.Advance(TimeSpan.FromSeconds(3600));
-            _manager.ProcessSpawning();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             bool result = _manager.ResolveOccurrence(99, 0);
             
@@ -352,7 +367,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.RandomOccurrences
         public void ResolveOccurrence_InvalidChoiceIndex_ReturnsFalse()
         {
             _clock.Advance(TimeSpan.FromSeconds(3600));
-            _manager.ProcessSpawning();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             bool result = _manager.ResolveOccurrence(0, 99);
             
@@ -366,7 +381,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.RandomOccurrences
             Assert.AreEqual(0, _manager.PendingCount);
             
             _clock.Advance(TimeSpan.FromSeconds(3600));
-            _manager.ProcessSpawning();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.AreEqual(1, _manager.PendingCount);
             
             _manager.ResolveOccurrence(0, 0);

@@ -23,7 +23,7 @@ namespace KingdomRuler.Modules.Navigation
     /// tells its Presenter to gate audio — a card arriving on another tab updates the queue
     /// silently. Disabling only the Canvas would skip those callbacks and leave each View's
     /// <c>Update</c> ticking unseen. The mechanics are unaffected either way: timers belong to
-    /// tick drivers, not Views (<c>ARCHITECTURE.md</c> §4.5).</para>
+    /// the game clock, not Views (<c>ARCHITECTURE.md</c> §4.5).</para>
     ///
     /// <para><b>The switch is a hard cut.</b> There is no screen transition, which is a known
     /// deviation from <c>GDD.md</c> §3's "animation on every state change" — recorded in

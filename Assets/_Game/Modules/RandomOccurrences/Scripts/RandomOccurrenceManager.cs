@@ -31,6 +31,10 @@ namespace KingdomRuler.Modules.RandomOccurrences
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _rng = new Random();
             _lastSpawnCheckUtc = _clock.UtcNow;
+
+            // No unsubscribe: the manager and the clock are root-scope singletons and live
+            // exactly as long as each other.
+            _clock.Ticked += AdvanceTo;
         }
 
         public void InitializeOccurrencePool(IEnumerable<RandomOccurrenceDefinition> allOccurrences)
@@ -44,14 +48,14 @@ namespace KingdomRuler.Modules.RandomOccurrences
         }
 
         /// <summary>
-        /// Process offline accrual for event spawning.
-        /// Spawns events for each interval that has passed.
+        /// Spawn an occurrence for each spawn interval that has passed up to <paramref name="now"/>.
+        /// Called on every clock tick, so letters arrive while the app is open; also the offline
+        /// catch-up on load.
         /// </summary>
-        public void ProcessSpawning()
+        public void AdvanceTo(DateTime now)
         {
             if (_config.SpawnIntervalSeconds <= 0) return;
 
-            var now = _clock.UtcNow;
             var elapsed = (float)(now - _lastSpawnCheckUtc).TotalSeconds;
 
             while (elapsed >= _config.SpawnIntervalSeconds
@@ -121,7 +125,7 @@ namespace KingdomRuler.Modules.RandomOccurrences
                 }
             }
 
-            ProcessSpawning();
+            AdvanceTo(_clock.UtcNow);
         }
     }
 }

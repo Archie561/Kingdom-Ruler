@@ -24,13 +24,9 @@ namespace KingdomRuler.Core
 {
     public sealed class GameBootstrapper : LifetimeScope
     {
-        [Header("Shared")]
-        [Tooltip("Ledger-owned characteristic leveling curve. Shared by every mechanic " +
-                 "that awards characteristic points — see ARCHITECTURE.md §4.3.")]
-        [SerializeField] private LevelingConfig _levelingConfig;
-
-        [Tooltip("Icons and name keys for the 6 characteristics. Ledger-owned for the same " +
-                 "reason as the curve — Laws, Cities and Random Occurrences all display them.")]
+        [Header("Systems")]
+        [Tooltip("Icons and name keys for the 6 characteristics. Ledger-owned because Laws, " +
+                 "Cities and Random Occurrences all display them — see ARCHITECTURE.md §4.3.")]
         [SerializeField] private CharacteristicRegistry _characteristicRegistry;
 
         [Tooltip("Icons and name keys for the 6 trade resources. Ledger-owned for the same " +
@@ -50,23 +46,27 @@ namespace KingdomRuler.Core
 
         protected override void Configure(IContainerBuilder builder)
         {
-            // Core
+            // Systems
             builder.Register<EventBus>(Lifetime.Singleton);
 
-            // The Ledger is built by hand so it receives the leveling curve as a plain
-            // value type — that keeps KingdomLedger free of ScriptableObject/UnityEngine
-            // dependencies and directly unit-testable.
-            builder.Register(c => new KingdomLedger(c.Resolve<EventBus>(), ResolveLevelingCurve()),
-                Lifetime.Singleton);
+            // The game clock: tells the time, and ticks every time-driven system four times a
+            // second. Registered as an entry point, which also makes it the IClock everyone
+            // receives. Each manager with a timer subscribes itself in its constructor.
+            builder.RegisterEntryPoint<GameClock>();
+
+            builder.Register<KingdomLedger>(Lifetime.Singleton);
+
+            // Warehouses regenerate on the game clock. Wired here rather than inside the Ledger,
+            // which deliberately holds no clock: something outside it always says when time has
+            // passed (see KingdomLedger.AccruePassiveResourceRegen).
+            builder.RegisterBuildCallback(c =>
+                c.Resolve<IClock>().Ticked += c.Resolve<KingdomLedger>().AccruePassiveResourceRegen);
 
             builder.RegisterInstance(ResolveCharacteristicRegistry());
             builder.RegisterInstance(ResolveTradeResourceRegistry());
 
-            // Screen navigation (GDD §13). Registered beside the Ledger rather than with a
-            // module, because it belongs to no module: it deals only in ScreenId, and every
-            // screen declares its own via a ScreenRoot component (ARCHITECTURE.md §4.6).
+            // Navigation module (GDD §13, ARCHITECTURE.md §4.6).
             builder.Register<ScreenNavigator>(Lifetime.Singleton);
-
 
             // Laws module.
             // Explicit factory: LawsManager has a second constructor taking a System.Random
@@ -89,11 +89,6 @@ namespace KingdomRuler.Core
             builder.Register<TradePresenter>(Lifetime.Singleton);
             builder.RegisterInstance(ResolveTradeConfig());
 
-            // One driver pumps every time-based system — warehouse regen, the law queue and the
-            // trade offer refresh — so their relative order is written down rather than being an
-            // accident of registration order. See AccrualDriver.
-            builder.RegisterEntryPoint<AccrualDriver>();
-
             // Economy module
             builder.Register<EconomyManager>(Lifetime.Singleton);
             builder.RegisterInstance(_economyConfig);
@@ -106,7 +101,6 @@ namespace KingdomRuler.Core
             builder.RegisterInstance(_randomOccurrenceConfig);
 
             // Services
-            builder.Register<SystemClock>(Lifetime.Singleton).As<IClock>();
             // Explicit factory: LocalJsonSaveService has a second constructor taking a
             // directory (for tests), and we want the persistentDataPath one here.
             builder.Register<ISaveService>(_ => new LocalJsonSaveService(), Lifetime.Singleton);
@@ -118,28 +112,12 @@ namespace KingdomRuler.Core
             // Save lifecycle — knows every module, so it lives with the composition root.
             builder.Register<GameStateCoordinator>(Lifetime.Singleton);
 
-            // Popups. The manager is a MonoBehaviour in this scene rather than in Main, so
+            // Popups. PopupSystem is a MonoBehaviour in this scene rather than in Main, so
             // it can be resolved by Presenters that are built here at startup.
             builder.RegisterComponentInHierarchy<PopupSystem>();
 
             // Entry point
             builder.RegisterEntryPoint<GameEntryPoint>();
-        }
-
-        /// <summary>
-        /// The configured curve, or the GDD §6 default if the asset isn't wired yet.
-        /// Falling back rather than throwing keeps the game bootable during development,
-        /// but it's loud — silently levelling on a different curve than the designer set
-        /// is exactly the class of bug this whole seam exists to prevent.
-        /// </summary>
-        private LevelingCurve ResolveLevelingCurve()
-        {
-            if (_levelingConfig != null) return _levelingConfig.ToCurve();
-
-            Debug.LogWarning(
-                "[GameBootstrapper] No LevelingConfig assigned — falling back to the default " +
-                "curve. Assign the asset on the Bootstrap scene's GameBootstrapper.", this);
-            return LevelingCurve.Default;
         }
 
         /// <summary>

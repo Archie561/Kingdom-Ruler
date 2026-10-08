@@ -22,7 +22,6 @@ namespace KingdomRuler.Systems.Ledger
         private const float DefaultWarehouseCapacity = 100f;
 
         private readonly EventBus _eventBus;
-        private readonly LevelingCurve _levelingCurve;
 
         private long _gold;
         private int _crystals;
@@ -32,24 +31,13 @@ namespace KingdomRuler.Systems.Ledger
         public long Gold => _gold;
         public int Crystals => _crystals;
 
-        // The curve itself is deliberately NOT exposed. Callers get answers about levelling
-        // (PointsRequiredForLevel / PointsRemainingForNextLevel) rather than the curve
-        // object — handing it out is the first step back toward per-module copies.
+        // Callers ask the Ledger about levelling (PointsRequiredForLevel /
+        // PointsRemainingForNextLevel) rather than reading CharacteristicLevelingCurve themselves:
+        // the Ledger stays the one place that knows how a characteristic levels.
 
-        /// <summary>Construct with the standard GDD §6 curve.</summary>
         public KingdomLedger(EventBus eventBus)
-            : this(eventBus, LevelingCurve.Default) { }
-
-        public KingdomLedger(EventBus eventBus, LevelingCurve levelingCurve)
         {
             _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
-
-            if (!levelingCurve.IsValid)
-                throw new ArgumentException(
-                    $"Leveling curve is invalid ({levelingCurve}). Base points, growth factor and " +
-                    "rounding must all be positive.", nameof(levelingCurve));
-
-            _levelingCurve = levelingCurve;
             _gold = 0;
             _crystals = 0;
 
@@ -72,7 +60,7 @@ namespace KingdomRuler.Systems.Ledger
         {
             if (amount < 0) throw new ArgumentException("Use SpendGold for negative changes.", nameof(amount));
             _gold += amount;
-            _eventBus.Publish(new GoldChanged(_gold, amount));
+            _eventBus.Publish(new GoldChangedEvent(_gold, amount));
         }
 
         public bool SpendGold(long amount)
@@ -80,7 +68,7 @@ namespace KingdomRuler.Systems.Ledger
             if (amount < 0) throw new ArgumentException("Amount must be non-negative.", nameof(amount));
             if (_gold < amount) return false;
             _gold -= amount;
-            _eventBus.Publish(new GoldChanged(_gold, -amount));
+            _eventBus.Publish(new GoldChangedEvent(_gold, -amount));
             return true;
         }
 
@@ -97,7 +85,7 @@ namespace KingdomRuler.Systems.Ledger
         {
             if (amount < 0) throw new ArgumentException("Use SpendCrystals for negative changes.", nameof(amount));
             _crystals += amount;
-            _eventBus.Publish(new CrystalsChanged(_crystals, amount));
+            _eventBus.Publish(new CrystalsChangedEvent(_crystals, amount));
         }
 
         public bool SpendCrystals(int amount)
@@ -105,7 +93,7 @@ namespace KingdomRuler.Systems.Ledger
             if (amount < 0) throw new ArgumentException("Amount must be non-negative.", nameof(amount));
             if (_crystals < amount) return false;
             _crystals -= amount;
-            _eventBus.Publish(new CrystalsChanged(_crystals, -amount));
+            _eventBus.Publish(new CrystalsChangedEvent(_crystals, -amount));
             return true;
         }
 
@@ -136,7 +124,7 @@ namespace KingdomRuler.Systems.Ledger
             if (actualAdded <= 0f) return 0f;
 
             state.Amount += actualAdded;
-            _eventBus.Publish(new ResourceChanged(type, state.Amount, actualAdded));
+            _eventBus.Publish(new TradeResourceChangedEvent(type, state.Amount, actualAdded));
             return actualAdded;
         }
 
@@ -150,7 +138,7 @@ namespace KingdomRuler.Systems.Ledger
             if (state.Amount < amount) return false;
 
             state.Amount -= amount;
-            _eventBus.Publish(new ResourceChanged(type, state.Amount, -amount));
+            _eventBus.Publish(new TradeResourceChangedEvent(type, state.Amount, -amount));
             return true;
         }
 
@@ -189,7 +177,7 @@ namespace KingdomRuler.Systems.Ledger
         }
 
         /// <summary>Points needed to advance from <paramref name="level"/> to the next.</summary>
-        public float PointsRequiredForLevel(int level) => _levelingCurve.PointsRequired(level);
+        public float PointsRequiredForLevel(int level) => CharacteristicLevelingCurve.PointsRequired(level);
 
         /// <summary>
         /// Points still needed for this characteristic to reach its next level.
@@ -198,7 +186,7 @@ namespace KingdomRuler.Systems.Ledger
         public float PointsRemainingForNextLevel(CharacteristicType type)
         {
             var state = _characteristics[type];
-            return Math.Max(0f, _levelingCurve.PointsRequired(state.Level) - state.PointsIntoCurrentLevel);
+            return Math.Max(0f, CharacteristicLevelingCurve.PointsRequired(state.Level) - state.PointsIntoCurrentLevel);
         }
 
         /// <summary>
@@ -214,13 +202,13 @@ namespace KingdomRuler.Systems.Ledger
             int startLevel = state.Level;
             state.PointsIntoCurrentLevel += points;
 
-            // Terminates because LevelingCurve.PointsRequired is guaranteed positive.
-            float required = _levelingCurve.PointsRequired(state.Level);
+            // Terminates because CharacteristicLevelingCurve.PointsRequired is guaranteed positive.
+            float required = CharacteristicLevelingCurve.PointsRequired(state.Level);
             while (state.PointsIntoCurrentLevel >= required)
             {
                 state.PointsIntoCurrentLevel -= required;
                 state.Level++;
-                required = _levelingCurve.PointsRequired(state.Level);
+                required = CharacteristicLevelingCurve.PointsRequired(state.Level);
             }
 
             // Publish only once the mutation has fully settled. EventBus.Publish is
@@ -228,7 +216,7 @@ namespace KingdomRuler.Systems.Ledger
             // the loop above let a Presenter observe (and render) a half-applied state,
             // with the level already bumped but the remaining points not yet carried over.
             for (int level = startLevel + 1; level <= state.Level; level++)
-                _eventBus.Publish(new CharacteristicLeveledUp(type, level));
+                _eventBus.Publish(new CharacteristicLeveledUpEvent(type, level));
         }
 
         /// <summary>
@@ -261,8 +249,8 @@ namespace KingdomRuler.Systems.Ledger
         /// warehouse refills over 24 hours, scaled to its capacity).
         /// </summary>
         /// <remarks>
-        /// <para><b>Deliberately publishes no <c>ResourceChanged</c>, and this is not an
-        /// oversight.</b> It is pumped several times a second by <c>AccrualDriver</c>, so
+        /// <para><b>Deliberately publishes no <c>TradeResourceChangedEvent</c>, and this is not an
+        /// oversight.</b> It runs on every game-clock tick, four times a second, so
         /// publishing would put six messages per tick — around 24 a second, forever, on every
         /// screen — onto the shared bus to announce a delta of roughly a third of a thousandth of
         /// a warehouse. That is exactly the idle battery drain GDD §3 forbids in a game people
@@ -277,6 +265,12 @@ namespace KingdomRuler.Systems.Ledger
         /// <para>Takes <paramref name="now"/> rather than reading a clock: the Ledger holds no
         /// <c>IClock</c>, so something outside it always decides when time has passed. That is
         /// what keeps this directly unit-testable.</para>
+        ///
+        /// <para>Who calls it: during play, the game clock — <c>GameBootstrapper</c> subscribes
+        /// this method to <c>IClock.Ticked</c>. On load, <c>TradeManager.LoadFromDto</c>, the
+        /// first moment warehouse capacities are final. And <b>anything that decides from a trade
+        /// amount, or changes a capacity, calls it first</b> — accepting an offer, upgrading a
+        /// warehouse — so correctness never depends on whether a tick happened to land.</para>
         /// </remarks>
         public void AccruePassiveResourceRegen(DateTime now)
         {
@@ -416,7 +410,7 @@ namespace KingdomRuler.Systems.Ledger
 
                 // Progress must sit inside the current level; anything else means the file
                 // and the curve disagree, and carrying it would trigger a phantom level-up.
-                float required = _levelingCurve.PointsRequired(state.Level);
+                float required = CharacteristicLevelingCurve.PointsRequired(state.Level);
                 state.PointsIntoCurrentLevel =
                     Math.Clamp(kvp.Value.PointsIntoCurrentLevel, 0f, Math.Max(0f, required - 0.001f));
             }

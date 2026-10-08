@@ -88,9 +88,10 @@ not inside whichever module needed it first. Flag it rather than guessing if it'
 which side of that line something falls on.
 
 **Placement check for a new event type:** `ARCHITECTURE.md` §4.2 defines three tiers —
-`Systems/Events/` is the mechanism only (no message types), `Systems/Ledger/Scripts/Events/` holds
-cross-module ledger events, and `Modules/<X>/Scripts/Events/` holds module-local ones. Pick the tier
-by who is allowed to subscribe. Before adding a module-local event at all, check whether the only
+`Systems/Events/` is the mechanism only (no message types), cross-module ledger events live in the
+Ledger next to the resource they describe (`Systems/Ledger/Scripts/Characteristics/`, `…/Gold/`, …),
+and `Modules/<X>/Scripts/Events/` holds module-local ones. Pick the tier by who is allowed to
+subscribe. Every bus message type is named `…Event` (`CharacteristicLeveledUpEvent`). Before adding a module-local event at all, check whether the only
 subscriber already holds a direct reference to the publisher — if so, a plain `event Action` is
 simpler than a bus round-trip.
 

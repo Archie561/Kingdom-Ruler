@@ -106,7 +106,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _config.AllCards = new[] { card };
             _manager.InitializeCardPool();
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
             return card;
         }
 
@@ -285,7 +285,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             // Advance 3 intervals: 1 active, 2 ready, 5 replenishing → "3/8".
             _clock.Advance(TimeSpan.FromSeconds(360));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.AreEqual(3, _presenter.AvailableCardCount);
         }
@@ -304,7 +304,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
                     _presenter.AvailableCardCount + _manager.CardsReplenishing,
                     "available + replenishing must always equal the cap.");
                 _clock.Advance(TimeSpan.FromSeconds(120));
-                _manager.ProcessReplenishment();
+                _manager.AdvanceTo(_clock.UtcNow);
             }
         }
 
@@ -453,7 +453,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _presenter.OnCardArrived += () => arrivals++;
 
             _clock.Advance(TimeSpan.FromSeconds(_config.CardReplenishTimeSeconds + 1));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.AreEqual(1, arrivals);
         }
@@ -540,7 +540,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             Assert.IsFalse(data.CanAffordBuyUp);
         }
 
-        // ── CharacteristicLeveledUp event ─────────────────────────────────────────
+        // ── CharacteristicLeveledUpEvent event ─────────────────────────────────────────
 
         [Test]
         public void CharacteristicLeveledUp_EventBus_TriggersAudioAndHapticAndPresenterEvent()
@@ -573,7 +573,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _audio.PlayedSfxIds.Clear();
 
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.IsTrue(fired);
             Assert.Contains("sfx_laws_card_arrive", _audio.PlayedSfxIds);
@@ -590,7 +590,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _presenter.OnStateChanged += () => fired = true;
 
             _clock.Advance(TimeSpan.FromSeconds(10)); // not enough
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.IsFalse(fired);
         }
@@ -614,7 +614,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _audio.PlayedSfxIds.Clear();
 
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.IsTrue(fired, "State must still update so the screen is right on return.");
             Assert.IsTrue(_presenter.HasActiveCard, "The card really did arrive.");
@@ -631,7 +631,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             // Queue advances while hidden.
             _presenter.SetScreenVisible(false);
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             bool fired = false;
             _presenter.OnStateChanged += () => fired = true;
@@ -667,7 +667,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _manager.InitializeCardPool();
 
             _clock.Advance(TimeSpan.FromSeconds(120));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             Assert.IsTrue(_manager.HasActiveCard);
             Assert.IsTrue(_presenter.TryGetActiveCardDisplay(out var display));
@@ -758,7 +758,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
             // Fill all slots so cardsReplenishing = 0.
             _clock.Advance(TimeSpan.FromSeconds(1200));
-            _manager.ProcessReplenishment();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             _ledger.AddCrystals(100);
             Assert.IsFalse(_presenter.CanAffordRefill);

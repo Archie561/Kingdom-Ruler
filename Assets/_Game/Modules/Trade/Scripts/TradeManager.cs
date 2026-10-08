@@ -24,7 +24,7 @@ namespace KingdomRuler.Modules.Trade
     /// its own Presenter, which already holds this object, so a plain <c>event Action</c> is
     /// simpler and typed (<c>ARCHITECTURE.md</c> §4.2 tier 3) — the same call
     /// <c>LawsManager.QueueChanged</c> makes. The Ledger still publishes its own cross-module
-    /// <c>ResourceChanged</c> whenever this class moves resources through it.</para>
+    /// <c>TradeResourceChangedEvent</c> whenever this class moves resources through it.</para>
     ///
     /// <para><b>Warehouse capacity is derived, never stored here.</b> The upgrade <i>level</i> is
     /// this module's state; capacity is computed from it through the curve and handed to the
@@ -80,6 +80,10 @@ namespace KingdomRuler.Modules.Trade
 
             foreach (TradeResourceType type in Enum.GetValues(typeof(TradeResourceType)))
                 _warehouseLevels[type] = 0;
+
+            // No unsubscribe: the manager and the clock are root-scope singletons and live
+            // exactly as long as each other.
+            _clock.Ticked += AdvanceTo;
         }
 
         // ── Warehouse state ───────────────────────────────────────────────────────
@@ -98,15 +102,27 @@ namespace KingdomRuler.Modules.Trade
         public int InstantRefreshCost => _config.InstantRefreshCrystalCost;
 
         public int GetWarehouseCrystalCost(TradeResourceType type) =>
-            WarehouseUpgradeCalculator.CrystalPathCost(_warehouseLevels[type], _config.ToCrystalCostCurve());
+            _config.WarehouseUpgradeCrystalCost(_warehouseLevels[type]);
 
+        /// <summary>Fraction of the paired warehouse's capacity the resource path costs (GDD §7).</summary>
+        public const float PairedUpgradeCostFraction = 0.8f;
+
+        /// <summary>
+        /// The paired-resource upgrade price: 80% of the paired warehouse's <b>capacity</b>, paid
+        /// out of the paired resource's <b>stored amount</b>.
+        /// </summary>
+        /// <remarks>
+        /// Capacity, deliberately, not the stored amount — the reading GDD §7 flagged for
+        /// confirmation, and it was confirmed. The player must be at least 80% full of the paired
+        /// resource to afford it, so the two warehouses in a pair advance in step. Pricing it off
+        /// the stored amount instead would make it cheapest exactly when the player has least.
+        /// </remarks>
         public float GetWarehousePairedCost(TradeResourceType type) =>
-            WarehouseUpgradeCalculator.PairedPathCost(
-                _ledger.GetTradeResource(GetPairedResource(type)).Capacity);
+            _ledger.GetTradeResource(GetPairedResource(type)).Capacity * PairedUpgradeCostFraction;
 
-        /// <summary>Whether this warehouse can still be upgraded (see <see cref="WarehouseCurve.MaxSupportedLevel"/>).</summary>
+        /// <summary>Whether this warehouse can still be upgraded (see <see cref="TradeConfig.MaxWarehouseLevel"/>).</summary>
         public bool CanUpgradeFurther(TradeResourceType type) =>
-            _warehouseLevels[type] < WarehouseCurve.MaxSupportedLevel;
+            _warehouseLevels[type] < TradeConfig.MaxWarehouseLevel;
 
         // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -129,18 +145,18 @@ namespace KingdomRuler.Modules.Trade
         }
 
         /// <summary>
-        /// Settle everything time-driven: warehouse regen, then the offer refresh. Called by
-        /// <c>AccrualDriver</c> several times a second, and cheap when nothing is due.
+        /// Settle the offer refresh up to <paramref name="now"/>. Called on every clock tick, and
+        /// cheap when nothing is due. Timestamp-based, so one call settles an absence of any
+        /// length (<c>ARCHITECTURE.md</c> §4.5).
         /// </summary>
         /// <remarks>
-        /// Regen runs first so a refresh never lands on stale amounts. Both are timestamp-based,
-        /// so one call settles an absence of any length (<c>ARCHITECTURE.md</c> §4.5).
+        /// Warehouse regeneration is <b>not</b> settled here: it is the Ledger's, and advances on
+        /// the clock by itself. The refresh does not read amounts, so it does not need it — what
+        /// does read amounts settles regen itself first (<see cref="AcceptOffer"/>, the upgrades).
         /// </remarks>
-        public void ProcessTick()
+        public void AdvanceTo(DateTime now)
         {
-            _ledger.AccruePassiveResourceRegen(_clock.UtcNow);
-
-            if (!_refreshTimer.Advance(_clock.UtcNow, _config.OfferRefreshTimeSeconds)) return;
+            if (!_refreshTimer.Advance(now, _config.OfferRefreshTimeSeconds)) return;
 
             RefreshOffers();
             TradeStateChanged?.Invoke();
@@ -192,7 +208,7 @@ namespace KingdomRuler.Modules.Trade
         ///
         /// <para>Regen is accrued first so a player who crossed the affordability threshold a
         /// fraction of a second ago is honoured. It deliberately does <b>not</b> call
-        /// <see cref="ProcessTick"/>, which could refresh the offer list out from under the trade
+        /// <see cref="AdvanceTo"/>, which could refresh the offer list out from under the trade
         /// being accepted.</para>
         /// </remarks>
         public TradeAcceptResult AcceptOffer(string offerId)
@@ -252,8 +268,13 @@ namespace KingdomRuler.Modules.Trade
         // ── Warehouse upgrades ────────────────────────────────────────────────────
 
         /// <summary>Upgrade a warehouse by paying crystals (GDD §7's premium path).</summary>
+        /// <remarks>
+        /// Regen is settled first: the capacity is about to change, and regen accrued since the
+        /// last tick must be counted against the capacity it was earned under.
+        /// </remarks>
         public bool UpgradeWarehouseWithCrystals(TradeResourceType type)
         {
+            _ledger.AccruePassiveResourceRegen(_clock.UtcNow);
             if (!CanUpgradeFurther(type)) return false;
             if (!_ledger.SpendCrystals(GetWarehouseCrystalCost(type))) return false;
 
@@ -265,8 +286,13 @@ namespace KingdomRuler.Modules.Trade
         /// Upgrade a warehouse by spending 80% of the paired warehouse's <b>capacity</b>, taken
         /// from that resource's stored amount (GDD §7).
         /// </summary>
+        /// <remarks>
+        /// Regen is settled first, for two reasons: the paired resource's stored amount decides
+        /// whether this is affordable, and this warehouse's capacity is about to change.
+        /// </remarks>
         public bool UpgradeWarehouseWithPairedResource(TradeResourceType type)
         {
+            _ledger.AccruePassiveResourceRegen(_clock.UtcNow);
             if (!CanUpgradeFurther(type)) return false;
 
             var  paired = GetPairedResource(type);
@@ -325,8 +351,11 @@ namespace KingdomRuler.Modules.Trade
             // than an empty screen.
             if (_activeOffers.Count == 0) RefreshOffers();
 
-            // Offline catch-up, exactly as LawsManager.LoadFromDto ends with ProcessReplenishment.
-            ProcessTick();
+            // Offline catch-up. Regen first, and here rather than on the next clock tick: the
+            // capacities were only just restored above, and this is the first moment they are
+            // final (see the remarks on this method).
+            _ledger.AccruePassiveResourceRegen(_clock.UtcNow);
+            AdvanceTo(_clock.UtcNow);
             TradeStateChanged?.Invoke();
         }
 
@@ -343,7 +372,7 @@ namespace KingdomRuler.Modules.Trade
                     // Clamped, not trusted: the save is plain JSON on the device, and a
                     // hand-edited level would otherwise produce an infinite capacity, an
                     // infinite regen rate and NaN amounts — an unrecoverable economy.
-                    level = Math.Clamp(saved, 0, WarehouseCurve.MaxSupportedLevel);
+                    level = Math.Clamp(saved, 0, TradeConfig.MaxWarehouseLevel);
                 }
 
                 _warehouseLevels[type] = level;
@@ -369,8 +398,7 @@ namespace KingdomRuler.Modules.Trade
         /// </summary>
         private void ApplyCapacityFor(TradeResourceType type)
         {
-            float capacity = WarehouseUpgradeCalculator.CapacityAtLevel(
-                _warehouseLevels[type], _config.ToCapacityCurve());
+            float capacity = _config.WarehouseCapacityAt(_warehouseLevels[type]);
             _ledger.SetWarehouseCapacity(type, capacity);
         }
 

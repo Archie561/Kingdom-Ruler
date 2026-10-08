@@ -27,7 +27,7 @@ namespace KingdomRuler.Modules.Trade.Presenters
     /// View polls it each frame with a dirty-check rather than the Ledger publishing ~24 events a
     /// second (see <c>KingdomLedger.AccruePassiveResourceRegen</c>). Discrete changes — accepting
     /// an offer, an upgrade, a Cities purchase — still arrive on the bus as
-    /// <see cref="ResourceChanged"/>.</para>
+    /// <see cref="TradeResourceChangedEvent"/>.</para>
     /// </remarks>
     public sealed class TradePresenter : IDisposable
     {
@@ -82,7 +82,7 @@ namespace KingdomRuler.Modules.Trade.Presenters
             _manager.TradeStateChanged += NotifyStateChanged;
             // Cross-module: a Cities purchase or an occurrence moves a trade resource and the
             // warehouse tiles must follow. Deliberately does NOT fire for passive regen.
-            _eventBus.Subscribe<ResourceChanged>(HandleResourceChanged);
+            _eventBus.Subscribe<TradeResourceChangedEvent>(HandleResourceChanged);
             // Every string on a display struct is a resolved copy that nothing else updates.
             _localization.LocaleChanged += NotifyStateChanged;
         }
@@ -90,7 +90,7 @@ namespace KingdomRuler.Modules.Trade.Presenters
         public void Dispose()
         {
             _manager.TradeStateChanged -= NotifyStateChanged;
-            _eventBus.Unsubscribe<ResourceChanged>(HandleResourceChanged);
+            _eventBus.Unsubscribe<TradeResourceChangedEvent>(HandleResourceChanged);
             _localization.LocaleChanged -= NotifyStateChanged;
         }
 
@@ -319,7 +319,7 @@ namespace KingdomRuler.Modules.Trade.Presenters
                 ? _localization.Resolve(TradeUIText.StringTable, key)
                 : _localization.Resolve(TradeUIText.StringTable, key, args);
 
-        private void HandleResourceChanged(ResourceChanged _) => NotifyStateChanged();
+        private void HandleResourceChanged(TradeResourceChangedEvent _) => NotifyStateChanged();
 
         private void NotifyStateChanged() => OnStateChanged?.Invoke();
     }

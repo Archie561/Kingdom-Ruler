@@ -24,7 +24,7 @@ namespace KingdomRuler.Modules.Laws
         public float CrystalBuyUpDivisor = 20f;
 
         // NOTE: the characteristic leveling curve deliberately does NOT live here.
-        // It is Ledger-owned (LevelingConfig in Systems/Ledger) because Laws is not the
+        // It is Ledger-owned (CharacteristicLevelingCurve in Systems/Ledger) because Laws is not the
         // only mechanic that awards characteristic points — see ARCHITECTURE.md §4.3.
 
         [Header("Card Content")]

@@ -1,11 +1,11 @@
 namespace KingdomRuler.Systems.Ledger
 {
-    public readonly struct CrystalsChanged
+    public readonly struct CrystalsChangedEvent
     {
         public int NewAmount { get; }
         public int Delta { get; }
 
-        public CrystalsChanged(int newAmount, int delta)
+        public CrystalsChangedEvent(int newAmount, int delta)
         {
             NewAmount = newAmount;
             Delta = delta;

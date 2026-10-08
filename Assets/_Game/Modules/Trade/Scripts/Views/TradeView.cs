@@ -15,7 +15,7 @@ namespace KingdomRuler.Modules.Trade.Views
     /// <remarks>
     /// <para>Receives <see cref="TradePresenter"/> by method injection, drives the sub-views, and
     /// forwards intents. Display-only: it never advances the offer timer or regeneration — both
-    /// are pumped by <c>AccrualDriver</c> so the mechanic keeps running on other tabs
+    /// advance on the game clock (<c>IClock.Ticked</c>) so the mechanic keeps running on other tabs
     /// (<c>ARCHITECTURE.md</c> §4.5).</para>
     ///
     /// <para><b>Two different things happen in <see cref="Update"/>, and both are reads.</b> The
@@ -138,7 +138,7 @@ namespace KingdomRuler.Modules.Trade.Views
 
         private void Update()
         {
-            // Display only — AccrualDriver is what advances both of these.
+            // Display only — the game clock is what advances both of these.
             RefreshCountdown();
             RefreshWarehouses();
         }

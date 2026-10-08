@@ -38,17 +38,15 @@ stock.
  (plain C#)                           IAudioService, IHapticService,
                                       ILocalizationService, TradeResourceRegistry
                                           ▲
- DRIVER          AccrualDriver ─────► TradeManager.ProcessTick()   (Core/Bootstrap)
+ CLOCK           GameClock.Ticked ──► TradeManager.AdvanceTo  (Systems/Clock; Trade subscribes itself)
                                           ▲
  MODEL           TradeManager ──────► TradeOfferGenerator, OfferRefreshTimer,
- (plain C#)                           WarehouseUpgradeCalculator, KingdomLedger,
-                                      IClock, TradeConfig
+ (plain C#)                           KingdomLedger, IClock, TradeConfig
+                                      (TradeConfig also holds the two warehouse curves)
                                           ▲
  DOMAIN          TradeOfferGenerator        (pure, injectable Random)
  (pure C#)       OfferRefreshTimer          (pure, zero project dependencies)
                  TradeOfferAllocator        (pure, static)
-                 WarehouseCurve             (pure value type)
-                 WarehouseUpgradeCalculator (pure, static)
                  TradeIssue / TradeOfferEvaluation / TradeAcceptResult
                                           ▲
  DATA (SO)       TradeConfig               (tuning only — no content assets)
@@ -86,7 +84,8 @@ like a reason to refuse. Three things depend on it:
 
 ### 3.2 The curve is a formula, not a table
 
-`WarehouseCurve` mirrors `LevelingCurve` line for line, **including its banker's rounding** —
+`TradeConfig.WarehouseCapacityAt` and `WarehouseUpgradeCrystalCost` share one private formula that
+mirrors `CharacteristicLevelingCurve.PointsRequired`, **including its banker's rounding** —
 `100 × 1.5² = 225` yields **220**, not 230. Matching the sibling curve's expression matters more
 than the one-unit difference; a test pins it. This is the opposite call from the offer-ratio
 split, where the same `Math.Round` behaviour silently stole a slot and had to go.
@@ -118,7 +117,7 @@ Capacity used to exist in three places: the ledger DTO, its regen rate, and the 
 Now the level is the stored fact, capacity is derived from it through the curve on load, and the
 Ledger derives the regen rate from capacity. A retuned curve therefore reaches existing saves.
 
-The loaded level is **clamped** to `WarehouseCurve.MaxSupportedLevel` — a save-integrity guard,
+The loaded level is **clamped** to `TradeConfig.MaxWarehouseLevel` — a save-integrity guard,
 not a design cap: the save is plain JSON on the device, and `100 × 1.5^9999` is `Infinity`, which
 makes the regen rate infinite and every amount `NaN`.
 
@@ -126,12 +125,14 @@ makes the regen rate infinite and every amount `NaN`.
 
 It publishes nothing; the only subscriber to its state is this module's own Presenter, which
 already holds it, so `TradeStateChanged` is a plain `event Action` (`ARCHITECTURE.md` §4.2 tier
-3). The Ledger still publishes cross-module `ResourceChanged` whenever this module moves
+3). The Ledger still publishes cross-module `TradeResourceChangedEvent` whenever this module moves
 resources through it.
 
-### 3.7 `AcceptOffer` accrues regen first, but does not tick
+### 3.7 `AcceptOffer` and the upgrades accrue regen first, but do not tick
 
-It calls `AccruePassiveResourceRegen`, **not** `ProcessTick()`. A player who crossed the
+They call `AccruePassiveResourceRegen`, **not** `AdvanceTo`. Regen is the Ledger's and advances on
+the game clock by itself, so this is the rule from `ARCHITECTURE.md` §4.5: whoever decides from an
+amount, or changes a capacity, settles regen first. For `AcceptOffer`, a player who crossed the
 affordability threshold a fraction of a second ago is honoured, and correctness stops depending
 on tick timing — but the offer list cannot be refreshed out from under the trade being accepted.
 
@@ -191,7 +192,8 @@ GameStateCoordinator.LoadOrInitialize()
   ├─ save exists → TradeManager.LoadFromDto(dto)
   │                  ├─ restore levels → SetWarehouseCapacity (Ledger derives regen rate)
   │                  ├─ restore offers + deadline
-  │                  └─ ProcessTick()          ← offline catch-up, AFTER capacity is final
+  │                  ├─ ledger.AccruePassiveResourceRegen(now)  ← offline regen, AFTER capacity is final
+  │                  └─ AdvanceTo(now)                          ← offline refresh catch-up
   └─ no save     → TradeManager.InitializeNewGame()
 ```
 
@@ -202,11 +204,11 @@ is about to change" structural rather than a matter of call order.
 
 ### A tick
 ```
-AccrualDriver.Tick()  (~4 Hz, unscaled)
-  ├─ TradeManager.ProcessTick()
-  │    ├─ ledger.AccruePassiveResourceRegen(now)   ← regen first
+GameClock.Ticked(now)  (~4 Hz, unscaled; every subscriber gets the same now, in no required order)
+  ├─ TradeManager.AdvanceTo(now)
   │    └─ refreshTimer.Advance() → RefreshOffers() → TradeStateChanged
-  └─ LawsManager.ProcessReplenishment()
+  ├─ KingdomLedger.AccruePassiveResourceRegen(now)   ← wired in GameBootstrapper
+  └─ LawsManager.AdvanceTo(now), Economy, Occurrences …
 ```
 
 ### Accepting an offer
@@ -231,7 +233,7 @@ TradeOfferRowView tapped → TradeView.HandleOfferPressed
 
 | File | Covers |
 |---|---|
-| `WarehouseCurveTests` | Monotonicity, `IsValid`, zeroed-struct fallback, the pinned `100×1.5² → 220`, the level clamp |
+| `WarehouseUpgradeCurveTests` | Both curves on `TradeConfig`: monotonicity, the pinned `100×1.5² → 220`, the level clamp, never zero whatever the asset holds, crystal price ≥ 1 and finite |
 | `OfferRefreshTimerTests` | One refresh per settle however long the absence, phase preserved, backwards clock, restore |
 | `TradeOfferGeneratorTests` | The 30/45/25 ratio across 2000 seeded batches, per-batch floors, no overlap, every share ≥ 1 |
 | `TradeDomainTests` | Pairing, upgrade pricing, the accept transaction, both upgrade paths, the level ceiling, save/load including a real JSON round-trip |

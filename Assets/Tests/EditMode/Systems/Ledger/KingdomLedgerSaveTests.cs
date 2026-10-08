@@ -156,7 +156,7 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
             int levelUps = 0;
             var bus = new EventBus();
             var check = new KingdomLedger(bus);
-            bus.Subscribe<CharacteristicLeveledUp>(_ => levelUps++);
+            bus.Subscribe<CharacteristicLeveledUpEvent>(_ => levelUps++);
             check.LoadFromDto(dto);
             Assert.AreEqual(0, levelUps, "Hydration must not publish level-up events.");
         }
@@ -240,9 +240,9 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
 
             var bus = new EventBus();
             int events = 0;
-            bus.Subscribe<GoldChanged>(_ => events++);
-            bus.Subscribe<CrystalsChanged>(_ => events++);
-            bus.Subscribe<ResourceChanged>(_ => events++);
+            bus.Subscribe<GoldChangedEvent>(_ => events++);
+            bus.Subscribe<CrystalsChangedEvent>(_ => events++);
+            bus.Subscribe<TradeResourceChangedEvent>(_ => events++);
 
             new KingdomLedger(bus).LoadFromDto(source.ToDto());
 

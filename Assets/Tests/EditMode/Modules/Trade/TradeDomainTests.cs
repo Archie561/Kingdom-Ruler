@@ -20,6 +20,11 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
     {
         public DateTime UtcNow { get; set; } = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
         public void Advance(TimeSpan by) => UtcNow += by;
+
+        public event Action<DateTime> Ticked;
+
+        /// <summary>What GameClock does four times a second: tell every subscriber the time.</summary>
+        public void Tick() => Ticked?.Invoke(UtcNow);
     }
 
     [TestFixture]
@@ -45,58 +50,6 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
                 Assert.AreEqual(type, TradeResourcePair.GetPairedResource(paired));
                 Assert.AreNotEqual(type, paired, "A resource cannot pair with itself.");
             }
-        }
-    }
-
-    [TestFixture]
-    public sealed class WarehouseUpgradeCalculatorTests
-    {
-        [Test]
-        public void PairedPathCost_Is80PercentOfCapacity()
-        {
-            Assert.AreEqual(80f, WarehouseUpgradeCalculator.PairedPathCost(100f), 0.001f);
-            Assert.AreEqual(0f,  WarehouseUpgradeCalculator.PairedPathCost(-50f), 0.001f);
-        }
-
-        [Test]
-        public void CrystalPathCost_IsAlwaysAtLeastOne()
-        {
-            var tiny = new WarehouseCurve(0.001f, 1.01f, 1f);
-
-            for (int level = 0; level <= 20; level++)
-                Assert.GreaterOrEqual(WarehouseUpgradeCalculator.CrystalPathCost(level, tiny), 1);
-        }
-
-        [Test]
-        public void CrystalPathCost_IsStrictlyIncreasing()
-        {
-            // The property the old array's `5 + 3*level` fallback broke: past the table, cost grew
-            // linearly while capacity grew exponentially, so a level-50 warehouse was cheap.
-            var curve = WarehouseCurve.DefaultCrystalCost;
-            int previous = WarehouseUpgradeCalculator.CrystalPathCost(0, curve);
-
-            for (int level = 1; level <= 40; level++)
-            {
-                int current = WarehouseUpgradeCalculator.CrystalPathCost(level, curve);
-                Assert.Greater(current, previous, $"Cost did not rise at level {level}.");
-                previous = current;
-            }
-        }
-
-        [Test]
-        public void CrystalPathCost_StaysFiniteAtAnAbsurdLevel()
-        {
-            Assert.Greater(
-                WarehouseUpgradeCalculator.CrystalPathCost(200, WarehouseCurve.DefaultCrystalCost), 0);
-        }
-
-        [Test]
-        public void CapacityAtLevel_ClampsANegativeLevel()
-        {
-            var curve = WarehouseCurve.DefaultCapacity;
-
-            Assert.AreEqual(curve.ValueAt(0),
-                            WarehouseUpgradeCalculator.CapacityAtLevel(-5, curve), 0.001f);
         }
     }
 
@@ -161,66 +114,69 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
             _manager.InitializeNewGame();
 
             var state = _ledger.GetTradeResource(TradeResourceType.Stone);
-            Assert.AreEqual(_config.ToCapacityCurve().ValueAt(0), state.Capacity, 0.001f);
+            Assert.AreEqual(_config.WarehouseCapacityAt(0), state.Capacity, 0.001f);
             Assert.AreEqual(state.Capacity / 86400f, state.RegenRatePerSecond, 0.0001f);
         }
 
         // ── Refresh ───────────────────────────────────────────────────────────────
 
         [Test]
-        public void ProcessTick_BeforeTheDeadline_KeepsTheSameOffers()
+        public void AdvanceTo_BeforeTheDeadline_KeepsTheSameOffers()
         {
             _manager.InitializeNewGame();
             var before = _manager.ActiveOffers.Select(o => o.Id).ToList();
 
             _clock.Advance(TimeSpan.FromMinutes(19));
-            _manager.ProcessTick();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             CollectionAssert.AreEqual(before, _manager.ActiveOffers.Select(o => o.Id).ToList());
         }
 
         [Test]
-        public void ProcessTick_AfterTheDeadline_ReplacesTheOffers()
+        public void AdvanceTo_AfterTheDeadline_ReplacesTheOffers()
         {
             _manager.InitializeNewGame();
             var before = _manager.ActiveOffers.Select(o => o.Id).ToList();
 
             _clock.Advance(TimeSpan.FromMinutes(21));
-            _manager.ProcessTick();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             CollectionAssert.AreNotEqual(before, _manager.ActiveOffers.Select(o => o.Id).ToList());
             Assert.AreEqual(_config.OfferCount, _manager.ActiveOffers.Count);
         }
 
         [Test]
-        public void ProcessTick_RaisesTradeStateChangedOnlyWhenSomethingChanged()
+        public void AdvanceTo_RaisesTradeStateChangedOnlyWhenSomethingChanged()
         {
             _manager.InitializeNewGame();
             int raised = 0;
             _manager.TradeStateChanged += () => raised++;
 
             _clock.Advance(TimeSpan.FromMinutes(5));
-            _manager.ProcessTick();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.AreEqual(0, raised, "A quiet tick must not force a UI rebuild.");
 
             _clock.Advance(TimeSpan.FromMinutes(20));
-            _manager.ProcessTick();
+            _manager.AdvanceTo(_clock.UtcNow);
             Assert.AreEqual(1, raised);
         }
 
         [Test]
-        public void ProcessTick_RegeneratesResourcesOverTime()
+        public void AClockTick_RefreshesTheOffersOnceTheDeadlinePasses()
         {
-            // The regression that matters most: before this module had a tick driver, regen only
-            // ever ran at cold boot, so a player watching the screen gained nothing.
+            // The manager subscribes itself to the clock — nothing else has to remember to.
             _manager.InitializeNewGame();
-            float before = _ledger.GetTradeResource(TradeResourceType.Stone).Amount;
+            var before = _manager.ActiveOffers.Select(o => o.Id).ToList();
 
-            _clock.Advance(TimeSpan.FromHours(6));
-            _manager.ProcessTick();
+            _clock.Advance(TimeSpan.FromMinutes(21));
+            _clock.Tick();
 
-            Assert.Greater(_ledger.GetTradeResource(TradeResourceType.Stone).Amount, before);
+            CollectionAssert.AreNotEqual(before, _manager.ActiveOffers.Select(o => o.Id).ToList());
         }
+
+        // ── Regen ─────────────────────────────────────────────────────────────────
+        // Regen is the Ledger's and advances on the game clock by itself (wired in
+        // GameBootstrapper), so these drive it directly, against the capacities Trade sets.
 
         [Test]
         public void Regen_FillsAnEmptyWarehouseInTwentyFourHours()
@@ -229,9 +185,23 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
             var state = _ledger.GetTradeResource(TradeResourceType.Clay);
 
             _clock.Advance(TimeSpan.FromHours(24));
-            _manager.ProcessTick();
+            _ledger.AccruePassiveResourceRegen(_clock.UtcNow);
 
             Assert.AreEqual(state.Capacity, state.Amount, state.Capacity * 0.01f);
+        }
+
+        [Test]
+        public void AdvanceTo_LeavesRegenToTheLedger()
+        {
+            // Trade used to settle regen inside its own tick, so warehouses only filled because
+            // Trade happened to be pumped. Now a Trade tick must not touch amounts at all.
+            _manager.InitializeNewGame();
+            float before = _ledger.GetTradeResource(TradeResourceType.Stone).Amount;
+
+            _clock.Advance(TimeSpan.FromHours(6));
+            _manager.AdvanceTo(_clock.UtcNow);
+
+            Assert.AreEqual(before, _ledger.GetTradeResource(TradeResourceType.Stone).Amount);
         }
 
         [Test]
@@ -242,12 +212,12 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
             // was later corrected stopped the warehouse regenerating permanently. It resyncs now.
             _manager.InitializeNewGame();
 
-            _clock.Advance(TimeSpan.FromDays(-30));      // clock corrected backwards
-            _manager.ProcessTick();                       // resyncs, accrues nothing
+            _clock.Advance(TimeSpan.FromDays(-30));                // clock corrected backwards
+            _ledger.AccruePassiveResourceRegen(_clock.UtcNow);     // resyncs, accrues nothing
 
             float afterResync = _ledger.GetTradeResource(TradeResourceType.Stone).Amount;
             _clock.Advance(TimeSpan.FromHours(6));
-            _manager.ProcessTick();
+            _ledger.AccruePassiveResourceRegen(_clock.UtcNow);
 
             Assert.Greater(_ledger.GetTradeResource(TradeResourceType.Stone).Amount, afterResync,
                 "Regen must resume once time moves forward again.");
@@ -441,7 +411,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
             var stale = _manager.ActiveOffers[0].Id;
 
             _clock.Advance(TimeSpan.FromMinutes(21));
-            _manager.ProcessTick();
+            _manager.AdvanceTo(_clock.UtcNow);
 
             var result = _manager.AcceptOffer(stale);
 
@@ -469,7 +439,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
             _manager.InitializeNewGame();
             var offer = _manager.ActiveOffers[0];
 
-            // Let regen alone make the offer affordable, without calling ProcessTick.
+            // Let regen alone make the offer affordable, without any clock tick.
             _clock.Advance(TimeSpan.FromHours(48));
 
             var result = _manager.AcceptOffer(offer.Id);
@@ -538,6 +508,21 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
         }
 
         [Test]
+        public void UpgradePaired_AccruesRegenFirst_SoAJustCrossedThresholdIsHonoured()
+        {
+            // The paired stock decides affordability, so it is settled first — exactly as
+            // AcceptOffer does. Correctness must not depend on whether a tick landed first.
+            _manager.InitializeNewGame();   // warehouses start empty
+
+            // An empty warehouse fills in 24 h, so 80% of it is there after ~19.2 h — with no
+            // clock tick in between to settle it.
+            _clock.Advance(TimeSpan.FromHours(20));
+
+            Assert.IsTrue(_manager.UpgradeWarehouseWithPairedResource(TradeResourceType.Stone),
+                "Regen accrued inside the upgrade should have made the paired stock sufficient.");
+        }
+
+        [Test]
         public void UpgradePaired_DoesNotChangeThePairedWarehousesOwnCapacity()
         {
             _manager.InitializeNewGame();
@@ -580,17 +565,17 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
         [Test]
         public void UpgradesStopAtTheSupportedCeiling()
         {
-            // A save-integrity guard rather than a design cap — see WarehouseCurve. Reached via
+            // A save-integrity guard rather than a design cap — see TradeConfig.MaxWarehouseLevel. Reached via
             // a save rather than by buying 50 upgrades: the price curve is exponential, so the
             // crystals needed exceed int.MaxValue long before the ceiling does.
             var dto = new TradeStateDto();
-            dto.WarehouseLevels[TradeResourceType.Wood.ToString()] = WarehouseCurve.MaxSupportedLevel;
+            dto.WarehouseLevels[TradeResourceType.Wood.ToString()] = TradeConfig.MaxWarehouseLevel;
             _manager.LoadFromDto(dto);
             _ledger.AddCrystals(int.MaxValue);
 
             Assert.IsFalse(_manager.CanUpgradeFurther(TradeResourceType.Wood));
             Assert.IsFalse(_manager.UpgradeWarehouseWithCrystals(TradeResourceType.Wood));
-            Assert.AreEqual(WarehouseCurve.MaxSupportedLevel,
+            Assert.AreEqual(TradeConfig.MaxWarehouseLevel,
                             _manager.GetWarehouseLevel(TradeResourceType.Wood));
             Assert.AreEqual(int.MaxValue, _ledger.Crystals, "A refused upgrade must not charge.");
         }
@@ -650,7 +635,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
             reloaded.LoadFromDto(_manager.ToDto());
 
             Assert.AreEqual(2, reloaded.GetWarehouseLevel(TradeResourceType.Metal));
-            Assert.AreEqual(_config.ToCapacityCurve().ValueAt(2),
+            Assert.AreEqual(_config.WarehouseCapacityAt(2),
                             _ledger.GetTradeResource(TradeResourceType.Metal).Capacity, 0.001f);
         }
 
@@ -665,7 +650,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
             _config.CapacityBase = 200f;      // retune after the save was written
             _manager.LoadFromDto(dto);
 
-            Assert.AreEqual(_config.ToCapacityCurve().ValueAt(3),
+            Assert.AreEqual(_config.WarehouseCapacityAt(3),
                             _ledger.GetTradeResource(TradeResourceType.Stone).Capacity, 0.001f);
         }
 
@@ -679,7 +664,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
 
             _manager.LoadFromDto(dto);
 
-            Assert.AreEqual(WarehouseCurve.MaxSupportedLevel,
+            Assert.AreEqual(TradeConfig.MaxWarehouseLevel,
                             _manager.GetWarehouseLevel(TradeResourceType.Stone));
             var capacity = _ledger.GetTradeResource(TradeResourceType.Stone).Capacity;
             Assert.IsFalse(float.IsInfinity(capacity));

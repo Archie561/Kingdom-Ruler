@@ -10,7 +10,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
         private EventBus _eventBus;
         private KingdomLedger _ledger;
 
-        // Thresholds come from the Ledger's own curve (LevelingCurve.Default):
+        // Thresholds come from the GDD §6 curve (CharacteristicLevelingCurve):
         // level 1 = 100, level 2 = 140, level 3 = 180.
         [SetUp]
         public void SetUp()
@@ -31,8 +31,8 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void AddGold_PublishesGoldChangedEvent_WithCorrectNewAmountAndDelta()
         {
-            GoldChanged? receivedEvent = null;
-            _eventBus.Subscribe<GoldChanged>(e => receivedEvent = e);
+            GoldChangedEvent? receivedEvent = null;
+            _eventBus.Subscribe<GoldChangedEvent>(e => receivedEvent = e);
 
             _ledger.AddGold(50);
 
@@ -66,8 +66,8 @@ namespace KingdomRuler.Tests.EditMode.Systems
         {
             _ledger.AddGold(100);
 
-            GoldChanged? receivedEvent = null;
-            _eventBus.Subscribe<GoldChanged>(e => receivedEvent = e);
+            GoldChangedEvent? receivedEvent = null;
+            _eventBus.Subscribe<GoldChangedEvent>(e => receivedEvent = e);
 
             _ledger.SpendGold(30);
 
@@ -122,8 +122,8 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void AddCrystals_PublishesCrystalsChangedEvent()
         {
-            CrystalsChanged? receivedEvent = null;
-            _eventBus.Subscribe<CrystalsChanged>(e => receivedEvent = e);
+            CrystalsChangedEvent? receivedEvent = null;
+            _eventBus.Subscribe<CrystalsChangedEvent>(e => receivedEvent = e);
 
             _ledger.AddCrystals(5);
 
@@ -225,8 +225,8 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void AddTradeResource_PublishesResourceChanged()
         {
-            ResourceChanged? receivedEvent = null;
-            _eventBus.Subscribe<ResourceChanged>(e =>
+            TradeResourceChangedEvent? receivedEvent = null;
+            _eventBus.Subscribe<TradeResourceChangedEvent>(e =>
             {
                 if (e.ResourceType == TradeResourceType.Wood)
                     receivedEvent = e;
@@ -319,8 +319,8 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void AddCharacteristicPoints_PublishesCharacteristicLeveledUp_OnLevelUp()
         {
-            CharacteristicLeveledUp? receivedEvent = null;
-            _eventBus.Subscribe<CharacteristicLeveledUp>(e => receivedEvent = e);
+            CharacteristicLeveledUpEvent? receivedEvent = null;
+            _eventBus.Subscribe<CharacteristicLeveledUpEvent>(e => receivedEvent = e);
 
             _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 110f);
 
@@ -385,7 +385,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
             _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 300f);
 
             int published = 0;
-            _eventBus.Subscribe<CharacteristicLeveledUp>(_ => published++);
+            _eventBus.Subscribe<CharacteristicLeveledUpEvent>(_ => published++);
             _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 10000f);
 
             Assert.AreEqual(0, published, "Reductions never change the level, so nothing to announce.");
@@ -431,7 +431,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
         {
             // 250 = 100 (level 1) + 140 (level 2), leaving 10 into level 3.
             var observed = new System.Collections.Generic.List<(int level, float points)>();
-            _eventBus.Subscribe<CharacteristicLeveledUp>(_ =>
+            _eventBus.Subscribe<CharacteristicLeveledUpEvent>(_ =>
             {
                 var s = _ledger.GetCharacteristic(CharacteristicType.Medicine);
                 observed.Add((s.Level, s.PointsIntoCurrentLevel));
@@ -452,7 +452,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
         public void AddCharacteristicPoints_AnnouncesEveryLevelCrossed_InOrder()
         {
             var levels = new System.Collections.Generic.List<int>();
-            _eventBus.Subscribe<CharacteristicLeveledUp>(e => levels.Add(e.NewLevel));
+            _eventBus.Subscribe<CharacteristicLeveledUpEvent>(e => levels.Add(e.NewLevel));
 
             _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 250f);
 

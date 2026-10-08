@@ -7,7 +7,7 @@ namespace KingdomRuler.Systems.Events
     /// Minimal typed pub/sub for cross-module notifications (ARCHITECTURE.md §4.2).
     ///
     /// This class is the mechanism only — no event message types live beside it.
-    /// Cross-module ledger events live in Systems/Ledger/Scripts/Events; module-local
+    /// Cross-module ledger events live in the Ledger beside their resource; module-local
     /// notifications should usually be a plain <c>event Action</c> on the publisher
     /// rather than a message here.
     /// </summary>

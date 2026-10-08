@@ -40,7 +40,7 @@ this is worth preserving, and is easy to verify with a grep.
  PRESENTER       LawsPresenter ────► LawsManager, KingdomLedger, EventBus,
  (plain C#)                          IAudioService, IHapticService
                                           ▲
- DRIVER          AccrualDriver ────► LawsManager          (Core/Bootstrap, ITickable)
+ CLOCK           GameClock.Ticked ─► LawsManager.AdvanceTo  (Systems/Clock; Laws subscribes itself)
                                           ▲
  MODEL           LawsManager ──────► ShuffleBagDeck, ReplenishmentSlots,
  (plain C#)                          LawCardEffectApplier, CrystalBuyUpCalculator,
@@ -92,7 +92,7 @@ event Action QueueChanged;
 
 // Commands
 void  InitializeCardPool();                      // fresh game
-void  ProcessReplenishment();                    // settle timers (called by the driver)
+void  AdvanceTo(DateTime now);                 // settle timers (subscribed to the clock)
 bool  ResolveCard(string cardId, bool accept);   // swipe
 bool  RefillWithCrystals();
 bool  BuyUpCharacteristic(CharacteristicType t);
@@ -105,11 +105,11 @@ int   GetBuyUpCost(CharacteristicType t);
 LawsStateDto ToDto();   void LoadFromDto(LawsStateDto dto);
 ```
 
-**`AccrualDriver`** (`Core/Bootstrap`, `ITickable`) — pumps `ProcessReplenishment()` at ~4 Hz.
-Exists so the timer does not depend on any View being alive (§6.4). It replaced the
-module-local `LawsTickDriver` when Trade arrived as the second module needing a timer, which is
-the trigger that driver's own comment named; it now pumps Ledger regen and Trade's offer refresh
-too, in a documented order (`ARCHITECTURE.md` §4.5).
+**The clock** — `LawsManager` subscribes `AdvanceTo` to `IClock.Ticked` in its own constructor, so
+the game clock settles the replenishment timers about four times a second. That is what keeps the
+timer independent of any View being alive (§6.4). It used to be pumped by a module-local
+`LawsTickDriver`, then by a central `AccrualDriver` in `Core`; both are gone
+(`ARCHITECTURE.md` §4.5).
 
 ### Presenter
 
@@ -194,7 +194,7 @@ timer matures — which is why the save holds one active id plus the remaining c
 GameBootstrapper.Configure()          registers everything (lazily)
 GameEntryPoint.Start()
   └─ GameStateCoordinator.LoadOrInitialize()
-        ├─ save exists → LawsManager.LoadFromDto(dto) → ProcessReplenishment()  (offline catch-up)
+        ├─ save exists → LawsManager.LoadFromDto(dto) → AdvanceTo(now)  (offline catch-up)
         └─ no save     → LawsManager.InitializeCardPool()
   └─ ILocalizationService.WhenReady(...)        ← waits for the String Tables (§6.12)
         └─ SceneManager.LoadScene("Main", Additive)
@@ -227,8 +227,8 @@ the first tween frame runs.
 
 ### A timer maturing
 ```
-AccrualDriver.Tick()  (~4 Hz)
-  └─ LawsManager.ProcessReplenishment()
+GameClock.Ticked(now)  (~4 Hz)
+  └─ LawsManager.AdvanceTo(now)
        ├─ slots.Advance(now, interval) → how many matured
        ├─ TryFillActiveSlot()          → draws only if the active slot is empty
        └─ QueueChanged                 → Presenter → arrive SFX (if visible) + OnStateChanged
@@ -284,7 +284,7 @@ Tests assert the property directly: **crystals quoted == crystals deducted.**
 
 ### 6.4 The View is display-only
 The replenishment timer used to be pumped from `LawsView.Update()`, which tied the mechanic's
-progress to whether the screen happened to exist. `AccrualDriver` owns it now. A View may
+progress to whether the screen happened to exist. The manager now advances it on the game clock. A View may
 *read* remaining time to draw a countdown; it must never be what makes the countdown advance.
 
 Audio is the one thing gated on visibility (`SetScreenVisible`): the queue keeps advancing on
@@ -367,7 +367,7 @@ Three things about the prefab that are easy to undo by accident:
   `CharacteristicDisplayData.Name` is still resolved, for the detail panel and other modules.
 
 A note for whoever builds the next mechanic that awards characteristic points: `LawsPresenter`
-re-renders on `QueueChanged` and `CharacteristicLeveledUp`, so points added without a level-up
+re-renders on `QueueChanged` and `CharacteristicLeveledUpEvent`, so points added without a level-up
 and outside a Laws action will not move these rings on their own. Publish an event when
 Random Occurrences lands and subscribe here — the seam is `NotifyStateChanged`.
 

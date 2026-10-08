@@ -130,7 +130,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
         public void WarehouseDisplay_AtTheCeiling_ReportsMaxedRatherThanAPrice()
         {
             var dto = new KingdomRuler.Systems.Save.TradeStateDto();
-            dto.WarehouseLevels[TradeResourceType.Clay.ToString()] = WarehouseCurve.MaxSupportedLevel;
+            dto.WarehouseLevels[TradeResourceType.Clay.ToString()] = TradeConfig.MaxWarehouseLevel;
             _manager.LoadFromDto(dto);
 
             var display = _presenter.GetWarehouseDisplay(TradeResourceType.Clay);
@@ -325,7 +325,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
             int renders = 0;
             _presenter.OnStateChanged += () => renders++;
 
-            _eventBus.Publish(new ResourceChanged(TradeResourceType.Stone, 10f, 10f));
+            _eventBus.Publish(new TradeResourceChangedEvent(TradeResourceType.Stone, 10f, 10f));
 
             Assert.AreEqual(1, renders);
         }
@@ -354,7 +354,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
             _presenter = null;
 
             _localization.RaiseLocaleChanged();
-            _eventBus.Publish(new ResourceChanged(TradeResourceType.Wood, 1f, 1f));
+            _eventBus.Publish(new TradeResourceChangedEvent(TradeResourceType.Wood, 1f, 1f));
             _ledger.AddCrystals(1000);
             _manager.UpgradeWarehouseWithCrystals(TradeResourceType.Wood);
 
