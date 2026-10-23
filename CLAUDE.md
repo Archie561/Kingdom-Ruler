@@ -81,7 +81,7 @@ font, a prefab atom, a static helper). Dependencies run `Modules → Systems →
 asmdefs enforce it. If a module would need to call the thing you are adding, it is not a module.
 
 **Placement check for anything that touches Ledger-owned state:** before putting new logic
-inside a module's `Domain/`, check the GDD for other mechanics that touch the same
+inside a module's `Model/`, check the GDD for other mechanics that touch the same
 characteristic/resource/currency. If more than one module will need it (e.g. any math for
 mutating a characteristic — Laws today, Random Occurrences later), it belongs in `Systems/Ledger`,
 not inside whichever module needed it first. Flag it rather than guessing if it's unclear
@@ -152,7 +152,7 @@ A task isn't complete until:
       invented for a fake, a dependency loosened to `null` — write the better class, verify it
       in Play mode, and record what was verified in the module's doc.
 - [ ] New code lives in the right place per `ARCHITECTURE.md` §3 — inside its module
-      (`Modules/<X>/Scripts/{Domain,Presenters,Views}` + the module's `Manager`) or, if it's
+      (`Modules/<X>/Scripts/{Data,Model,UI}`, "Inside a module") or, if it's
       cross-cutting, under `Systems/` (it has behaviour and is injected) or `Shared/` (a passive
       building block), not invented as a new top-level folder. `Core/` is the composition root
       only.
@@ -168,7 +168,7 @@ A task isn't complete until:
 ## 6. Communication style
 
 - State assumptions explicitly and proceed for 🟢-tier ambiguity (e.g. "I'll place this in
-  `Domain/Economy/` since it's pure cost-curve math, following the pattern in
+  `Modules/Economy/Scripts/Model/` since it's pure cost-curve math, following the pattern in
   `ARCHITECTURE.md` §3").
 - For 🟡/🔴-tier ambiguity, ask — don't guess and hope. A wrong guess in the ledger or save
   system is expensive to unwind later.

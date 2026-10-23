@@ -41,7 +41,7 @@ var choice = await _popups.Create<ConfirmPopup>().Ask(
         canConfirm: CanAffordRefill),
     closeWhen: () => RefillCost <= 0);   // every law came back on its own meanwhile
 
-if (choice == ConfirmPopupChoice.Confirm) CompleteRefill();
+if (choice == ConfirmPopupChoice.Confirm) _manager.TryRefill();   // re-reads the price now
 ```
 
 **A panel that stays open** across several presses, with another popup opening on top of it —
@@ -140,9 +140,9 @@ Systems/Popups/
 **Delete a kind's script folder and `Core/` must still compile.** That is the test for whether
 something belongs in `Core/`.
 
-A module's own popups (a Trade offer, an occurrence letter) live in that module —
-`Modules/<X>/Scripts/Views/` and `Modules/<X>/Prefabs/` — and are added to the same shared
-registry. A serialized reference crosses assemblies freely, so this creates no asmdef cycle.
+A module's own popups (an occurrence letter, say) live in that module — a component folder under
+`Modules/<X>/Scripts/UI/` (`ARCHITECTURE.md` §3) and `Modules/<X>/Prefabs/` — and are added to the
+same shared registry. A serialized reference crosses assemblies freely, so this creates no asmdef cycle.
 
 ---
 
@@ -185,13 +185,12 @@ The purchase that follows a `Confirm` triggers its own.
 
 ## 6. Decisions that look arbitrary but are not
 
-**Polled, not pushed.** The previous design was event-driven: the caller held the popup's data
-object and pushed changes into it. That made the caller know every event that could change what
-the popup showed, forward each one, run its own timer anyway (time has no event), and unwire it
-all on close — about 70 lines in `LawsPresenter` for one question, and a missed event left the
-popup silently stale (its title never followed a locale change). Re-reading one function at 4 Hz
-while a popup is open costs nothing noticeable and cannot miss a change. It is the same approach
-the Laws countdown and the warehouse bars already use (`ARCHITECTURE.md` §4.5).
+**Polled, not pushed.** The caller hands over a function and the popup re-reads it. Pushing
+changes in instead would make every caller know each event that could change what the popup shows,
+forward it, run its own timer anyway (time has no event) and unwire it all on close — and one missed
+event leaves the popup silently stale. Re-reading one function at 4 Hz while a popup is open costs
+nothing noticeable and cannot miss a change. It is the same approach the Laws countdown and the
+warehouse bars use (`ARCHITECTURE.md` §4.5).
 
 **Redraw only on change.** `Render` runs when the new data differs from the last drawn data,
 compared with `EqualityComparer<TData>.Default` — field by field for a struct, so strings compare
@@ -201,15 +200,12 @@ refresh; give it `IEquatable` if that ever matters.
 **No "declined vs dismissed".** Every caller treated both as "don't do it". Closing without a
 choice is simply `null`; a popup that needs an explicit "later" option makes it a button.
 
-**`Create`, not `Open`, and hidden until shown.** `PopupSystem`'s method used to be `Open`, and it
-already put the prefab on screen — dimmed, with a sound — before it had any data, so a forgotten
-`Show` left a blank popup over a dark screen. Now the name says what happens and the behaviour
-matches it: `Create` only builds the popup, inactive; `Show` / `Ask` are what display it. The
-backdrop, the stack and the sounds stay `PopupSystem`'s alone — the popup merely raises `Shown`, as
-it already raised `Closed`, and `PopupSystem` reacts. A popup created and never shown is invisible
-and is never stacked, so the worst a forgotten `Show` can do is leave an inert object behind.
-`GetPopup` was considered and rejected: "get" suggests fetching one that exists, while every call
-makes a new one.
+**`Create`, and hidden until shown.** `Create` only builds the popup, inactive; `Show` / `Ask` are
+what display it. Nothing reaches the screen — no backdrop, no sound — before the popup has data, so
+the worst a forgotten `Show` can do is leave an inert, invisible object behind. The backdrop, the
+stack and the sounds stay `PopupSystem`'s alone: the popup raises `Shown` and `Closed`, and
+`PopupSystem` reacts. Not `Open` (it does not display anything) and not `GetPopup` ("get" suggests
+fetching one that exists, while every call makes a new one).
 
 **`Ask` keeps its short name.** It also fills and shows the popup, and also closes it — but the
 complete name, `ShowAskAndClose`, is too long, and `AskAndClose` is no more complete than `Ask`.
@@ -261,11 +257,10 @@ to.
 **`Popup.Generic.cs`.** `Popup` and `Popup<TData, TChoice>` share a name, like `Task` and
 `Task<T>`, and two files cannot both be `Popup.cs`.
 
-**`PopupSystem`, not `PopupManager`.** It was `PopupManager`, the one class that broke the
-project's rule that "Manager" means a plain-C# module Model. Renamed when the popups moved into
-`Systems/`: it *is* the popup system. Call sites did not change — they go through the `_popups`
-field. It is a MonoBehaviour because it owns the popup canvas, and it lives in the Bootstrap scene
-so anything constructed at startup can be given it directly.
+**`PopupSystem`, not `PopupManager`.** "Manager" means a plain-C# module Model in this project
+(`ARCHITECTURE.md` §3); this *is* the popup system. It is a MonoBehaviour because it owns the popup
+canvas, and it lives in the Bootstrap scene so anything constructed at startup can be given it
+directly.
 
 ---
 
@@ -275,28 +270,24 @@ Popups are MonoBehaviour and DOTween, so they are verified in Play mode rather t
 tests (`ARCHITECTURE.md` §8). Clicks go through the real `EventSystem` raycast — invoking
 `onClick` directly would bypass the raycaster and pass either way.
 
-Verified on 2026-10-02, after the rewrite:
+Verified:
 
-- Live data redraws while open (a per-second body text; the refill countdown 4:00 → 3:47).
+- Live data redraws while open (a per-second body text; the refill countdown ticking down).
 - Confirm and Cancel each give their choice, on the tap; an immediate second tap is ignored.
 - Two popups stack as `older, backdrop, newer`; a tap on the older popup's button lands on the
   backdrop and closes only the newer one, with `null`.
 - A closing popup stays drawn above the backdrop while it animates out.
-- `closeWhen` turning true closes the popup with `null`.
+- `closeWhen` turning true closes the popup with `null`, including when it is already true at `Show`.
 - A data function that throws logs and closes the popup with `null`.
-- Refill: the price shown (4) is the price charged, on Confirm; a backdrop tap charges nothing.
-- A popup cleans up after itself: destroyed, backdrop hidden once the stack is empty.
-
-Re-verified on 2026-10-03, after `Open` became `Create` and popups started hidden:
-
 - A created, never-shown popup is inactive, unstacked and leaves the backdrop off; closing it
   destroys it at once.
-- A popup whose `closeWhen` is already true at `Show` closes on its first refresh with `null`.
 - A panel opened with `Show` stays open across two Confirm presses, redraws its press count, and
   its `while (panel.IsOpen)` loop ends when a backdrop tap closes it.
 - A question stacked on that panel covers it — a tap on the panel's button lands on the backdrop
   and closes only the question — and the backdrop returns beneath the panel afterwards.
-- Refill end to end through `LawsPresenter`: countdown 4:00 → 3:53, Confirm charged the 4 shown.
+- Refill end to end through `LawsPresenter`: the price shown is the price charged on Confirm;
+  opening the popup or tapping the backdrop charges nothing.
+- A popup cleans up after itself: destroyed, backdrop hidden once the stack is empty.
 
 Two traps when driving this from MCP: enter Play mode from **Bootstrap**, never Main, or nothing
 is injected; and with *Run In Background* off the player loop stops while the Editor is

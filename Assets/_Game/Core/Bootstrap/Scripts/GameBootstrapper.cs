@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.Serialization;
 using KingdomRuler.Systems.Events;
 using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Modules.Navigation;
@@ -11,14 +10,11 @@ using KingdomRuler.Systems.Localization;
 using KingdomRuler.Systems.Purchasing;
 using KingdomRuler.Systems.Save;
 using KingdomRuler.Modules.Laws;
-using KingdomRuler.Modules.Laws.Presenters;
+using KingdomRuler.Modules.Laws.UI;
 using VContainer;
 using VContainer.Unity;
 using KingdomRuler.Modules.Trade;
 using KingdomRuler.Modules.Trade.Presenters;
-using KingdomRuler.Modules.Economy;
-using KingdomRuler.Modules.Cities;
-using KingdomRuler.Modules.RandomOccurrences;
 
 namespace KingdomRuler.Core
 {
@@ -36,13 +32,6 @@ namespace KingdomRuler.Core
         [Header("Modules")]
         [SerializeField] private LawsConfig    _lawsConfig;
         [SerializeField] private TradeConfig   _tradeConfig;
-        [SerializeField] private EconomyConfig _economyConfig;
-
-        // FormerlySerializedAs carries the value across the Events → RandomOccurrences
-        // rename; the scene stores the field by name, so without it Unity would silently
-        // drop the reference and the config would arrive null at runtime.
-        [FormerlySerializedAs("_eventsConfig")]
-        [SerializeField] private RandomOccurrenceConfig _randomOccurrenceConfig;
 
         protected override void Configure(IContainerBuilder builder)
         {
@@ -69,15 +58,9 @@ namespace KingdomRuler.Core
             builder.Register<ScreenNavigator>(Lifetime.Singleton);
 
             // Laws module.
-            // Explicit factory: LawsManager has a second constructor taking a System.Random
-            // (so tests can pin the shuffle order). VContainer picks the constructor with
-            // the most parameters, so left to itself it selects that one and fails to
-            // resolve System.Random at startup.
-            builder.Register(c => new LawsManager(
-                    c.Resolve<KingdomLedger>(), c.Resolve<IClock>(), c.Resolve<LawsConfig>()),
-                Lifetime.Singleton);
-            builder.Register<LawsPresenter>(Lifetime.Singleton);
             builder.RegisterInstance(_lawsConfig);
+            builder.Register<LawsManager>(Lifetime.Singleton);
+            builder.Register<LawsPresenter>(Lifetime.Singleton);
 
             // Trade module.
             // Explicit factory for the same reason as Laws: TradeManager has a second
@@ -88,17 +71,6 @@ namespace KingdomRuler.Core
                 Lifetime.Singleton);
             builder.Register<TradePresenter>(Lifetime.Singleton);
             builder.RegisterInstance(ResolveTradeConfig());
-
-            // Economy module
-            builder.Register<EconomyManager>(Lifetime.Singleton);
-            builder.RegisterInstance(_economyConfig);
-
-            // Cities module
-            builder.Register<CitiesManager>(Lifetime.Singleton);
-
-            // Random Occurrences module (GDD §10)
-            builder.Register<RandomOccurrenceManager>(Lifetime.Singleton);
-            builder.RegisterInstance(_randomOccurrenceConfig);
 
             // Services
             // Explicit factory: LocalJsonSaveService has a second constructor taking a

@@ -277,8 +277,6 @@ MonoBehaviour:
   _tradeResourceRegistry: {fileID: 11400000, guid: fd4ea518cd0c6c344a4c757257fafeee, type: 2}
   _lawsConfig: {fileID: 11400000, guid: 91e175909c436974ab57bb45f3f44a33, type: 2}
   _tradeConfig: {fileID: 11400000, guid: 73e2f9f5a7e53384bb49ec0859a65de1, type: 2}
-  _economyConfig: {fileID: 11400000, guid: fd4516f61851f4c42bfbfa369dd12ca5, type: 2}
-  _randomOccurrenceConfig: {fileID: 11400000, guid: 0a9f6dd1c69b20e45ba41046c8d29168, type: 2}
 --- !u!4 &1115017363
 Transform:
   m_ObjectHideFlags: 0

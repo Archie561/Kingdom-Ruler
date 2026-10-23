@@ -126,19 +126,17 @@
   together:
 
   ```csharp
-  public static class LawsUIText            // Modules/Laws/Scripts/
+  public static class LawsUIText            // Modules/Laws/Scripts/UI/
   {
-      public const string StringTable   = "LawsUITable";
-      public const string RefillConfirm = "ui.refill_confirm";
+      public const string StringTable = "LawsUITable";
+      public const string RefillTitle = "ui.refill.title";
   }
   ```
 
   **`public`, and a type of its own — not `internal`, and not nested inside the Presenter.**
   The content tests live in a *separate* assembly (`KingdomRuler.Tests.EditMode`), so an
   `internal` or privately-nested holder is invisible to them, and they would be forced back
-  into re-typing the literals — which is the entire failure this rule prevents. The old
-  `LawsPresenter.Tables` class was privately nested for exactly that reason and had to be
-  replaced.
+  into re-typing the literals — which is the entire failure this rule prevents.
 
   Same rule, same shape as a `*Definition` — one declaration, imported by both the Presenter
   and the module's content test (`TradeTextTests` walks `TradeUIText.AllKeys` instead of
@@ -167,12 +165,12 @@
     line) → a `LocalizeStringEvent` component in the prefab. No code.
   - **Dynamic content** (derived from data, composed, or inflected: card title and flavor,
     characteristic name, anything with a count in it) → resolved in the **Presenter** via
-    `ILocalizationService` and delivered through the existing display structs. It cannot use
+    `ILocalizationService` and delivered through the view-data structs. It cannot use
     the component: the entry to fetch isn't known until runtime, a composed or pluralized
     string is not a single entry, and pointing a component at a card title would hand the
     View back the data reference the MVP split exists to remove.
 
-  **Two hazards, both found the hard way — see `docs/modules/Laws.md` §6:**
+  **Two hazards — see `docs/modules/Laws.md` §6.13:**
   1. Localization initialises **asynchronously**, and neither path recovers from rendering
      too early. `GameEntryPoint` therefore waits on `ILocalizationService.WhenReady` before
      loading a scene. Don't remove that gate on the theory that placeholders are a
@@ -294,31 +292,29 @@ Assets/
         Scripts/            # ScreenId, and binds screens as plain GameObjects
         Prefabs/            # BottomNavBar.prefab
         Localization/       # NavigationUITable — the tab labels
-      Laws/
+      Laws/                 # the reference module shape — see "Inside a module" below
         Scripts/
-          Domain/           # pure C#: card-queue and card-effect resolution specific
-                            # to Laws, plus Laws-only math like crystal buy-up pricing.
-                            # NOT the leveling curve — that's Ledger-owned, see §4.3.
-          Events/           # module-local bus events — §4.2 tier 3. Only create this
-                            # when a module actually needs one; Laws deliberately uses
-                            # a plain event on its Manager instead.
-          LawsManager.cs    # Model: orchestrates Domain + Ledger + queue timers
-          Presenters/
-          Views/
+          Data/             # what designers author: ScriptableObject types and the types
+                            # serialized inside them (LawCardDefinition, LawsConfig…)
+          Model/            # the mechanic, plain C#: LawsManager (entry point, the only
+                            # class touching the Ledger and clock) + its pure helpers
+          UI/               # LawsPresenter, LawsScreenView, LawsUIText at the root;
+            Card/           # one folder per UI component, holding its View and the
+            CharacteristicDial/  # view data it draws
         Localization/       # this module's String Tables: one for UI chrome, one per
                             # content type keyed by id (§2)
         ScriptableObjects/
           Config/           # LawsConfig.asset — queue cap, replenish time, crystal costs
-          Data/             # one LawCardDefinition asset per card
+          LawCards/         # one LawCardDefinition asset per card
         Prefabs/
         Images/             # sprites/textures for this mechanic (see note below)
-      Trade/                # same internal shape as Laws.
-                            # ScriptableObjects/Data/ stays empty: offers are generated, not
-                            # authored, so there is no content table either (docs/modules/Trade.md)
-      Economy/              # same internal shape as Laws
-      Cities/                # same internal shape as Laws
-      RandomOccurrences/      # same internal shape as Laws — the mechanic in GDD §10
-      Shop/                    # same internal shape as Laws
+      Trade/                # still on the older Domain/Presenters/Views layout; it takes the
+                            # Laws shape in its planned overhaul
+      Economy/              # EMPTY until built (GDD §8). Each of these four is a folder name
+                            # only. A module takes Laws' shape when it is built.
+      Cities/               # EMPTY until built (GDD §9)
+      RandomOccurrences/    # EMPTY until built — the mechanic in GDD §10
+      Shop/                 # EMPTY until built (GDD §11)
     Scenes/
       Bootstrap.unity        # loads first: root LifetimeScope, services, then loads Main
       Main.unity              # the 5 screens live here as Views under their own Canvases,
@@ -339,21 +335,38 @@ docs/
 CLAUDE.md
 ```
 
-The rule from the brief generalizes cleanly: **group by type within whatever folder you're
-in.** Inside a module: `Scripts/` (further split by role — Domain, Events, Manager, Presenters,
-Views) and `ScriptableObjects/` (further split into `Config/` and `Data/`). Inside a system:
-`Scripts/`, plus `Prefabs/` or `ScriptableObjects/` only if it has any. **Each module and system
-holds what it actually contains** — the folders are not stamped out identically, and an empty one
-is not created for symmetry. Namespaces mirror the folders: `KingdomRuler.Systems.Ledger`,
-`KingdomRuler.Modules.Navigation`, `KingdomRuler.Shared.UI`.
+**Group by type within whatever folder you're in.** Inside a module: `Scripts/`, `ScriptableObjects/`
+(split into `Config/` and one folder per content type), `Prefabs/`, `Localization/`. Inside a
+system: `Scripts/`, plus `Prefabs/` or `ScriptableObjects/` only if it has any. **Each module and
+system holds what it actually contains** — the folders are not stamped out identically, and an
+empty one is not created for symmetry. Namespaces mirror the folders: `KingdomRuler.Systems.Ledger`,
+`KingdomRuler.Modules.Navigation`, `KingdomRuler.Shared.UI` (exceptions in §10).
 
 **This tree is the recommended shape, not an exhaustive whitelist.** A module may add asset folders
 the tree doesn't list — `Images/` for that mechanic's sprites and textures, `Audio/`, `Fonts/` —
-whenever it keeps the mechanic's assets next to the mechanic. It may also name its content folder
-for what it holds (Laws uses `ScriptableObjects/LawCards/` rather than a generic `Data/`). What the
-tree *is* strict about is the `Scripts/` role split and the `Config/` vs. content split (§7),
-because those two carry real architectural meaning. Adding a sprite folder does not need a doc
-update; adding a new **script role** or a new top-level folder under `_Game/` does.
+whenever it keeps the mechanic's assets next to the mechanic. What the tree *is* strict about is the
+`Scripts/` split below and the `Config/` vs. content split (§7), because those carry real
+architectural meaning. Adding a sprite folder does not need a doc update; adding a new **script
+folder role** or a new top-level folder under `_Game/` does.
+
+### Inside a module: `Data/`, `Model/`, `UI/`
+
+A mechanic module's `Scripts/` has three folders, one per layer, and dependencies run
+**`UI → Model → Data`**:
+
+| Folder | Holds | Namespace |
+|---|---|---|
+| `Data/` | What designers author: ScriptableObject types and the plain types serialized inside them (an effect struct, an enum). No behaviour beyond small derivations (a localization key, picking an effect array). | `KingdomRuler.Modules.<X>` |
+| `Model/` | The mechanic, plain C#. The **Manager** is its entry point and **the only class that touches the Ledger or the clock**; every transaction lives there, each price beside the method that charges it. Everything else in `Model/` is pure: handed the time, returns results, directly unit-tested. | `KingdomRuler.Modules.<X>` |
+| `UI/` | The Presenter, the screen View, the module's `<X>UIText` keys, and **one subfolder per UI component** holding its View and the view-data struct it draws (`Card/LawCardView` + `Card/LawCardViewData`). | `KingdomRuler.Modules.<X>.UI` |
+
+`Data/` and `Model/` share the module namespace because the composition root, the save coordinator,
+the Presenter and the tests all use both; splitting them would only add `using` lines. `UI` gets its
+own because it marks the one rule that matters — **the model never references the UI** — and a
+`using …<X>.UI` in a model file is easy to spot.
+
+A module-local bus event, when one is ever needed, goes in `Scripts/Events/` (§4.2 tier 3).
+`docs/modules/Laws.md` is the worked example of this shape.
 
 ### Systems with variants: split `Scripts/` into Core plus one folder per variant
 
@@ -424,10 +437,9 @@ receives what it needs through injection, it doesn't look anything up itself.
 1. **Hydrate** state from the save (`GameStateCoordinator.LoadOrInitialize`). Views render
    whatever they find on `Start`, so a module initialised after its View has already
    rendered shows a blank screen until the next change.
-2. **Wait** for localization (`ILocalizationService.WhenReady`). Verified by removing it:
-   the scene loaded first, and the chrome kept its authored English while every
-   Presenter-built string sat on a `[key]` placeholder — permanently, long after
-   initialisation finished. Neither path self-heals.
+2. **Wait** for localization (`ILocalizationService.WhenReady`). Without it the chrome keeps
+   its authored English and every Presenter-built string stays on a `[key]` placeholder —
+   permanently. Neither path self-heals.
 3. **Load** `Main` additively.
 4. **Inject** each root of the loaded scene. The root scope lives in Bootstrap and
    VContainer only wires MonoBehaviours it can see in its own scene, so Views in an
@@ -474,9 +486,8 @@ that "event" means exactly that here. Call sites still read as a sentence:
 `Subscribe<CharacteristicLeveledUpEvent>(…)`. (A plain C# `event Action` on a class is not a bus
 message and keeps a plain name, like `LawsManager.QueueChanged`.)
 
-**A cross-module event that is not about a Ledger resource has no home yet**, deliberately. Two such
-types, `CityPurchased` and `RegionCompleted`, sat in a shared `Ledger/Events/` folder with no
-publisher and no subscriber, and were deleted. Modules cannot reference each other, so the first real
+**A cross-module event that is not about a Ledger resource has no home yet**, deliberately: no such
+event has a publisher and a subscriber today. Modules cannot reference each other, so the first real
 one — say, Random Occurrences reacting to a city purchase — has to live in `Systems/`; it decides
 where then, rather than a folder existing for it now.
 
@@ -491,11 +502,10 @@ holds a direct reference to the publisher (a Presenter and its own Manager, say)
 `event Action` on the publisher is simpler, typed, and doesn't need an unsubscribe on the bus. Reach
 for the bus when the publisher shouldn't have to know who's listening.
 
-Worked example: the law card queue used to publish a `CardQueueChanged` message on the bus. Its only
-subscriber was `LawsPresenter`, which is constructed with the `LawsManager` that published it — so it
-is now `LawsManager.QueueChanged`, a plain event, and `LawsManager` no longer takes an `EventBus` at
-all. The trigger to promote it back to tier 2 would be a subscriber outside Laws, such as a
-bottom-nav badge showing how many cards are waiting.
+Worked example: `LawsManager.QueueChanged` is a plain event. Its only subscriber is `LawsPresenter`,
+which is constructed with that manager, so `LawsManager` needs no `EventBus` at all. The trigger to
+promote it to tier 2 would be a subscriber outside Laws, such as a bottom-nav badge showing how many
+cards are waiting.
 
 ### 4.3 The Ledger (`Systems/Ledger`)
 
@@ -524,17 +534,12 @@ Concretely:
   `PointsRemainingForNextLevel`), and `AddCharacteristicPoints` / `ReduceCharacteristicPoints` take
   `(type, points)` only — no caller can supply a curve of its own.
 
-How it got here, so neither step is reintroduced: first a plain-C# `LevelingCurve` struct produced
-by a `LevelingConfig` asset (to keep `UnityEngine` types out of the Ledger), then a single
-`CharacteristicLevelingCurve` asset wired through the bootstrapper. Both cost wiring — a conversion
-factory, a bootstrapper field, a test-only Ledger constructor, runtime validation of
-designer-entered values — for something only the Ledger reads. Constants in its own code need none
-of it.
+The curve is constants rather than a config asset because only the Ledger reads it: an asset would
+need a bootstrapper field, wiring and runtime validation for no reader but the Ledger.
 
-The anti-pattern this replaces, and the reason it's spelled out: callers used to pass a
-`Func<int, float>` per call. Laws built one from its own config while the occurrences module shipped
-`level => 100f`, so **the same characteristic leveled at two different rates depending on which
-mechanic touched it.** Any API that lets a caller supply the curve will drift this way again.
+**Never let a caller supply the curve.** An API that takes it as a parameter lets each mechanic pass
+its own, and **the same characteristic then levels at different rates depending on which mechanic
+touched it.**
 
 **Note on the permanent level floor.** `GDD.md` §6 guarantees a characteristic never drops below a
 level it has reached. That is satisfied by clamping points at 0 within the current level — the floor
@@ -556,13 +561,13 @@ valuation). Almost none of them belong in `Systems/Ledger`. Ask one question:
 - **Yes → `Systems/Ledger`.** The math governs how shared state changes, and divergence would be a
   bug. This set is small and mostly closed: the characteristic leveling curve (Laws and Random
   Occurrences both award points) and the trade-resource regen rate derived from warehouse capacity.
-- **No → the module's own `Domain/`.** The math produces a number *that module* then asks the Ledger
+- **No → the module's own `Model/`.** The math produces a number *that module* then asks the Ledger
   to move. The Ledger neither knows nor cares how it was derived, and nothing else computes it.
-  `TradeConfig`'s warehouse curves, `BusinessCostCalculator`, `BusinessAccrualCalculator`,
-  `CityAffordabilityChecker` and `CrystalBuyUpCalculator` are all this kind.
+  `TradeConfig`'s warehouse curves and Laws' buy-up pricing (`LawsManager.BuyUpCost`) are this kind
+  today; Economy's business cost and accrual math and Cities' affordability check will be too.
 
 Worked example: the leveling curve is Ledger-owned because two mechanics award characteristic points
-and a stat must level at one rate. Crystal buy-up pricing sits in `Modules/Laws/` even though it is
+and a stat must level at one rate. Crystal buy-up pricing sits in `LawsManager` even though it is
 *about* levelling, because only Laws prices a buy-up — and per `GDD.md` §10 occurrences can never
 touch crystals, so it cannot acquire a second consumer.
 
@@ -574,8 +579,8 @@ rules, which is the drift the Ledger exists to prevent. Modules compute a number
 Ledger; they never hand the Ledger a way to compute.
 
 Every module's Manager queries and mutates state through this one object — nobody holds a
-private copy. `CitiesManager.CanAfford(cost)` is a pure function over a `KingdomLedger`
-snapshot plus a `CityCost` data object.
+private copy. Cities' affordability check, when it is built, belongs here too: a pure function
+over Ledger reads plus the city's authored cost.
 
 #### Shared *display* data: the registry pattern
 
@@ -603,13 +608,13 @@ trade resources were the obvious next one, and `TradeResourceRegistry` +
    `NameKeyFor` falls back to the derivation, so text keeps working and only the icon is
    absent.
 
-Presenters read the registry and pass the resolved sprite out on their display struct; Views
+Presenters read the registry and pass the resolved sprite out on their view-data struct; Views
 never hold the registry themselves, for the same reason they never hold a content asset.
 
 ### 4.4 Per-module Managers, Presenters, Views (`Modules/*`)
 
-Each module (`LawsManager`, `TradeManager`, `EconomyManager`, `CitiesManager`,
-`RandomOccurrenceManager`, `ShopManager`) owns the behavior specific to its mechanic — card
+Each module's Manager — `LawsManager` and `TradeManager` today; Economy, Cities, Random
+Occurrences and Shop get theirs when they are built — owns the behavior specific to its mechanic — card
 queueing, offer generation, business accrual — and calls into `KingdomLedger` to actually
 move resources. Modules don't call each other directly; coordination happens through the
 event bus, except for reads that legitimately need the shared Ledger (e.g. Cities checking
@@ -619,7 +624,26 @@ coupling).
 Each screen follows MVP: **View** (MonoBehaviour — layout, DOTween, forwards taps/swipes as
 plain events) → **Presenter** (plain C#, injected with the module's Manager, subscribes to
 its changes, decides what the View should show) → **Manager** (the Model). Presenters are
-unit-testable without ever instantiating a View.
+unit-testable without ever instantiating a View. The folder layout is in §3, "Inside a module".
+
+**What the composition root registers per module:** its config, its Manager and its Presenter —
+nothing else. The Manager constructs its own helpers (Laws' `LawQueue`, `LawDeck`,
+`ReplenishmentTimer`), so the bootstrapper reads as a list of mechanics, not of their internals.
+
+**One Presenter per screen, and it holds no Unity UI types.** It turns model state into view-data
+structs, carries player actions back to the Manager, and raises sound and haptics.
+
+**The View holds the Presenter; the Presenter never references the View.** The View is injected with
+its Presenter, subscribes to its events, reads its state and calls its commands. The Presenter only
+exposes state, events and commands, and never references the View, so it is tested without a fake
+View and outlives scene reloads. (Pattern literature calls this a *Presentation Model*. It keeps the
+name Presenter here because it also runs UI flow — opening popups, playing sounds — which a pure
+binding ViewModel would not.)
+
+**When a UI element gets its own View class:** when it **repeats** (a characteristic dial ×6) or has **behaviour of its own** (the law card's drag gesture and reveal). Everything
+else — a label, a counter, a button — is a serialized field on the screen View, which forwards its
+clicks to the Presenter. A component View owns its own content, animation and timing; the screen
+View tells it *what* to show, never *when* to animate.
 
 ### 4.5 Offline/idle accrual
 
@@ -628,6 +652,12 @@ storage) stores a `lastUpdatedUtc` timestamp and a rate. On app resume and on lo
 system computes `elapsed = now - lastUpdatedUtc` **once** and fast-forwards state
 accordingly (capped where a cap applies). This must not be simulated tick-by-tick — a
 player who was away 10 hours shouldn't cause 10 hours of simulated frames.
+
+**A stored deadline is never further away than one period.** When a timer settles, it pulls any
+deadline beyond `now + period` back to that point. Moving the device clock forward cannot be
+prevented with a local save (`GDD.md` §12), but moving it back must not then stall a timer for as
+long as the clock moved — that would punish the player, against `GDD.md` §2. Laws does this in
+`ReplenishmentTimer.Advance`; every new timer must do the same.
 
 **The Manager owns its timer and its schedule; the View only displays it.** A timer must never be
 advanced from a View's `Update()` — that couples the mechanic's progress to a UI object being alive
@@ -644,22 +674,17 @@ when that screen is open; the state change itself happens either way.
 |---|---|---|
 | `LawsManager.AdvanceTo` | its own constructor | the replenishment slots |
 | `TradeManager.AdvanceTo` | its own constructor | the offer refresh |
-| `EconomyManager.AdvanceTo` | its own constructor | business storage |
-| `RandomOccurrenceManager.AdvanceTo` | its own constructor | occurrence spawning |
 | `KingdomLedger.AccruePassiveResourceRegen` | `GameBootstrapper` — the Ledger deliberately holds no clock | warehouse regen |
 
 **Adding a time-driven module is one line in its own constructor**, `_clock.Ticked += AdvanceTo;`.
-The clock knows none of its subscribers. This replaced `AccrualDriver`, a class in `Core` that
-called each manager by name — and had silently missed the two modules added after it: Economy's
-storage only filled on load and on collect, and occurrence letters only arrived at app start.
+The clock knows none of its subscribers, so no central list can forget a module.
 
 **Order between subscribers does not matter, and that is a rule rather than luck.** No tick reads
 another system's result: the offer refresh does not read amounts, and neither does law
 replenishment. **Whoever decides from a trade amount, or changes a capacity, settles regen
 itself first** — `AcceptOffer`, both warehouse upgrades, and `TradeManager.LoadFromDto`, which is
 the first moment capacities are final at load. Correctness therefore never depends on whether a
-tick happened to land first. (The old driver justified itself by fixing an order between regen
-and the timers; checked, that order protected nothing.)
+tick happened to land first.
 
 **A failing subscriber does not stop the others.** `GameClock` calls each one separately and logs
 an exception rather than letting it skip everyone after it — verified in Play mode with a
@@ -731,37 +756,29 @@ ScreenId                                 the shared vocabulary
 separate "is available" flag and no second list pairing ids to GameObjects — a tab is tappable
 **iff** it has a screen assigned. That is the same reasoning `docs/modules/Laws.md` §4 applies to
 the queue counts: two facts that must agree are two chances to disagree, so store one and derive
-the other. An earlier draft had the flag on the tab and the bindings on the bar, which needed a
-runtime check for "marked available but nothing bound"; that state can no longer be authored, so
-the check is gone. Making a tab live is one action — drag its screen in.
+the other. "Marked available but nothing bound" cannot be authored. Making a tab live is one
+action — drag its screen in.
 
 A tab that should be disabled while its screen *does* exist (a progression lock) is a genuinely
 different concept and gets its own `IsUnlocked` rather than being folded into this one.
 
-An earlier draft split this across seven types — a `ScreenRoot` marker component on each screen
-prefab, a separate `ScreenSwitcherView`, and a `NavigationUIText` holding the table name. All
-three were removed as ceremony. Recording why, so they don't come back by reflex:
+What is deliberately **not** here:
 
-- **`ScreenRoot`** existed so a screen could declare its own id. But a serialized `GameObject`
-  reference doesn't name a module type either, so the assembly-cycle argument never required it —
-  the reference on each tab does the same job in one place instead of two. Reintroduce it only if
-  something needs to ask a GameObject *which screen it is* at runtime; nothing does.
-- **`ScreenSwitcherView`** did nothing but the `SetActive` loop, and `BottomNavBarView` was
-  already subscribed to the same event. The cost of merging is that the nav-bar prefab
-  carries a screens array overridden per scene — acceptable while `Main` is the only scene with a
-  bar. If a second scene ever needs one, splitting it out again is the fix.
-- **`NavigationUIText`** held a table name and a `"nav." + id` concat with **zero runtime
-  callers** — the prefab stores literal keys in its YAML. Its only consumer was the Editor
-  validator, which no longer exists: tab labels are fixed chrome, on screen from the first
-  frame, and §2 does not check those.
+- **No marker component on screens.** The serialized reference on each tab already says which
+  screen it opens. Add one only if something needs to ask a GameObject *which screen it is* at
+  runtime; nothing does.
+- **No separate screen-switcher View.** `BottomNavBarView` does the `SetActive` loop, so the nav-bar
+  prefab carries a screens array overridden per scene — fine while `Main` is the only scene with a
+  bar. A second scene that needs one is the trigger to split it out.
+- **No text-keys class.** Tab labels are fixed chrome resolved by `LocalizeStringEvent`, so no code
+  names them (§2).
 
 **Navigation cannot reference another module.** Modules never reference each other (§3), so the
-nav bar cannot hold a `LawsView`. Screens are therefore bound as plain `GameObject`s tagged with
-a `ScreenId`. The payoff is concrete: **adding navigation required no change to `LawsView` at
-all**, and moving Navigation between folders changed none of the screens either.
+nav bar cannot hold a `LawsScreenView`. Screens are bound as plain `GameObject`s tagged with a
+`ScreenId`, and a screen needs no knowledge of navigation at all.
 
 **Switching is `SetActive`, not a Canvas toggle.** That is what makes a screen's own
-`OnEnable`/`OnDisable` fire, which is how `LawsView` already tells its Presenter to gate audio —
+`OnEnable`/`OnDisable` fire, which is how `LawsScreenView` tells its Presenter to gate audio —
 a card arriving while the player is on another tab updates the queue silently. Disabling only
 the Canvas would keep those callbacks from running and leave each View's `Update()` ticking on a
 screen nobody can see. The mechanic itself is unaffected either way: timers belong to tick
@@ -773,8 +790,7 @@ inactive children, and a boot sequence that silently leaves a View uninjected is
 build on a maybe.
 
 **The screen switch is a hard cut, and this is a known deviation from `GDD.md` §3**, which lists
-"screen transition" among the animations required on every state change. An earlier version faded
-the incoming screen in via a `CanvasGroup`; it was removed as unnecessary weight for now. The tab
+"screen transition" among the animations required on every state change. The tab
 button still animates on selection, so the tap is not without feedback, but the screens
 themselves cut instantly. Re-adding it means a `CanvasGroup` on each screen root and one tween in
 `ApplyScreens` — deliberately cheap to reverse. Decide before the mechanic is judged on feel.
@@ -803,7 +819,7 @@ same reason: a full-bleed background must not be pulled in from the screen edges
 
 **Every screen follows the same split, plus one extra inset.** Background full-bleed, UI inset —
 and because the nav bar sits on top of every screen, screen UI must also clear the bar or it ends
-up underneath it (which is exactly where `LawsScreen`'s `TimerRow` was before this was fixed):
+up underneath it:
 
 ```
 <X>Screen (Canvas)
@@ -824,7 +840,7 @@ accepted cost of keeping `SafeAreaFitter` a reusable UI atom rather than one tha
 navigation module.
 
 **Tabs and screens are both keyed by `ScreenId`, never by array index** — the same rule as the
-Laws characteristic bars (`docs/modules/Laws.md` §6.6). Index binding survives a reorder and then
+Laws characteristic dials (`docs/modules/Laws.md` §6.9). Index binding survives a reorder and then
 quietly shows the wrong screen.
 
 **There is deliberately no Presenter.** It would mediate nothing: tab labels resolve through
@@ -870,8 +886,8 @@ Rules that reach beyond this system:
 
 - **Live data is re-read, not pushed.** Pass a function instead of a value and the popup
   re-reads it a few times a second while open, redrawing only when the result changes. The
-  function must only read. This replaced an event-driven design whose callers had to forward
-  every relevant event plus run their own timer — see `docs/modules/Popups.md` §6.
+  function must only read, and the caller forwards no events and runs no timer of its own — see
+  `docs/modules/Popups.md` §6.
 - **Closing without a choice gives `null`** — the backdrop, `closeWhen`, a destroyed popup. It
   never equals a real choice, so it can never be mistaken for one.
 - **The tap spends nothing.** A purchase is charged only after the confirmation, and the price
@@ -897,7 +913,7 @@ Rules that reach beyond this system:
   migration when there is player data worth preserving, which is **before the first external build**,
   not before.
 - Domain objects are not serialized directly — map to/from plain DTOs at the save boundary,
-  so `Domain/` and Manager classes stay free to evolve without fighting a serializer.
+  so `Model/` classes stay free to evolve without fighting a serializer.
 - Cloud save later (per the GDD, intentionally deferred) is a second `ISaveService`
   implementation plus a conflict-resolution policy — gameplay code doesn't change.
 
@@ -913,15 +929,17 @@ Rules that reach beyond this system:
 - The Shop View/Presenter and no Manager should ever call a store SDK directly — always
   through `IPurchasingService`.
 
-## 7. Config SO vs. content Data assets
+## 7. Config SO vs. content assets
 
-Per module, two distinct kinds of ScriptableObject, kept separate on purpose:
+Per module, two distinct kinds of ScriptableObject asset, kept separate on purpose (their *types*
+live in `Scripts/Data/`, §3):
 
 - **`ScriptableObjects/Config/`** — one small asset holding *tunable parameters*: queue
   caps, timer durations, cost-curve coefficients, crystal-cost formulas. This is what
   changes when someone is balancing the game.
-- **`ScriptableObjects/Data/`** — one asset **per content item** (one city, one business,
-  one law card, one random occurrence). This is what changes when someone is adding content.
+- **`ScriptableObjects/<Content>/`**, named for what it holds (`LawCards/`, `Cities/`) — one asset
+  **per content item** (one city, one business, one law card, one random occurrence). This is
+  what changes when someone is adding content.
 
 Keeping these separate means adding a city doesn't touch the same file another city's edit
 touched (git-friendly, parallel-editing-friendly), and tuning a curve doesn't require
@@ -957,8 +975,7 @@ instead; `docs/modules/Popups.md` §7 is the worked example.
   `LedgerDataTests` (the registries and the names in `SharedTable`), `LawsContentTests` (every
   card's id and text, the refill messages) and `TradeTextTests` (every message in
   `TradeUIText.AllKeys`). They load the project's real assets and String Tables, so they run
-  with every test pass — there is no menu item to remember. They replaced four Editor
-  validators that did the same checks only when someone clicked them.
+  with every test pass — there is no menu item to remember.
 
   **A wiring mistake fails; unfinished content warns.** A key the game asks for that exists in
   no locale, a missing string table, a type with no registry definition, two cards sharing a
@@ -995,15 +1012,19 @@ instead; `docs/modules/Popups.md` §7 is the worked example.
   `KingdomRuler.Systems.Audio`, `KingdomRuler.Systems.Ledger`, `KingdomRuler.Shared.UI`,
   `KingdomRuler.Modules.Laws`, etc. A folder must not share its main class's name
   (`Systems/Events/EventBus.cs`, not `Systems/EventBus/EventBus.cs`): C# would resolve the
-  class name to the namespace inside every sibling namespace. One deliberate exception: the
+  class name to the namespace inside every sibling namespace. Two deliberate exceptions: the
   Ledger's per-resource folders (`Characteristics/`, `TradeResources/`) all share
-  `KingdomRuler.Systems.Ledger` (§3).
+  `KingdomRuler.Systems.Ledger`, and a module's `Data/` and `Model/` share its module namespace
+  while `UI/` and its component subfolders share `….UI` (§3).
 - PascalCase for types and public members, camelCase for locals/parameters, `_camelCase` for
   private fields.
 - One public type per file, file name matches type name.
 - Constructor injection for plain C# (Managers, Presenters); `[Inject]` method injection for
   MonoBehaviours (Views) — never try to constructor-inject a MonoBehaviour, Unity won't call
   that constructor.
+- A class with a second, test-only constructor (one taking a seeded `System.Random`, say) marks
+  its production constructor `[Inject]`. VContainer otherwise picks the constructor with the most
+  parameters and fails to resolve the test-only one at startup.
 - Prefer small interfaces (`ISaveService`, `IPurchasingService`, `IClock`) over base classes.
 - No `static` mutable game state outside what the composition root owns — no
   singletons-by-convention scattered through the codebase.

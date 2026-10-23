@@ -1,189 +1,163 @@
 # Laws module — architecture
 
-> Implements **GDD.md §6 — Law Enactment**. Read that first for *what* the mechanic does;
-> this document covers *how it is built* and how to extend it safely.
->
-> Project-wide rules live in `ARCHITECTURE.md`. This file only covers what is specific to
-> Laws, and states the reasoning behind decisions that look arbitrary from the outside.
+> Implements **GDD.md §6 — Law Enactment**. The GDD says *what* the mechanic does; this document
+> says *how it is built* and which decisions must survive future changes. Project-wide rules live
+> in `ARCHITECTURE.md`.
 
 ---
 
-## 1. What the mechanic is, in one paragraph
+## 1. The mechanic in one paragraph
 
-The player holds up to 8 law cards but sees exactly one at a time. Swiping right accepts
-it, left rejects it; **both apply effects** to 1–3 of the 6 characteristics — and the card
-**never states which ones**, so the player judges it from the writing and finds out when the
-bars move (§6.11). A resolved card frees a slot, which refills on a 2-minute real-time timer
-that keeps running while the app is closed. Crystals can instantly refill pending slots, or
-finish a characteristic's current level.
+The player holds up to 8 law cards but sees exactly one at a time. Swiping right accepts it, left
+rejects it; **both apply effects** to 1–3 of the 6 characteristics, and the card **never states
+which** — the player judges it from the writing and finds out when the dials move (§6.7). A resolved
+card frees a slot, which refills on a 2-minute real-time timer that keeps running while the app is
+closed. Crystals can instantly refill every pending slot, or finish a characteristic's current level.
 
 ---
 
-## 2. Layers and dependency direction
-
-Dependencies point **downward only**. Nothing in `Domain/` references a Presenter or a View —
-this is worth preserving, and is easy to verify with a grep.
+## 2. Structure
 
 ```
-                    ┌─────── outside the module · all in Systems/ ───────┐
-                    │ Ledger           Clock/Audio/Haptics Events        │
-                    │  KingdomLedger    IClock             EventBus      │
-                    │  CharacteristicType                                │
-                    │                   IAudioService                    │
-                    │                   IHapticService                   │
-                    └────────────────────────────────────────────────────┘
-                                          ▲
- VIEW            LawsView ────────► LawsPresenter
- (MonoBehaviour) ├── LawCardView ──────► LawCardDisplayData
-                 └── CharacteristicBarView ► CharacteristicDisplayData
-                                          ▲
- PRESENTER       LawsPresenter ────► LawsManager, KingdomLedger, EventBus,
- (plain C#)                          IAudioService, IHapticService
-                                          ▲
- CLOCK           GameClock.Ticked ─► LawsManager.AdvanceTo  (Systems/Clock; Laws subscribes itself)
-                                          ▲
- MODEL           LawsManager ──────► ShuffleBagDeck, ReplenishmentSlots,
- (plain C#)                          LawCardEffectApplier, CrystalBuyUpCalculator,
-                                     KingdomLedger, IClock, LawsConfig
-                                          ▲
- DOMAIN          ShuffleBagDeck            (pure, holds LawCardDefinition)
- (pure C#)       ReplenishmentSlots        (pure, zero project dependencies)
-                 LawCardEffectApplier      (pure, writes to KingdomLedger)
-                 CrystalBuyUpCalculator    (pure, zero project dependencies)
-                                          ▲
- DATA (SO)       LawsConfig ──────► LawCardDefinition ──► LawCardEffect
+Modules/Laws/
+  Scripts/                              assembly KingdomRuler.Modules.Laws
+    Data/                               what designers author
+      LawCardDefinition.cs              one card: id + accept/reject effects
+      LawCardEffect.cs                  (characteristic, signed points)
+      LawDecision.cs                    Accept / Reject
+      LawsConfig.cs                     tunable parameters + the card list
+    Model/                              the mechanic — plain C#
+      LawsManager.cs                    entry point: lifecycle, clock, every Ledger transaction
+      LawQueue.cs                       the player's hand
+      LawDeck.cs                        draw order (shuffle bag)
+      ReplenishmentTimer.cs             one card per interval, as a deadline
+    UI/
+      LawsPresenter.cs                  model ↔ view; feel hooks
+      LawsScreenView.cs                 the screen root and its simple widgets
+      LawsUIText.cs                     String Table keys for text built in code
+      Card/
+        LawCardView.cs                  the swipeable card
+        LawCardViewData.cs              what it draws
+      CharacteristicDial/
+        CharacteristicDialView.cs       one dial
+        CharacteristicDialViewData.cs   what it draws
+  ScriptableObjects/
+    Config/LawsConfig.asset
+    LawCards/                           one LawCardDefinition asset per card
+  Prefabs/                              LawsScreen, CharacteristicDial
+  Localization/                         LawsUITable (chrome), LawCardsTable (card text)
+  Images/
 ```
 
-**The Views never see a `LawCardDefinition` or any `Domain/` type.** Everything they render
-arrives as a display struct built by the Presenter — already localized. That is the seam
-localization hooks into, and it is why `LawCardView` has no dependency on `Domain`.
+**Namespaces.** `Data/` and `Model/` share `KingdomRuler.Modules.Laws`; `UI/` is
+`KingdomRuler.Modules.Laws.UI`. The split exists for one rule: **the model never references the
+UI**, and a stray `using …Laws.UI` in a model file is easy to spot.
+
+**Dependencies point one way:** `UI → Model → Data`, and everything may use `Systems/`.
+
+```
+ UI      LawsScreenView ──► LawsPresenter ──► LawsManager, KingdomLedger (reads only),
+         ├─ LawCardView                         CharacteristicRegistry, PopupSystem,
+         └─ CharacteristicDialView              IAudioService, IHapticService, ILocalizationService
+                                                 │
+ Model   LawsManager ──► LawQueue ──► LawDeck, ReplenishmentTimer
+            │
+            └──► KingdomLedger (writes), IClock
+                                                 │
+ Data    LawsConfig ──► LawCardDefinition ──► LawCardEffect, LawDecision
+```
+
+**Registration.** The composition root registers the module's config, its Manager and its
+Presenter — nothing else. `LawsManager` builds `LawQueue`, which builds `LawDeck` and
+`ReplenishmentTimer`.
 
 ---
 
-## 3. Class responsibilities
+## 3. Classes
 
-### Data (ScriptableObjects)
+### Data
 
 | Class | Responsibility |
 |---|---|
-| `LawsConfig` | Tunable parameters: queue cap, replenish interval, crystal costs. Also carries `AllCards`, the registry the deck is built from. **Not** the leveling curve — see §6.1. |
-| `LawCardDefinition` | One card: its `CardId` and the accept/reject effect arrays. No text and no key fields — the id *is* the localization key (§6.12). One asset per card in `ScriptableObjects/LawCards/`. |
-
-### Domain (pure C#, directly unit-testable)
-
-| Class | Responsibility | Notes |
-|---|---|---|
-| `ShuffleBagDeck` | Draw order. Every card appears once per cycle before any repeat; reshuffles when empty; never repeats across a cycle boundary. | Takes an injectable `Random` so tests can pin the order. The only Domain class holding ScriptableObjects. |
-| `ReplenishmentSlots` | The timers: how many slots are counting down and when the next matures. | Stores an **absolute deadline**, not a remaining duration — see §6.2. Handed the current time rather than reading a clock. |
-| `LawCardEffectApplier` | Translates a card's signed effect values into Ledger calls. | The sign convention is the whole job: cards author one signed number; the Ledger splits gains and losses into separate methods. |
-| `CrystalBuyUpCalculator` | Price of finishing a characteristic's current level. | Laws-owned, not shared — see §6.1. Returns 0 when nothing remains. |
-| `LawCardEffect` | One `(CharacteristicType, float Points)` pair. Serializable struct. | |
+| `LawCardDefinition` | One card: `CardId` and the accept/reject effect arrays. Holds no text — the id is the localization key (§6.13). `EffectsOf(decision)` picks the array. |
+| `LawCardEffect` | One `(CharacteristicType, float Points)` pair. Positive adds progress, negative removes it. |
+| `LawDecision` | `Accept` / `Reject`. Used from the swipe all the way to the effects. |
+| `LawsConfig` | Queue cap, replenish interval, crystal costs, and `AllCards`. **Not** the leveling curve (§6.2). |
 
 ### Model
 
-**`LawsManager`** — owns the card queue and orchestrates the Domain pieces. Holds only the
-state that spans them (`_activeCard`) plus the Ledger/config wiring.
+| Class | Responsibility |
+|---|---|
+| `LawsManager` | The mechanic's entry point and **the only class in the module that touches the Ledger or the clock** (§6.1). Lifecycle (`InitializeNewGame`, `LoadFromDto`, `ToDto`), the clock subscription, and every transaction: resolving a card, refilling, buying up. Each price sits beside the transaction that charges it. |
+| `LawQueue` | The hand: the shown card, held/replenishing counts, taking the shown card, completing replenishment. Pure — handed `now`. |
+| `LawDeck` | Draw order: every card once per cycle, reshuffle when empty, never the same card across a cycle boundary. Takes a `System.Random` so tests can seed it. |
+| `ReplenishmentTimer` | How many cards are pending and when the next matures. Stores a **deadline** (§6.3). |
 
 ```csharp
-// Queue state
-LawCardDefinition ActiveCard;  bool HasActiveCard;
-int AvailableCardCount;        int CardsReplenishing;    int MaxCardCount;
+// LawsManager
+void InitializeNewGame();   void LoadFromDto(LawsStateDto);   LawsStateDto ToDto();
+void AdvanceTo(DateTime now);                       // subscribed to IClock.Ticked
 event Action QueueChanged;
 
-// Commands
-void  InitializeCardPool();                      // fresh game
-void  AdvanceTo(DateTime now);                 // settle timers (subscribed to the clock)
-bool  ResolveCard(string cardId, bool accept);   // swipe
-bool  RefillWithCrystals();
-bool  BuyUpCharacteristic(CharacteristicType t);
+LawCardDefinition ActiveCard;   int HeldCardCount, ReplenishingCardCount, MaxCardCount;
+float SecondsUntilNextCard, SecondsUntilQueueFull;
 
-// Prices — owned here, next to the transactions that charge them (§6.3)
-int   RefillCost;
-int   GetBuyUpCost(CharacteristicType t);
-
-// Persistence
-LawsStateDto ToDto();   void LoadFromDto(LawsStateDto dto);
+bool ResolveActiveCard(LawDecision);
+int  RefillCost;                bool CanAffordRefill;              bool TryRefill();
+int  BuyUpCost(type);           bool CanAffordBuyUp(type);         bool TryBuyUp(type);
 ```
 
-**The clock** — `LawsManager` subscribes `AdvanceTo` to `IClock.Ticked` in its own constructor, so
-the game clock settles the replenishment timers about four times a second. That is what keeps the
-timer independent of any View being alive (§6.4). It used to be pumped by a module-local
-`LawsTickDriver`, then by a central `AccrualDriver` in `Core`; both are gone
-(`ARCHITECTURE.md` §4.5).
+`LawsManager` has two constructors: the production one, marked `[Inject]` so VContainer picks it,
+and one taking a `System.Random` for tests.
 
-### Presenter
-
-**`LawsPresenter`** — turns model state into render-ready values and routes user intent
-back. Plain C#, no MonoBehaviour, no DOTween, fully testable.
-
-```csharp
-event Action OnStateChanged;                          // "re-render everything"
-event Action<CharacteristicType> OnCharacteristicLeveledUp;
-
-bool TryGetActiveCardDisplay(out LawCardDisplayData);
-CharacteristicDisplayData GetCharacteristicDisplay(CharacteristicType);
-int  AvailableCardCount, MaxCardCount, RefillCost;
-bool HasActiveCard, IsWaiting, IsReplenishing, CanAffordRefill;
-float SecondsUntilNextCard;
-
-bool OnSwipeAccepted(), OnSwipeRejected(), OnCrystalRefillRequested();
-bool OnBuyUpRequested(CharacteristicType);
-void SetScreenVisible(bool);                          // gates audio only
-```
-
-`LawCardDisplayData` and `CharacteristicDisplayData` are readonly view-model structs. Adding
-a field a View needs to draw belongs here, not on the ScriptableObject.
-
-The Presenter's constructor takes `CharacteristicRegistry` alongside `ILocalizationService`:
-characteristic names and icons are Ledger-owned shared data, not Laws content
-(`ARCHITECTURE.md` §4.4). It is a `UnityEngine.Object`, so its null-check is an explicit
-`== null` rather than `??` — the null-coalescing operator bypasses Unity's overloaded equality
-and would let a *destroyed* asset through.
-
-### Views (MonoBehaviour — layout, DOTween, input)
+### UI
 
 | Class | Responsibility |
 |---|---|
-| `LawsView` | Root coordinator. Receives the Presenter via `[Inject]`, subscribes to its events, drives sub-views, forwards intents. Renders the countdown but **never advances it**. |
-| `LawCardView` | One card: text plus the drag-to-swipe gesture and its DOTween animations. |
-| `CharacteristicBarView` | One characteristic dial: circular progress ring, icon in the middle, level on a nameplate below. The whole dial is the tap target. |
+| `LawsPresenter` | Turns model state into localized view data, carries player actions to the manager, owns sound and haptics, gates passive sound on screen visibility. Plain C#, no Unity UI types. One per screen. |
+| `LawsScreenView` | The screen root. Renders the presenter's state onto its components and simple widgets (count, timer, refill button, waiting overlay), and forwards input. Displays the countdown but never advances it (§6.5). |
+| `LawCardView` | The card: its text, the drag-to-swipe gesture, its animations, and when to reveal the next card (§6.6). |
+| `CharacteristicDialView` | One dial: progress ring, icon, level, level-up animation (§6.11). |
+| `LawCardViewData`, `CharacteristicDialViewData` | Exactly what each view draws, already localized. Views never see a `LawCardDefinition` or the registry. |
+
+**When a UI element gets its own View class:** when it repeats (the dial ×6) or has behaviour of
+its own (the card's gesture and reveal). Everything else — a label, a button — is a serialized field
+on `LawsScreenView`, which forwards its clicks to the presenter. The presenter never holds a Unity
+UI component.
+
+```csharp
+// LawsPresenter
+event Action StateChanged;   event Action CardArrived;   event Action<CharacteristicType> CharacteristicLeveledUp;
+
+bool HasActiveCard, IsWaiting, IsReplenishing, CanAffordRefill;
+int  HeldCardCount, MaxCardCount, RefillCost;   float SecondsUntilNextCard;
+bool TryGetActiveCard(out LawCardViewData);     CharacteristicDialViewData GetDial(type);
+
+bool ResolveCard(LawDecision);   UniTaskVoid RequestRefill();   void SetScreenVisible(bool);
+int  BuyUpCost(type);   bool CanAffordBuyUp(type);   bool BuyUp(type);   // for the detail panel (§9)
+```
 
 ---
 
 ## 4. The queue model
 
-The player holds up to `MaxCardCount` (8) cards but only ever sees one. The queue is
-described by **two numbers**, of which only one is stored:
-
 ```
-AvailableCardCount  +  CardsReplenishing  ==  MaxCardCount
-        │                      │
-        │                      └── stored — ReplenishmentSlots.Count
-        └── derived: MaxCardCount − CardsReplenishing   → the "6/8" readout
+HeldCount  +  ReplenishingCount  ==  MaxCount (8)
+    │                 │
+    │                 └── stored — ReplenishmentTimer.PendingCount
+    └── derived — the "6/8" readout, the shown card included
 ```
 
-- **`AvailableCardCount`** — cards the player has, *including the one on screen*
-- **`CardsReplenishing`** — timers still counting down
+Two numbers that must sum to 8 would be two chances to disagree, so only one is stored.
 
-Two numbers that must sum to 8 would be two chances to disagree. Storing one and deriving the
-other makes the invariant unbreakable.
+**Held can exceed 1.** Only one card is shown; when a timer matures while a card is already shown,
+the new card is held but not shown. `HeldCount` counts it; `ActiveCard` does not change.
 
-### Why "available" can exceed 1
+**Cards behind the shown one have no identity.** A card is drawn from the deck only at the moment
+it is shown. That is why the save holds one active id plus the deck's remaining cycle, not eight ids.
 
-Only one card is ever displayed, so when a timer matures while a card is already on screen,
-that card is available but not shown. `AvailableCardCount` counts it; `HasActiveCard` does not.
-
-> **Don't reintroduce a third count.** An earlier version modelled those as a separate "ready"
-> state with its own `ReadyCardCount` property plus an `OccupiedSlots` helper. Both were
-> removed. The distinction is consulted in exactly one place — `TryFillActiveSlot` — which runs
-> *after* establishing that no card is active, and at that moment "ready" and "available" are
-> the same number. The extra count bought nothing and carried an ordering trap in `ResolveCard`
-> (read the count before opening the freed slot and it was off by one) that needed a comment to
-> defend. That trap no longer exists, because `AvailableCardCount` depends only on
-> `ReplenishmentSlots.Count`.
-
-**Cards behind the active one have no identity.** They are drawn when *shown*, not when their
-timer matures — which is why the save holds one active id plus the remaining cycle, not eight ids.
+**A resolved card's slot starts replenishing**, capped so the queue never exceeds the maximum, and the
+next held card (if any) is shown immediately.
 
 ---
 
@@ -191,357 +165,233 @@ timer matures — which is why the save holds one active id plus the remaining c
 
 ### Startup
 ```
-GameBootstrapper.Configure()          registers everything (lazily)
 GameEntryPoint.Start()
   └─ GameStateCoordinator.LoadOrInitialize()
-        ├─ save exists → LawsManager.LoadFromDto(dto) → AdvanceTo(now)  (offline catch-up)
-        └─ no save     → LawsManager.InitializeCardPool()
-  └─ ILocalizationService.WhenReady(...)        ← waits for the String Tables (§6.12)
-        └─ SceneManager.LoadScene("Main", Additive)
-              └─ sceneLoaded → resolver.InjectGameObject(root) → LawsView.Construct(presenter)
-                    └─ LawsView.Start() → Refresh()
+        ├─ save exists → LawsManager.LoadFromDto(dto) → AdvanceTo(now)   (settles time away)
+        └─ no save     → LawsManager.InitializeNewGame()
+  └─ ILocalizationService.WhenReady(...)                                 (§6.13)
+        └─ load Main additively → inject its roots → LawsScreenView.Construct(presenter)
+              └─ LawsScreenView.Start() → Refresh()
 ```
 
-Hydration **and** localization always complete before any View renders. Both orderings are
-load-bearing and both fail silently if broken — see §6.12.
+State and localization are both ready before any View renders; both orderings fail silently if
+broken.
 
 ### A swipe
 ```
-LawCardView drag threshold crossed
-  └─ OnSwiped(accepted)                    ← fires IMMEDIATELY, before any animation
-       └─ LawsView.OnCardSwiped
-            └─ LawsPresenter.OnSwipeAccepted()
-                 ├─ LawsManager.ResolveCard(id, accept)
-                 │    ├─ LawCardEffectApplier.Apply(ledger, effects)   → Ledger mutates
-                 │    ├─ _activeCard = null; slots.AddOne(...)
-                 │    ├─ TryFillActiveSlot()                           → deck.Draw()
-                 │    └─ QueueChanged                                  → Presenter → OnStateChanged → Refresh()
-                 └─ audio + haptics
-  └─ swipe-off animation plays (purely cosmetic)
-       └─ OnSwipeAnimationComplete → LawsView reveals the next card
+LawCardView: drag crosses the threshold
+  └─ Swiped(decision)                           ← immediately, before any animation
+       └─ LawsPresenter.ResolveCard(decision)
+            ├─ LawsManager.ResolveActiveCard(decision)
+            │    ├─ LawQueue.TakeActiveCard(now)  → slot starts replenishing, next card shown
+            │    ├─ apply the card's effects      → Ledger mutates (level-up event if any)
+            │    └─ QueueChanged → StateChanged → LawsScreenView.Refresh() → LawCardView.Show/Hide
+            │                                      (held back while the swiped card flies off)
+            └─ sound + haptic
+  └─ swipe-off animation finishes → LawCardView reveals the held-back content and scales it in
 ```
-
-**Business logic never waits on an animation.** This is the module's most important runtime
-contract: the Ledger has already been mutated and the state change already announced before
-the first tween frame runs.
 
 ### A timer maturing
 ```
 GameClock.Ticked(now)  (~4 Hz)
   └─ LawsManager.AdvanceTo(now)
-       ├─ slots.Advance(now, interval) → how many matured
-       ├─ TryFillActiveSlot()          → draws only if the active slot is empty
-       └─ QueueChanged                 → Presenter → arrive SFX (if visible) + OnStateChanged
+       └─ LawQueue.Advance(now) → if any matured: QueueChanged
+            └─ Presenter: arrival sound (if visible), StateChanged, CardArrived
+```
+
+### A refill
+```
+Refill button → LawsPresenter.RequestRefill()
+  └─ ConfirmPopup.Ask(...)          live price and countdown; closes itself if the queue refills on its own
+       └─ Confirm → LawsManager.TryRefill()  charges RefillCost as it is now → QueueChanged
 ```
 
 ### Save / load
-`GameStateCoordinator` calls `ToDto()` / `LoadFromDto()`. The DTO
-(`Systems/Save/Scripts/Dto/LawsStateDto`) holds five fields, each restoring one
-guarantee:
+`GameStateCoordinator` calls `ToDto()` / `LoadFromDto()`. The DTO (`Systems/Save/Scripts/Dto/LawsStateDto`)
+holds five fields, each restoring one guarantee:
 
 | Field | Restores |
 |---|---|
-| `activeCardId` | The card on screen |
+| `activeCardId` | The shown card |
 | `cardsReplenishing` | How many timers are running |
-| `nextReplenishDueUtc` | *When* the next card lands — offline accrual depends on it |
-| `remainingDeckCardIds` | The shuffle bag's position in its cycle |
+| `nextReplenishDueUtc` | *When* the next card lands — offline progress depends on it |
+| `remainingDeckCardIds` | The deck's position in its cycle |
 | `lastDrawnCardId` | No repeat across a cycle boundary |
+
+A missing or unreadable deadline restarts the countdown from now rather than dropping the queue. A
+saved card id that no longer exists is skipped; if that leaves the shown slot empty while cards are
+held, the next held card is shown in its place — otherwise a full hand would never draw again.
 
 ---
 
-## 6. Decisions that look arbitrary but are not
+## 6. Rules that must hold
 
-These are the ones a future change is most likely to undo by accident.
+### 6.1 Only `LawsManager` touches the Ledger and the clock
+Every Ledger write the mechanic makes — card effects, the refill charge, the buy-up — is in one file.
+`LawQueue`, `LawDeck` and `ReplenishmentTimer` are pure: they are handed the time and return results.
+A new transaction goes on the manager; new queue behaviour goes on `LawQueue`.
 
-### 6.1 The leveling curve is Ledger-owned; buy-up pricing is Laws-owned
-Two mechanics award characteristic points (Laws, and Random Occurrences per GDD §10), so the
-**rate must match** — the curve lives in `Systems/Ledger` and callers cannot supply their own.
-This was a live bug once: `LawsManager` used a config array while the occurrences module
-passed `level => 100f`, so the same characteristic levelled at two different rates.
+### 6.2 The leveling curve is Ledger-owned; buy-up pricing is Laws-owned
+Two mechanics award characteristic points (Laws, and Random Occurrences per GDD §10), so the rate must
+match — the curve lives in `Systems/Ledger` and no caller can supply its own. Buy-up *pricing* is the
+opposite: only Laws prices a buy-up, and per GDD §10 occurrences never touch crystals, so it stays in
+`LawsManager`. The test: *if a second mechanic did this, would the result have to match?*
+(`ARCHITECTURE.md` §4.3).
 
-Buy-up *pricing* is the opposite: only Laws prices a buy-up, and per GDD §10 occurrences can
-never touch crystals, so it can't acquire a second consumer. It stays in `Modules/Laws/Domain`.
+### 6.3 The timer stores a deadline
+A countdown that decrements needs something running to decrement it; a wall-clock deadline does not.
+Whenever the timer is next advanced it compares against `now`, so a 10-hour absence settles in one call.
+The deadline advances in whole intervals, so partial progress is never lost, and queuing another card
+never resets a countdown already in progress.
 
-**The test:** *if a second mechanic did this, would the result have to match?* Yes → `Systems/Ledger`.
-No → the module's own `Domain/`. (`ARCHITECTURE.md` §4.3.)
+**The deadline is never more than one interval away.** If it is — the device clock was moved back, or
+the save was edited — `Advance` pulls it in to `now + interval`. In normal play it never triggers;
+without it, a clock moved back a day would stall the queue for a day. It runs on load and on every tick.
 
-### 6.2 The timer stores a deadline, not a remaining duration
-A countdown that decrements needs something running to decrement it, so it cannot survive the
-app closing. A wall-clock deadline can: subtract `now` whenever you next look and the answer
-is right regardless of how long you were away. A 10-hour absence resolves in one call, not
-10 hours of simulated ticks (`ARCHITECTURE.md` §4.5).
+### 6.4 Prices and affordability live next to the charge
+`RefillCost`/`CanAffordRefill` and `BuyUpCost`/`CanAffordBuyUp` are on the manager, beside the methods
+that charge them; the presenter only reads them. The refill confirmation re-reads the price when the
+player confirms rather than using what the popup displayed. Tests assert **crystals quoted == crystals
+deducted** at every buy-up level.
 
-Corollary: `AddOne` only starts a countdown when the count goes 0 → 1. A second queued slot
-must **not** reset a deadline the player has already partly waited out.
+### 6.5 Views display; they never drive the mechanic
+The replenishment timer advances on the game clock (`ARCHITECTURE.md` §4.5), so the queue is correct
+whether or not the screen exists. A view may read remaining time to draw a countdown — never advance it.
+Sound is the one thing gated on visibility (`SetScreenVisible`): a card arriving on another tab updates
+the queue silently.
 
-### 6.3 Prices live on the Manager, not the Presenter
-The Presenter used to compute display prices from `LawsConfig` — a byte-identical duplicate of
-the formulas the Manager charged with. They agreed, but nothing *made* them agree, and a price
-shown that drifts from the price charged is a monetization bug. `RefillCost` and
-`GetBuyUpCost` now live next to the transactions, and the Presenter reads them.
+### 6.6 A decision never waits on an animation
+`LawCardView.Swiped` fires the moment the drag crosses the threshold; the Ledger has changed before the
+first tween frame. What *does* wait is the visual: while the swiped card flies off, `Show`/`Hide` are
+held and applied once it has left, so the departing card keeps its text and the next one scales in
+after it. `LawCardView` owns this entirely — the screen view just says what should be shown.
 
-Tests assert the property directly: **crystals quoted == crystals deducted.**
+Nothing can leave the card stuck mid-swipe: the swipe-off runs even if handling the decision throws,
+its tweens run on unscaled time, and `OnDisable` (a tab switch mid-flight) kills them and resets the
+card to rest; the next refresh then shows the current state.
 
-### 6.4 The View is display-only
-The replenishment timer used to be pumped from `LawsView.Update()`, which tied the mechanic's
-progress to whether the screen happened to exist. The manager now advances it on the game clock. A View may
-*read* remaining time to draw a countdown; it must never be what makes the countdown advance.
+### 6.7 A card shows title and flavor only
+`LawCardViewData` carries `Title` and `FlavorText`, nothing else. Inferring what a law does from how it
+reads is the mechanic (GDD §6); printing "Army: +10" turns every swipe into arithmetic. Everything on that
+struct is rendered before the player commits, so a test asserts its **shape** and fails if a field is
+added. Feedback belongs after resolution, on the dials.
 
-Audio is the one thing gated on visibility (`SetScreenVisible`): the queue keeps advancing on
-other tabs — so the screen is correct on return — but a card arriving unseen shouldn't make a
-noise.
+### 6.8 `QueueChanged` is a plain event, not a bus message
+Its only subscriber is this module's presenter, which already holds the manager (`ARCHITECTURE.md` §4.2).
+Promote it to a tier-2 bus event when something outside Laws needs it — a bottom-nav badge, say.
 
-### 6.5 `QueueChanged` is a plain event, not a bus message
-Its only subscriber is this module's own Presenter, which already holds the Manager. A plain
-`event Action` is simpler and typed (`ARCHITECTURE.md` §4.2 tier 3). The trigger to promote it
-to a cross-module bus event would be a subscriber outside Laws — a bottom-nav badge, say.
+### 6.9 Dials are matched by type, never by array order
+Each dial declares its `CharacteristicType`; the screen renders and celebrates by that, so reordering the
+serialized array is harmless. `LawsScreenView` logs an error at start unless every characteristic has
+exactly one dial.
 
-### 6.6 Bars are bound by type, not array order
-`LawsView` builds a `Dictionary<CharacteristicType, CharacteristicBarView>` from each bar's own
-declared `Type`. Reordering the serialized array is therefore harmless. Do not reintroduce
-index-based binding: it silently renders one characteristic's data in another's row while
-level-up celebrations still land correctly — nearly impossible to spot.
+### 6.10 Four canvases
+A Canvas is the unit of rebuild: dirty one Graphic and everything on that canvas re-batches. Anything
+that changes at runtime sits on its own (`ARCHITECTURE.md` §2):
 
-### 6.7 Four canvases on purpose
+| Canvas | Why it is separate |
+|---|---|
+| `LawsScreen` (root) | the static rest |
+| `CharacteristicsPanel` | `Image.fillAmount` dirties vertices, and DOTween drives it every frame during a fill |
+| `CardCanvas` (`overrideSorting`) | the card animates constantly and must draw above its siblings |
+| `TimerRow` | the countdown rewrites once a second |
 
-A Canvas is the unit of *rebuild*: dirty one Graphic and every Graphic sharing that canvas
-re-batches. So anything that changes at runtime is split off from the static rest
-(`ARCHITECTURE.md` §2/§9).
+Each nested canvas has its own `GraphicRaycaster`, or every button inside it is silently dead. The
+countdown label is also only rewritten when its whole-second value changes.
 
-| Canvas | Graphics | Why it is separate |
-|---|---|---|
-| `LawsScreen` (root) | 3 | what is left once the movers are split out |
-| `CharacteristicsPanel` | 43 | `Image.fillAmount` dirties vertices, and DOTween drives it **every frame** during a fill or level-up |
-| `CardCanvas` (`overrideSorting`) | 9 | the card animates constantly, and must draw above its siblings |
-| `TimerRow` | 6 | the countdown rewrites once a second — the "ticking counter" case in §2 |
+### 6.11 The dial prefab
+- **One prefab, six instances.** `Prefabs/CharacteristicDial.prefab` is the source; the screen holds six
+  nested instances that override only `_type`.
+- **Placement is a `HorizontalLayoutGroup`.** Each dial has `flexibleWidth = 1`; `childForceExpandWidth` is
+  off, because it overrides `flexibleWidth`.
+- **The ring is three stacked Images** — `RingBg`, `RingFill`, `RingHole` — then `Icon`, then `Nameplate`.
+  The hole turns the solid stub sprite into a ring; delete it when art supplies a real ring sprite.
+- **Shape is prefab configuration** (`type = Filled`, `fillMethod = Radial360`); the view only sets
+  `fillAmount`.
+- **The dial shows level, not points**, and has no name label — it is identified by its icon.
+- **A missing icon hides the slot**: a UGUI `Image` with no sprite draws a white box.
+- **A level-up fills to full, resets, then fills the carried-over progress**, so the ring never runs
+  backwards at the moment the player earned something.
+- **The dial is the tap target, and it is deliberately inert.** `CharacteristicDialView.Pressed` has no
+  subscriber: a large control must not spend crystals with nothing shown first. Its first listener is the
+  characteristic detail panel (§9), which then calls `LawsPresenter.BuyUp` behind its own confirmation.
 
-Before this split all 52 non-card graphics rebuilt together, so a single ring tween re-batched
-the whole screen every frame. Do not merge them back.
+All six rings are the same green. Per-characteristic colour would be data about a characteristic, so it
+belongs on `CharacteristicDefinition` beside the icon.
 
-**A nested Canvas needs its own `GraphicRaycaster`.** Graphics register to the nearest Canvas,
-so the parent's raycaster cannot see them — without one, every button inside goes silently
-dead. Verified here by raycasting at the refill button, a dial and the card and confirming
-each is hit, then clicking refill through `ExecuteEvents` (2/8 → 8/8, crystals 1131 → 1119).
+### 6.12 The screen is laid out top-down
+`CharacteristicsPanel` and `TimerRow` are top-anchored at fixed heights; `CardCanvas` stretches into
+whatever is left down to the safe-area floor (the top of the nav bar). That keeps the gap under the header
+a constant 24 units at every aspect ratio and puts all spare space in the card region.
 
-`overrideSorting` is *not* needed for rebuild isolation — only `CardCanvas` sets it, because
-it alone needs to draw above its siblings. The countdown label is still rewritten only when
-its whole-second value changes; the canvas split and the throttle solve different halves of
-the same problem.
+The card scales inside that region with an `AspectRatioFitter` (FitInParent, 820∶860). The region is inset
+90 units horizontally so the card never runs to the screen edges. The fitter sets stretch anchors and
+shares the card's RectTransform with the swipe tween; drag, a forced layout rebuild mid-drag, commit and
+settle were all verified to behave.
 
-### 6.8 `LawsManager` is registered with an explicit factory
-It has a second constructor taking a `System.Random` for deterministic tests. VContainer picks
-the constructor with the **most** parameters, so left alone it selects that one and fails to
-resolve `System.Random` at startup. The factory in `GameBootstrapper` pins the 3-arg one.
-`KingdomLedger` and `LocalJsonSaveService` are registered the same way for the same reason.
+Verified at 1080×1440, 1080×1920 and 1080×2400 — saved in the Game view as `KR 3:4`, `KR 9:16`, `KR 9:20`.
+**Check layout from `Bootstrap`, never `Main`**: started from `Main`, no View is injected and the screen
+shows prefab defaults while the transforms still measure correctly.
 
-### 6.9 The characteristic dials show level, not points
+### 6.13 Localization
+**Keys are derived from data.** A card's text lives at `{CardId}.title` / `{CardId}.flavor` in
+`LawCardsTable`. `LawCardDefinition` owns `StringTable`, `TitleKey`/`FlavorKey` and the static
+`BuildTitleKey`/`BuildFlavorKey`; the presenter and `LawsContentTests` both resolve through them, so a test
+cannot pass while the game asks for a different key.
 
-Six dials across the top: a radial ring for progress inside the current level, the
-characteristic's icon in the middle, and the **level** on a nameplate below. Exact point
-totals are deliberately absent — they belong in the detail panel, so six dials stay readable
-at a glance.
+Characteristic icons come from `CharacteristicRegistry` (`Systems/Ledger`), which other modules share; the
+presenter looks them up and passes the `Sprite` on `CharacteristicDialViewData` — the one
+`UnityEngine.Object` on a view-data struct, so the view never holds the registry.
 
-**One dial, six instances.** `Prefabs/CharacteristicDial.prefab` is the single source; the
-screen holds six nested instances that override only `_type`. Edit the dial once and all six
-follow. Do not "duplicate and tweak" a dial back into the screen prefab — that was the
-original arrangement and it meant every visual change had to be repeated six times.
+**Two paths.** Fixed chrome (ACCEPT, REJECT, the waiting line) is a `LocalizeStringEvent` on the prefab.
+Data-derived text is resolved in the presenter and delivered on the view-data structs; the presenter
+re-renders on `ILocalizationService.LocaleChanged`.
 
-**Placement is a `HorizontalLayoutGroup`, not anchors.** The panel lays the dials out and each
-carries a `LayoutElement` with `flexibleWidth = 1`, so they divide the row evenly at any width
-and a seventh characteristic would need no repositioning. `childForceExpandWidth` is
-deliberately **off**: it overrides `flexibleWidth` and splits slack equally among children,
-which is what made the refill button in `TimerRow` balloon to twice its intended size before
-it was caught.
+**Three silent traps:**
+1. **Localization initialises asynchronously**, and neither path recovers from rendering too early — the
+   placeholders stay for the session. `GameEntryPoint` waits on `ILocalizationService.WhenReady`.
+2. **`SelectedLocaleChanged` subscribed during construction is never invoked.** `UnityLocalizationService`
+   subscribes after initialisation completes. Symptom: the chrome switches language while presenter-built
+   strings do not.
+3. **A missing entry renders as Unity's full diagnostic sentence**, which reads as a layout bug. The
+   service sets `NoTranslationFoundMessage` to `[{key}]` on the database so the chrome gets it too.
 
-Three things about the prefab that are easy to undo by accident:
-
-- **The ring is three stacked Images** — `RingBg`, `RingFill`, `RingHole` — then `Icon`, then
-  `Nameplate`. The hole is what turns a filled circle into a ring, because the stub sprite is
-  solid; without it the fill covers the icon. If art later supplies a real ring sprite, delete
-  `RingHole` rather than leaving it under the icon.
-- **`CharacteristicBarView` never knows the dial is circular.** It sets `fillAmount`, which
-  behaves identically for a bar or a ring — which is why the fill and level-up animations
-  survived the redesign untouched. Keep it that way: shape is prefab configuration
-  (`type = Filled`, `fillMethod = Radial360`), not code.
-- **There is no name label.** A characteristic is identified by its icon.
-  `CharacteristicDisplayData.Name` is still resolved, for the detail panel and other modules.
-
-A note for whoever builds the next mechanic that awards characteristic points: `LawsPresenter`
-re-renders on `QueueChanged` and `CharacteristicLeveledUpEvent`, so points added without a level-up
-and outside a Laws action will not move these rings on their own. Publish an event when
-Random Occurrences lands and subscribe here — the seam is `NotifyStateChanged`.
-
-All six rings are the same green, by decision. If per-characteristic colour is ever wanted it
-is presentation data *about a characteristic*, so it belongs on `CharacteristicDefinition`
-beside the icon — not as six values scattered across prefab instances.
-
-**The dial is the tap target, and it is deliberately inert.** `CharacteristicBarView` raises
-`OnDialPressed`; `LawsView` does not subscribe. The dial briefly ran the crystal buy-up
-directly, which stopped being acceptable the moment the whole dial became the hit area and the
-price label went away — a large, easy-to-hit control spending a premium currency with nothing
-shown first. The purchase moves into the characteristic detail panel. When that panel exists:
-subscribe to `OnDialPressed` in `LawsView` to open it, and let the panel call
-`LawsPresenter.OnBuyUpRequested` behind its own confirmation.
-
-That leaves `OnBuyUpRequested`, `BuyUpCost` and `CanAffordBuyUp` with no caller in the UI
-today. They are intact and still covered by tests — including "price shown == price charged" —
-because the panel is what will consume them. Do not delete them as dead code.
-
-### 6.10 The screen's vertical layout is anchored top-down, not centre-out
-
-`CharacteristicsPanel` and `TimerRow` are top-anchored at fixed heights; `CardCanvas` then
-**stretches** into whatever is left, from just under the row down to the safe-area floor
-(which coincides with the top of the bottom nav bar).
-
-This replaced a centre-anchored, fixed-height card, and the reason matters. With the header
-top-anchored and the card centre-anchored, the gap between them was
-`safeAreaHeight / 2 − 230` — a *function of screen height* rather than a designed constant.
-Measured across aspect ratios that gave a 49-unit gap on a 3:4 tablet and a 529-unit gap on a
-9:20 phone, with the card's canvas overflowing the safe area by 60 units at the squat end.
-Anchoring everything top-down makes the gap a constant 24 units everywhere and lets the
-leftover space land in one place.
-
-Verified by driving the Game view to 1080×1440, 1080×1920 and 1080×2400 and measuring: header
-and row identical at all three, card region absorbing the difference, nothing overflowing the
-safe area. Those three sizes are saved in the Game view as `KR 3:4`, `KR 9:16`, `KR 9:20` —
-use them when changing this screen.
-
-**Check a layout change from `Bootstrap`, never `Main`.** A pass of this was nearly signed off
-on a screenshot that turned out to be unbound prefab defaults, because the play session had
-started in `Main` and no View had been injected. Transform measurements stay valid either way,
-which is exactly what makes it easy to miss — the layout looks right while the content is
-fake.
-
-**The card scales inside that region** via an `AspectRatioFitter` (FitInParent, 820∶860). It
-grows to whatever the region allows while keeping its shape: height-limited on a 3:4 tablet
-(830×871), width-limited on a 9:20 phone (900×944). The region is inset 90 units horizontally
-so the fitter cannot run the card to the screen edges — without that inset it filled the full
-width on tall screens and read as a slab rather than a card.
-
-**The fitter and the swipe tween share a RectTransform**, which is worth knowing before
-touching either. That looked like a conflict — `AspectRatioFitter` is a layout controller and
-DOTween drives `anchoredPosition` — so it was tested rather than assumed: drag, forced
-`LayoutRebuilder.ForceRebuildLayoutImmediate` mid-drag, threshold crossing, and settle. The
-position survived the rebuild, the swipe committed (card count decremented and the next card
-loaded *before* the animation, per §6.4), and the card returned to rest at (0,0) with rotation
-and scale reset. Note the fitter sets stretch anchors (0,0)–(1,1); `anchoredPosition` still
-behaves, but do not assume a centred-anchor layout when editing this prefab.
-
-### 6.11 A card shows title and flavor only — never its effects
-
-`LawCardDisplayData` carries `CardId`, `Title` and `FlavorText`. It deliberately has **no**
-effect summary, and the card prefab has no label for one. Inferring what a law will do from
-how it reads is the mechanic (GDD §6); printing "Army: +10" turns every swipe into arithmetic.
-
-This is easy to undo by accident, because "the player can't see what this does" reads like a
-missing feature. Two things guard it:
-
-- Everything on that struct is rendered **before** the player commits, so any field naming a
-  characteristic or a point value leaks the answer. `CardDisplay_RevealsNothingAboutItsEffects_BeforeTheSwipe`
-  asserts the struct's *shape*, not just today's values, and fails if a field is re-added.
-- Feedback belongs **after** resolution, on the bars — which already animate the change and
-  celebrate a level-up. The planned addition there is particles carrying characteristic icons
-  off the enacted card (GDD §6); not built, and explicitly not a pre-swipe readout.
-
-The Presenter kept `ResolveCharacteristicName` after this change: the bars still need names.
-Only the per-card summary and its `effect.line` Smart String were removed.
-
-### 6.12 Localization: two paths, and three traps that cost real time
-
-Card text lives at `{CardId}.title` / `{CardId}.flavor` in `LawCardsTable`. **Keys are derived
-from data — `LawCardDefinition` carries no key fields at all.** Adding a card means adding two
-table entries named after its id, and `LawsContentTests` fails if one exists in no locale
-and warns if one is untranslated.
-
-**Nothing else spells those strings.** `LawCardDefinition` owns `StringTable`, `TitleKey`,
-`FlavorKey` and the static `BuildTitleKey`/`BuildFlavorKey`; the Presenter resolves through
-them and `LawsContentTests` checks through them. That is not tidiness — a test holding its own
-`id + ".title"` would keep passing while the game asked for something else, giving a green
-test and blank text on screen. Verified by temporarily changing the derivation and
-watching the Presenter's output change with it, which is what proves no second copy survives.
-
-Characteristic names and icons are **not Laws-owned**: they come from `CharacteristicRegistry`
-(`Systems/Ledger/`), which the Presenter injects and which owns both the table name and the key
-derivation (`ARCHITECTURE.md` §4.4). Laws is just its first consumer — Cities and Random
-Occurrences will resolve the identical strings and sprites through the same object. Anything
-wrong there is reported by `LedgerDataTests`, deliberately not a Laws test: a Laws-owned check
-of Ledger-owned keys was an earlier arrangement, and it would have left those keys unchecked
-the moment a second module needed them.
-
-Fixed chrome (ACCEPT, REJECT, the waiting line) uses `LocalizeStringEvent` components in the
-prefab. Everything data-derived is resolved in `LawsPresenter` and delivered through the
-display structs, because the entry to fetch is not known until a card is drawn — and pointing
-a component at a card title would hand the View back the data reference §6.4 exists to remove.
-
-The characteristic **icon** travels the same road: `CharacteristicDisplayData.Icon` carries a
-`Sprite` the Presenter looked up. That is the one `UnityEngine.Object` on a display struct, and
-it is deliberate — the alternative is `CharacteristicBarView` reading the registry itself,
-which is exactly the View→data coupling §6.4 removes. A null icon is legitimate while art is
-outstanding; the View disables the `Image` rather than leaving it spriteless, because a UGUI
-`Image` with no sprite draws a filled white rectangle.
-
-Three things that were each diagnosed the slow way, all of them silent failures:
-
-1. **Localization initialises asynchronously and neither path recovers from rendering too
-   early.** Not a first-frame flash — a screen built before the tables load keeps its
-   placeholders for the whole session. `GameEntryPoint` waits on
-   `ILocalizationService.WhenReady` before loading `Main`. Verified by deleting the wait and
-   watching every string stay wrong 1200 frames later.
-2. **Subscribing to `SelectedLocaleChanged` during construction silently does nothing.** The
-   handler is never invoked; one attached after initialisation completes works normally.
-   `UnityLocalizationService` therefore subscribes in `OnInitialisationComplete`. The symptom
-   is deceptive: the chrome switches language correctly (it listens on its own) while every
-   Presenter-built string stays in the previous language, which points suspicion at the
-   Presenter — the one part that is fine.
-3. **A missing entry renders as Unity's full diagnostic sentence,** which in a card title
-   wraps and reads as a layout bug. The service sets `NoTranslationFoundMessage` to
-   `[{key}]` on the database — not just in `Resolve` — because the chrome components never
-   call the service and would otherwise still show the sentence.
-
-None of this is reachable from EditMode tests; it is Unity-runtime behaviour, which is why
-the verification for it is a Play-mode pass in both locales.
+None of this is reachable from EditMode tests; it is verified by a Play-mode pass in both locales.
 
 ---
 
 ## 7. How to extend
 
-**Add a law card** — create a `LawCardDefinition` in `ScriptableObjects/LawCards/`, fill in its
-`CardId` and effect arrays, and add it to `LawsConfig.AllCards`. Then add **two entries per
-locale** to `LawCardsTable`, named `{CardId}.title` and `{CardId}.flavor` — the asset holds no
-text and no keys, the id *is* the key. Run the EditMode tests: `LawsContentTests` confirms
-the id is unique and its text exists. No code change.
+**Add a law card** — create a `LawCardDefinition` in `ScriptableObjects/LawCards/`, set its `CardId` and
+effects, add it to `LawsConfig.AllCards`, and add `{CardId}.title` and `{CardId}.flavor` to
+`LawCardsTable` in every locale. `LawsContentTests` checks the id is unique and the text exists. No code.
 
 **Change queue size or timing** — `LawsConfig`. Nothing hardcodes 8 or 120.
 
-**Add something the card displays** — add a field to `LawCardDisplayData`, populate it in
-`LawsPresenter.TryGetActiveCardDisplay`, render it in `LawCardView`. Do *not* pass the
-`LawCardDefinition` to the View.
+**Add a crystal purchase** — a price property, an affordability check and a `Try…` method side by side on
+`LawsManager`; the presenter reads and calls them (§6.4).
 
-**Add a new crystal spend** — put the price on `LawsManager` next to the method that charges
-it, and have the Presenter read it (§6.3).
+**Add queue behaviour** (e.g. peeking at the next card) — on `LawQueue` (or `LawDeck`), pure and directly
+tested; expose it through the manager.
 
-**Add queue behaviour** (e.g. a "peek at next card") — extend `ShuffleBagDeck` or
-`ReplenishmentSlots` in `Domain/` and keep `LawsManager` as orchestration. If it needs no
-Unity types, it belongs in `Domain/` and gets direct unit tests.
+**Show several cards at once** — `LawQueue.ActiveCard` becomes a collection, and the save gains an id per
+shown card.
 
-**Add a new language** — add the locale, then fill the three tables. No code change: every key
-is derived, so a new locale is pure content. Check the TMP font asset actually has the glyphs.
+**Add something the card displays** — a field on `LawCardViewData`, filled in
+`LawsPresenter.TryGetActiveCard`, drawn in `LawCardView`. Never pass the `LawCardDefinition` to a view, and
+never add anything that reveals the effects (§6.7).
+
+**Add a UI element** — a plain widget is a serialized field on `LawsScreenView`; a repeated or behaving
+element gets its own folder under `UI/` holding its view and its view data (§3).
+
+**Add displayed text** — fixed chrome: a `LocalizeStringEvent` pointing at a new `LawsUITable` entry.
+Built in code: a key on `LawsUIText`, required in `LawsContentTests`. Data-derived: the table name and key
+derivation on the data type, the way `LawCardDefinition` does it (§6.13).
+
+**Add a language** — add the locale and fill the three tables. No code. Check the TMP font has the glyphs.
 
 **Give a characteristic its icon** — drop a sprite on its `CharacteristicDefinition` in
-`Systems/Ledger/ScriptableObjects/Characteristics/`. No code, no prefab edit, and every module
-that displays that characteristic picks it up. `LedgerDataTests` lists which ones are still
-missing art, as a warning.
-
-**Add new displayed text** — if it is fixed chrome, add a `LocalizeStringEvent` in the prefab
-pointing at a new `LawsUITable` entry; nothing checks it, because it is on screen whenever the
-Laws tab is. If it is built in code (a popup message), add the key to `LawsUIText` and require
-it in `LawsContentTests`. If it is data-derived, put the table name and the key derivation on
-the **data type** it belongs to — the way `LawCardDefinition` does — then resolve through those
-members from `LawsPresenter` and carry the result on a display struct (§6.12). Do not spell a
-table name or a key suffix in the Presenter or a test.
-
-**Show several cards at once** — `LawsManager._activeCard` is the field that becomes a
-collection, and the save gains an id per displayed card instead of just one.
+`Systems/Ledger/ScriptableObjects/Characteristics/`. No code; `LedgerDataTests` lists those still missing.
 
 ---
 
@@ -551,22 +401,18 @@ collection, and the save gains an id per displayed card instead of just one.
 
 | File | Covers |
 |---|---|
-| `ReplenishmentSlotsTests` | Timer arithmetic: maturing, remainder carry, backwards clocks, long absences, restore |
-| `ShuffleBagDeckTests` | Cycle completeness, reshuffle, no back-to-back across 50 seeds, save round-trip, deleted cards |
-| `LawCardEffectApplierTests` | The sign convention; level floor |
-| `CrystalBuyUpCalculatorTests` | Rounding, the minimum of 1, and zero-when-nothing-remains |
-| `LawsDomainTests` | `LawsManager` orchestration, queue arithmetic, save/load |
-| `LawsPresenterTests` | View-facing state, visibility gating, **price shown == price charged**, per-row icon binding |
-| `LawsContentTests` | The **real** cards: every `CardId` present and unique, every title and flavor plus the refill text in every locale (untranslated only warns) |
+| `LawsManagerTests` | Effects and their sign convention, the level floor, the clock subscription, `QueueChanged`, refill and buy-up pricing (**quoted == deducted** at every level), save round trip, offline catch-up, damaged deadlines |
+| `LawQueueTests` | The held/replenishing invariant, draw-on-show, the cap, taking the shown card, restore |
+| `LawDeckTests` | One card per cycle, reshuffle, no back-to-back repeat across 50 seeds, restore, deleted cards |
+| `ReplenishmentTimerTests` | Maturing, remainder carry, backwards clocks, long absences, restore |
+| `LawsPresenterTests` | View data (including the card's shape), feel hooks, visibility gating, refill confirmation never spending on open, locale refresh |
+| `LawsContentTests` | The real cards: unique ids, title and flavor plus the refill text in every locale |
 
-Ledger data used by this module is covered next door in
-`Tests/EditMode/Systems/Ledger/CharacteristicRegistryTests` — lookup, gaps, duplicates, null
-entries, and that the registry's key agrees with the static derivation the content tests check.
-
-The Views have **no automated coverage** — MonoBehaviour + DOTween is PlayMode territory.
-Swipe handling, the level-up fill sequence and the timer throttle are verified by playing the
-scene. **Enter Play mode from `Bootstrap`, never `Main`**: `Main` is loaded additively and only
-then are its Views injected. (`LawsView` detects this and says so rather than null-reffing.)
+**Play mode** (MonoBehaviour + DOTween), always entered from `Bootstrap`; `LawsScreenView` logs an error
+and disables itself if started from `Main`. Verified: an existing save loads; a swipe applies immediately
+while the departing card keeps its text and the next scales in after; the last card flies off and then
+hides; the refill confirmation shows the live price, charges exactly that on confirm and nothing on open;
+a buy-up levels the dial with its fill and punch animations.
 
 ---
 
@@ -574,14 +420,12 @@ then are its Views injected. (`LawsView` detects this and says so rather than nu
 
 | Gap | Status |
 |---|---|
-| Ukrainian card text is placeholder | Structurally complete and verified on screen, but "Закон 1" is a stand-in — the three cards need real copy in both locales. |
-| No characteristic icons yet | The registry, the display struct, the prefab slot and the render path are all wired and tested; the six `CharacteristicDefinition` assets just have no sprite. Dials hide the slot until one lands. |
-| No characteristic detail panel | The dials show level only, so point totals and the crystal buy-up have nowhere to live. **Buy-up is currently unreachable from the UI** — `OnDialPressed` is raised but unsubscribed (§6.9). The Presenter API and its tests are intact, waiting for the panel. This is the next piece of the screen. |
-| No post-swipe effect feedback | Now that the card states nothing (§6.11), the bars are the *only* signal of what a law did. They animate and celebrate level-ups, but the planned icon particles off the enacted card (GDD §6) are not built — worth doing before the mechanic is judged on feel. |
-| Card copy carries the gameplay signal | The three placeholder cards read "This is law 1 description", which telegraphs nothing. Real copy is now a design dependency, not flavor polish. |
-| Only Laws is localized | The other four modules have no content or Views yet; they adopt the same rules (`ARCHITECTURE.md` §2) when they do. |
-| No in-game language switcher | Locale follows the OS (`SystemLocaleSelector`), English as fallback. Switching at runtime works and is verified; there is just no UI for it. |
-| SFX ids are magic strings in `LawsPresenter.SfxIds` | Blocked on the audio system; `StubAudioService` no-ops. |
+| No characteristic detail panel | Point totals and the crystal buy-up have nowhere to live; buy-up is unreachable from the UI. `CharacteristicDialView.Pressed` and the presenter's buy-up members are its hooks, and are tested. The next piece of this screen. |
+| No post-swipe effect feedback | The dials are the only signal of what a law did. The planned icon particles off the enacted card (GDD §6) are not built. |
+| Card copy carries the gameplay signal | The three placeholder cards telegraph nothing, and the Ukrainian text is a stand-in. Real copy is a design dependency. |
+| No characteristic icons | Everything is wired; the six definitions have no sprite. |
+| No in-game language switcher | Locale follows the OS, English as fallback. Runtime switching works; there is no UI for it. |
+| SFX ids are strings in `LawsPresenter` | Blocked on the audio system; `StubAudioService` no-ops. |
 | Prefab is greybox | Functional and re-styleable; no pixel art yet. |
-| `link.xml` unverified | Written, but only a real IL2CPP device build proves it. |
+| `link.xml` unverified | Only a real IL2CPP device build proves it. |
 | No PlayMode tests | The swipe gesture in particular would benefit from one. |

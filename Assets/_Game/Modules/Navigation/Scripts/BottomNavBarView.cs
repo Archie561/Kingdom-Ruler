@@ -19,7 +19,7 @@ namespace KingdomRuler.Modules.Navigation
     /// (<see cref="ScreenNavigator.Show"/>).</para>
     ///
     /// <para><b>Switching is <c>SetActive</c>, not a Canvas toggle.</b> That is what makes a
-    /// screen's own <c>OnEnable</c>/<c>OnDisable</c> fire, which is how <c>LawsView</c> already
+    /// screen's own <c>OnEnable</c>/<c>OnDisable</c> fire, which is how <c>LawsScreenView</c>
     /// tells its Presenter to gate audio — a card arriving on another tab updates the queue
     /// silently. Disabling only the Canvas would skip those callbacks and leave each View's
     /// <c>Update</c> ticking unseen. The mechanics are unaffected either way: timers belong to

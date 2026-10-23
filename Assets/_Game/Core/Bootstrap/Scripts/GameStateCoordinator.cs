@@ -5,9 +5,6 @@ using KingdomRuler.Systems.Clock;
 using KingdomRuler.Systems.Save;
 using KingdomRuler.Modules.Laws;
 using KingdomRuler.Modules.Trade;
-using KingdomRuler.Modules.Economy;
-using KingdomRuler.Modules.Cities;
-using KingdomRuler.Modules.RandomOccurrences;
 
 namespace KingdomRuler.Core
 {
@@ -28,10 +25,6 @@ namespace KingdomRuler.Core
         private readonly KingdomLedger           _ledger;
         private readonly LawsManager             _laws;
         private readonly TradeManager            _trade;
-        private readonly EconomyManager          _economy;
-        private readonly CitiesManager           _cities;
-        private readonly RandomOccurrenceManager _occurrences;
-        private readonly LawsConfig              _lawsConfig;
 
         private bool _isHydrated;
 
@@ -40,21 +33,13 @@ namespace KingdomRuler.Core
             IClock                  clock,
             KingdomLedger           ledger,
             LawsManager             laws,
-            TradeManager            trade,
-            EconomyManager          economy,
-            CitiesManager           cities,
-            RandomOccurrenceManager occurrences,
-            LawsConfig              lawsConfig)
+            TradeManager            trade)
         {
             _saveService = saveService ?? throw new ArgumentNullException(nameof(saveService));
             _clock       = clock       ?? throw new ArgumentNullException(nameof(clock));
             _ledger      = ledger      ?? throw new ArgumentNullException(nameof(ledger));
             _laws        = laws        ?? throw new ArgumentNullException(nameof(laws));
             _trade       = trade       ?? throw new ArgumentNullException(nameof(trade));
-            _economy     = economy     ?? throw new ArgumentNullException(nameof(economy));
-            _cities      = cities      ?? throw new ArgumentNullException(nameof(cities));
-            _occurrences = occurrences ?? throw new ArgumentNullException(nameof(occurrences));
-            _lawsConfig  = lawsConfig  ?? throw new ArgumentNullException(nameof(lawsConfig));
 
             Application.focusChanged += OnFocusChanged;
             Application.quitting     += OnQuitting;
@@ -64,11 +49,7 @@ namespace KingdomRuler.Core
         /// Bring every system up: from the save file if there is a readable one, otherwise
         /// from a fresh start. Call once, before any View exists.
         /// </summary>
-        /// <remarks>
-        /// Load and fresh-start are mutually exclusive by construction. Content pools are
-        /// seeded first because a module's LoadFromDto resolves saved ids against its pool —
-        /// with an empty pool, every saved reference would silently drop.
-        /// </remarks>
+        /// <remarks>Load and fresh-start are mutually exclusive by construction.</remarks>
         public void LoadOrInitialize()
         {
             if (_isHydrated)
@@ -77,8 +58,6 @@ namespace KingdomRuler.Core
                 return;
             }
             _isHydrated = true;
-
-            SeedContentPools();
 
             var state = _saveService.Load();
             if (state == null)
@@ -98,12 +77,9 @@ namespace KingdomRuler.Core
 
             // Each module fast-forwards its own offline progress inside LoadFromDto.
             if (state.Laws              != null) _laws.LoadFromDto(state.Laws);
-            else                                 _laws.InitializeCardPool();
+            else                                 _laws.InitializeNewGame();
             if (state.Trade             != null) _trade.LoadFromDto(state.Trade);
             else                                 _trade.InitializeNewGame();
-            if (state.Economy           != null) _economy.LoadFromDto(state.Economy);
-            if (state.Cities            != null) _cities.LoadFromDto(state.Cities);
-            if (state.RandomOccurrences != null) _occurrences.LoadFromDto(state.RandomOccurrences);
         }
 
         /// <summary>Write current state to disk. Safe to call at any time.</summary>
@@ -121,10 +97,7 @@ namespace KingdomRuler.Core
                 SchemaVersion     = GameStateDto.CurrentSchemaVersion,
                 Ledger            = _ledger.ToDto(),
                 Laws              = _laws.ToDto(),
-                Trade             = _trade.ToDto(),
-                Economy           = _economy.ToDto(),
-                Cities            = _cities.ToDto(),
-                RandomOccurrences = _occurrences.ToDto()
+                Trade             = _trade.ToDto()
             });
         }
 
@@ -136,30 +109,9 @@ namespace KingdomRuler.Core
 
         // ── Private ───────────────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Register each module's content so saved ids can be resolved back to assets.
-        /// </summary>
-        /// <remarks>
-        /// Only Laws has authored content today. Economy, Cities and Random Occurrences all
-        /// expose an Initialize* method but have no content registry on their config yet, so
-        /// there is nothing to seed them from — wire those up when their content lands
-        /// rather than inventing a schema for them here.
-        /// </remarks>
-        private void SeedContentPools()
-        {
-            // LawsManager reads AllCards from its own config inside InitializeCardPool and
-            // LoadFromDto, so nothing to pass here; guard the empty case for a clear message.
-            if (_lawsConfig.AllCards == null || _lawsConfig.AllCards.Length == 0)
-            {
-                Debug.LogWarning(
-                    "[GameStateCoordinator] LawsConfig has no cards assigned — the Laws screen " +
-                    "will sit in its waiting state. Add LawCardDefinition assets to LawsConfig.AllCards.");
-            }
-        }
-
         private void StartNewGame()
         {
-            _laws.InitializeCardPool();
+            _laws.InitializeNewGame();
             // Seeds base warehouse capacities, the first batch of offers, and the regen baseline.
             _trade.InitializeNewGame();
         }

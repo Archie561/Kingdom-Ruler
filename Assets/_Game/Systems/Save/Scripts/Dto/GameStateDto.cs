@@ -33,10 +33,15 @@ namespace KingdomRuler.Systems.Save
     ///       capacity is itself derived from trade."warehouseLevels" on load. A v4 save
     ///       deserializes the new fields as null, so one fresh batch of offers is generated
     ///       and the refresh timer starts one interval from load.
+    ///   v6: removed the "economy", "cities" and "randomOccurrences" sections. Those modules
+    ///       were placeholders with no screen and no content, and were deleted until they are
+    ///       actually built; their sections return with them. Nothing is lost — no game ever
+    ///       wrote meaningful state into them — and Newtonsoft ignores the now-unknown keys in
+    ///       an older save.
     /// </summary>
     public sealed class GameStateDto
     {
-        public const int CurrentSchemaVersion = 5;
+        public const int CurrentSchemaVersion = 6;
 
         [JsonProperty("schemaVersion")]
         public int SchemaVersion { get; set; } = CurrentSchemaVersion;
@@ -50,14 +55,5 @@ namespace KingdomRuler.Systems.Save
 
         [JsonProperty("trade")]
         public TradeStateDto Trade { get; set; }
-
-        [JsonProperty("economy")]
-        public EconomyStateDto Economy { get; set; }
-
-        [JsonProperty("cities")]
-        public CitiesStateDto Cities { get; set; }
-
-        [JsonProperty("randomOccurrences")]
-        public RandomOccurrenceStateDto RandomOccurrences { get; set; }
     }
 }

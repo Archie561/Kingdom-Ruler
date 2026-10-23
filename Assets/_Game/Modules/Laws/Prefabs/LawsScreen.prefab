@@ -1564,9 +1564,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cf4aabc55b9809844ad4b817142a1ee6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: KingdomRuler.Modules.Laws::KingdomRuler.Modules.Laws.Views.LawsView
-  _cardView: {fileID: 8037004025613966475}
+  _card: {fileID: 8037004025613966475}
   _cardCountLabel: {fileID: 165216518490502157}
-  _characteristicBars:
+  _waitingOverlay: {fileID: 9003087222484600849}
+  _dials:
   - {fileID: 7392811922682734880}
   - {fileID: 5692390392938971193}
   - {fileID: 90973085407402863}
@@ -1576,7 +1577,6 @@ MonoBehaviour:
   _timerLabel: {fileID: 4448787748717009482}
   _refillButton: {fileID: 1647955804247168853}
   _refillCostLabel: {fileID: 2958618747283647933}
-  _waitingOverlay: {fileID: 9003087222484600849}
 --- !u!1 &6061128179039734392
 GameObject:
   m_ObjectHideFlags: 0

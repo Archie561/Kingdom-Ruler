@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using NUnit.Framework;
 using KingdomRuler.Modules.Laws;
+using KingdomRuler.Modules.Laws.UI;
 using KingdomRuler.Tests.EditMode.Systems;
 
 namespace KingdomRuler.Tests.EditMode.Modules.Laws

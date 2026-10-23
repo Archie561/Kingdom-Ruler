@@ -16,7 +16,7 @@ namespace KingdomRuler.Modules.Navigation
     /// navigator and every screen share. <c>KingdomRuler.Shared</c> is referenced *by* the
     /// modules, so nothing here may name a module type — which is why the nav bar binds screens
     /// as plain <c>GameObject</c>s tagged with one of these values, rather than knowing about
-    /// <c>LawsView</c>.</para>
+    /// <c>LawsScreenView</c>.</para>
     /// </remarks>
     public enum ScreenId
     {
