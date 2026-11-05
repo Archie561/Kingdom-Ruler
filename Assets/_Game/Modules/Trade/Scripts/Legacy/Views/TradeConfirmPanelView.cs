@@ -5,9 +5,9 @@ using DG.Tweening;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using KingdomRuler.Modules.Trade.Presenters;
+using KingdomRuler.Modules.TradeLegacy.Presenters;
 
-namespace KingdomRuler.Modules.Trade.Views
+namespace KingdomRuler.Modules.TradeLegacy.Views
 {
     /// <summary>
     /// The confirmation panel: the terms of a trade, why it cannot proceed, or what it will cost

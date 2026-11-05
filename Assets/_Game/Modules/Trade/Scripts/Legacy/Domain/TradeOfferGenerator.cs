@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using KingdomRuler.Systems.Ledger;
 
-namespace KingdomRuler.Modules.Trade.Domain
+namespace KingdomRuler.Modules.TradeLegacy.Domain
 {
     /// <summary>
     /// Generates a batch of trade offers matching <c>GDD.md</c> §7: 30% profitable, 45% neutral,

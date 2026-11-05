@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using KingdomRuler.Systems.Ledger;
 
-namespace KingdomRuler.Modules.Trade.Presenters
+namespace KingdomRuler.Modules.TradeLegacy.Presenters
 {
     /// <summary>
     /// One "12 Stone" line on an offer row or in the confirmation panel.

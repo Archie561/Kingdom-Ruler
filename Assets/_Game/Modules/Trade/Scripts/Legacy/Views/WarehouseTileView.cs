@@ -4,9 +4,9 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using KingdomRuler.Systems.Ledger;
-using KingdomRuler.Modules.Trade.Presenters;
+using KingdomRuler.Modules.TradeLegacy.Presenters;
 
-namespace KingdomRuler.Modules.Trade.Views
+namespace KingdomRuler.Modules.TradeLegacy.Views
 {
     /// <summary>
     /// One warehouse: its fill bar, level, and the two upgrade paths.

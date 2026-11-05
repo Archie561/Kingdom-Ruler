@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace KingdomRuler.Modules.Trade.Domain
+namespace KingdomRuler.Modules.TradeLegacy.Domain
 {
     /// <summary>
     /// Splits a whole number into parts matching real-valued targets, with the parts summing

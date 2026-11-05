@@ -16,6 +16,8 @@ MonoBehaviour:
   OfferRefreshTimeSeconds: 1200
   InstantRefreshCrystalCost: 3
   OfferBaseAmount: 50
+  OfferCapacityShare: 0.2
+  MaxWarehouseLevel: 20
   CapacityBase: 100
   CapacityGrowth: 1.5
   CapacityRoundTo: 10

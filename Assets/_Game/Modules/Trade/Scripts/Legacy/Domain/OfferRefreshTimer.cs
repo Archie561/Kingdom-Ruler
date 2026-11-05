@@ -1,6 +1,6 @@
 using System;
 
-namespace KingdomRuler.Modules.Trade.Domain
+namespace KingdomRuler.Modules.TradeLegacy.Domain
 {
     /// <summary>
     /// When the trade offer list is next due to be replaced (<c>GDD.md</c> §7 — every 20

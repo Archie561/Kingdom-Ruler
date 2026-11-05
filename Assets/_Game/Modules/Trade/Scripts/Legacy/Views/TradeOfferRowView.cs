@@ -3,9 +3,9 @@ using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using KingdomRuler.Modules.Trade.Presenters;
+using KingdomRuler.Modules.TradeLegacy.Presenters;
 
-namespace KingdomRuler.Modules.Trade.Views
+namespace KingdomRuler.Modules.TradeLegacy.Views
 {
     /// <summary>
     /// One row in the offer list: what the player gives, what they get, and whether anything is

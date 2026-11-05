@@ -1,6 +1,6 @@
 using KingdomRuler.Systems.Ledger;
 
-namespace KingdomRuler.Modules.Trade.Domain
+namespace KingdomRuler.Modules.TradeLegacy.Domain
 {
     /// <summary>
     /// Defines the resource pairing for warehouse cross-upgrade costs.

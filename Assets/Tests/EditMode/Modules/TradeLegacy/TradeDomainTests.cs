@@ -7,10 +7,11 @@ using KingdomRuler.Systems.Events;
 using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Systems.Clock;
 using KingdomRuler.Systems.Save;
-using KingdomRuler.Modules.Trade;
-using KingdomRuler.Modules.Trade.Domain;
+using KingdomRuler.Modules.TradeLegacy;
+using KingdomRuler.Modules.TradeLegacy.Domain;
+using TradeConfig = KingdomRuler.Modules.Trade.TradeConfig;
 
-namespace KingdomRuler.Tests.EditMode.Modules.Trade
+namespace KingdomRuler.Tests.EditMode.Modules.TradeLegacy
 {
     /// <summary>
     /// Shared test clock for this module's namespace. Also used by the generator and presenter
@@ -565,17 +566,17 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
         [Test]
         public void UpgradesStopAtTheSupportedCeiling()
         {
-            // A save-integrity guard rather than a design cap — see TradeConfig.MaxWarehouseLevel. Reached via
+            // A save-integrity guard rather than a design cap — see TradeConfig.LegacyMaxWarehouseLevel. Reached via
             // a save rather than by buying 50 upgrades: the price curve is exponential, so the
             // crystals needed exceed int.MaxValue long before the ceiling does.
             var dto = new TradeStateDto();
-            dto.WarehouseLevels[TradeResourceType.Wood.ToString()] = TradeConfig.MaxWarehouseLevel;
+            dto.WarehouseLevels[TradeResourceType.Wood.ToString()] = TradeConfig.LegacyMaxWarehouseLevel;
             _manager.LoadFromDto(dto);
             _ledger.AddCrystals(int.MaxValue);
 
             Assert.IsFalse(_manager.CanUpgradeFurther(TradeResourceType.Wood));
             Assert.IsFalse(_manager.UpgradeWarehouseWithCrystals(TradeResourceType.Wood));
-            Assert.AreEqual(TradeConfig.MaxWarehouseLevel,
+            Assert.AreEqual(TradeConfig.LegacyMaxWarehouseLevel,
                             _manager.GetWarehouseLevel(TradeResourceType.Wood));
             Assert.AreEqual(int.MaxValue, _ledger.Crystals, "A refused upgrade must not charge.");
         }
@@ -664,7 +665,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
 
             _manager.LoadFromDto(dto);
 
-            Assert.AreEqual(TradeConfig.MaxWarehouseLevel,
+            Assert.AreEqual(TradeConfig.LegacyMaxWarehouseLevel,
                             _manager.GetWarehouseLevel(TradeResourceType.Stone));
             var capacity = _ledger.GetTradeResource(TradeResourceType.Stone).Capacity;
             Assert.IsFalse(float.IsInfinity(capacity));

@@ -1,7 +1,7 @@
 using System;
 using KingdomRuler.Systems.Ledger;
 
-namespace KingdomRuler.Modules.Trade.Domain
+namespace KingdomRuler.Modules.TradeLegacy.Domain
 {
     /// <summary>Why a trade offer cannot be taken — or why taking it will cost the player something.</summary>
     public enum TradeIssueKind

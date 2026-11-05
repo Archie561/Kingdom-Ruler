@@ -1,4 +1,4 @@
-namespace KingdomRuler.Modules.Trade
+namespace KingdomRuler.Modules.TradeLegacy
 {
     /// <summary>
     /// Owns the String Table and the key constants for Trade's screen text that is built in

@@ -1,8 +1,8 @@
 using System;
 using NUnit.Framework;
-using KingdomRuler.Modules.Trade.Domain;
+using KingdomRuler.Modules.TradeLegacy.Domain;
 
-namespace KingdomRuler.Tests.EditMode.Modules.Trade
+namespace KingdomRuler.Tests.EditMode.Modules.TradeLegacy
 {
     /// <summary>
     /// The 20-minute offer refresh deadline. The Trade analogue of ReplenishmentSlotsTests.

@@ -1,8 +1,8 @@
 using NUnit.Framework;
-using KingdomRuler.Modules.Trade;
+using KingdomRuler.Modules.TradeLegacy;
 using KingdomRuler.Tests.EditMode.Systems;
 
-namespace KingdomRuler.Tests.EditMode.Modules.Trade
+namespace KingdomRuler.Tests.EditMode.Modules.TradeLegacy
 {
     /// <summary>
     /// Checks that every message Trade builds in code exists in the real String Table.

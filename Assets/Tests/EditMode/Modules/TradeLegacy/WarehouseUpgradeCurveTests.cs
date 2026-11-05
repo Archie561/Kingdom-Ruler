@@ -1,8 +1,9 @@
 using NUnit.Framework;
 using UnityEngine;
-using KingdomRuler.Modules.Trade;
+using KingdomRuler.Modules.TradeLegacy;
+using TradeConfig = KingdomRuler.Modules.Trade.TradeConfig;
 
-namespace KingdomRuler.Tests.EditMode.Modules.Trade
+namespace KingdomRuler.Tests.EditMode.Modules.TradeLegacy
 {
     /// <summary>
     /// The two warehouse growth formulas on <see cref="TradeConfig"/> — capacity at a level, and
@@ -59,7 +60,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
 
             Assert.IsFalse(float.IsInfinity(value));
             Assert.IsFalse(float.IsNaN(value));
-            Assert.AreEqual(_config.WarehouseCapacityAt(TradeConfig.MaxWarehouseLevel), value, 0.001f);
+            Assert.AreEqual(_config.WarehouseCapacityAt(TradeConfig.LegacyMaxWarehouseLevel), value, 0.001f);
         }
 
         [Test]

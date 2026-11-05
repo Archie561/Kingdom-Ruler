@@ -4,9 +4,10 @@ using UnityEngine;
 using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Systems.Clock;
 using KingdomRuler.Systems.Save;
-using KingdomRuler.Modules.Trade.Domain;
+using KingdomRuler.Modules.TradeLegacy.Domain;
+using TradeConfig = KingdomRuler.Modules.Trade.TradeConfig;
 
-namespace KingdomRuler.Modules.Trade
+namespace KingdomRuler.Modules.TradeLegacy
 {
     /// <summary>
     /// Model layer for the Trade mechanic (<c>GDD.md</c> §7): the offer list and its refresh
@@ -120,9 +121,9 @@ namespace KingdomRuler.Modules.Trade
         public float GetWarehousePairedCost(TradeResourceType type) =>
             _ledger.GetTradeResource(GetPairedResource(type)).Capacity * PairedUpgradeCostFraction;
 
-        /// <summary>Whether this warehouse can still be upgraded (see <see cref="TradeConfig.MaxWarehouseLevel"/>).</summary>
+        /// <summary>Whether this warehouse can still be upgraded (see <see cref="TradeConfig.LegacyMaxWarehouseLevel"/>).</summary>
         public bool CanUpgradeFurther(TradeResourceType type) =>
-            _warehouseLevels[type] < TradeConfig.MaxWarehouseLevel;
+            _warehouseLevels[type] < TradeConfig.LegacyMaxWarehouseLevel;
 
         // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -372,7 +373,7 @@ namespace KingdomRuler.Modules.Trade
                     // Clamped, not trusted: the save is plain JSON on the device, and a
                     // hand-edited level would otherwise produce an infinite capacity, an
                     // infinite regen rate and NaN amounts — an unrecoverable economy.
-                    level = Math.Clamp(saved, 0, TradeConfig.MaxWarehouseLevel);
+                    level = Math.Clamp(saved, 0, TradeConfig.LegacyMaxWarehouseLevel);
                 }
 
                 _warehouseLevels[type] = level;

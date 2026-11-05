@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using KingdomRuler.Systems.Ledger;
-using KingdomRuler.Modules.Trade.Domain;
+using KingdomRuler.Modules.TradeLegacy.Domain;
 
-namespace KingdomRuler.Tests.EditMode.Modules.Trade
+namespace KingdomRuler.Tests.EditMode.Modules.TradeLegacy
 {
     [TestFixture]
     public sealed class TradeOfferAllocatorTests

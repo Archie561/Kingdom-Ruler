@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using KingdomRuler.Systems.Ledger;
 
-namespace KingdomRuler.Modules.Trade.Domain
+namespace KingdomRuler.Modules.TradeLegacy.Domain
 {
     /// <summary>
     /// What actually happened when an offer was accepted — including how much of it the player

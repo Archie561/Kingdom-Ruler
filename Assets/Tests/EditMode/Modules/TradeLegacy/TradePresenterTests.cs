@@ -5,13 +5,14 @@ using NUnit.Framework;
 using UnityEngine;
 using KingdomRuler.Systems.Events;
 using KingdomRuler.Systems.Ledger;
-using KingdomRuler.Modules.Trade;
-using KingdomRuler.Modules.Trade.Domain;
-using KingdomRuler.Modules.Trade.Presenters;
+using KingdomRuler.Modules.TradeLegacy;
+using KingdomRuler.Modules.TradeLegacy.Domain;
+using KingdomRuler.Modules.TradeLegacy.Presenters;
 using KingdomRuler.Tests.EditMode.Systems;
 using KingdomRuler.Tests.EditMode.Systems.Ledger;
+using TradeConfig = KingdomRuler.Modules.Trade.TradeConfig;
 
-namespace KingdomRuler.Tests.EditMode.Modules.Trade
+namespace KingdomRuler.Tests.EditMode.Modules.TradeLegacy
 {
     [TestFixture]
     public sealed class TradePresenterTests
@@ -130,7 +131,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
         public void WarehouseDisplay_AtTheCeiling_ReportsMaxedRatherThanAPrice()
         {
             var dto = new KingdomRuler.Systems.Save.TradeStateDto();
-            dto.WarehouseLevels[TradeResourceType.Clay.ToString()] = TradeConfig.MaxWarehouseLevel;
+            dto.WarehouseLevels[TradeResourceType.Clay.ToString()] = TradeConfig.LegacyMaxWarehouseLevel;
             _manager.LoadFromDto(dto);
 
             var display = _presenter.GetWarehouseDisplay(TradeResourceType.Clay);

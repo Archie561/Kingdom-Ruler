@@ -5,9 +5,9 @@ using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Systems.Audio;
 using KingdomRuler.Systems.Haptics;
 using KingdomRuler.Systems.Localization;
-using KingdomRuler.Modules.Trade.Domain;
+using KingdomRuler.Modules.TradeLegacy.Domain;
 
-namespace KingdomRuler.Modules.Trade.Presenters
+namespace KingdomRuler.Modules.TradeLegacy.Presenters
 {
     /// <summary>
     /// Mediates between <see cref="TradeManager"/> (Model) and the Trade Views.

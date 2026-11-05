@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using KingdomRuler.Systems.Ledger;
 
-namespace KingdomRuler.Modules.Trade.Domain
+namespace KingdomRuler.Modules.TradeLegacy.Domain
 {
     /// <summary>
     /// How good a deal an offer is. All six resources are valued identically (<c>GDD.md</c> §7),

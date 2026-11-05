@@ -3,7 +3,7 @@ using UnityEngine;
 using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Systems.Save;
 using KingdomRuler.Modules.Laws;
-using KingdomRuler.Modules.Trade;
+using TradeManager = KingdomRuler.Modules.TradeLegacy.TradeManager;
 
 namespace KingdomRuler.Core
 {

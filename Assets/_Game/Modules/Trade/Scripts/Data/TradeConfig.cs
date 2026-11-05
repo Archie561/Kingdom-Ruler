@@ -46,6 +46,17 @@ namespace KingdomRuler.Modules.Trade
         [Min(1f)]
         public float OfferBaseAmount = 50f;
 
+        [Tooltip("Share of the smaller side's combined warehouse capacity that an offer gives (GDD §7). " +
+                 "At most 0.40, which keeps every amount within its own warehouse.")]
+        [Range(MinOfferCapacityShare, MaxOfferCapacityShare)]
+        public float OfferCapacityShare = 0.20f;
+
+        [Header("Warehouse upgrades")]
+        [Tooltip("Highest level a warehouse can be upgraded to (GDD §7). A saved level above it is " +
+                 "clamped to it on load.")]
+        [Min(1)]
+        public int MaxWarehouseLevel = 20;
+
         [Header("Warehouse capacity — capacity(L) = round(base × growth^L / roundTo) × roundTo")]
         [Min(1f)]   public float CapacityBase       = 100f;
         [Min(1.01f)] public float CapacityGrowth    = 1.5f;
@@ -55,14 +66,15 @@ namespace KingdomRuler.Modules.Trade
         [Min(1f)]   public float CrystalCostBase    = 5f;
         [Min(1.01f)] public float CrystalCostGrowth = 1.5f;
 
+        /// <summary>Bounds of <see cref="OfferCapacityShare"/>; above the maximum a single amount could exceed its own warehouse.</summary>
+        public const float MinOfferCapacityShare = 0.01f;
+        public const float MaxOfferCapacityShare = 0.40f;
+
         /// <summary>
-        /// Highest warehouse level the curves evaluate. A <b>save-integrity guard, not a design
-        /// cap</b>: the save is plain JSON on the device, and a hand-edited <c>"Stone": 9999</c>
-        /// would produce <c>100 × 1.5^9999</c> → <c>Infinity</c> → an infinite regen rate →
-        /// <c>NaN</c> amounts, corrupting the economy irrecoverably (<c>CLAUDE.md</c> §1.2). 50 is
-        /// far beyond any reachable play — capacity there is ~6.4 × 10¹⁰ — and inside float range.
+        /// The level ceiling of the legacy Trade code in <c>Scripts/Legacy/</c>, which is deleted
+        /// once the rebuilt module replaces it. New code uses <see cref="MaxWarehouseLevel"/>.
         /// </summary>
-        public const int MaxWarehouseLevel = 50;
+        public const int LegacyMaxWarehouseLevel = 50;
 
         /// <summary>
         /// Capacity of a warehouse at <paramref name="level"/>, where 0 is unupgraded. Always
@@ -88,7 +100,7 @@ namespace KingdomRuler.Modules.Trade
 
         /// <summary><c>round(base × growth^level / roundTo) × roundTo</c>, held finite and positive.</summary>
         /// <remarks>
-        /// <para>The level is clamped to <c>0..</c><see cref="MaxWarehouseLevel"/> rather than
+        /// <para>The level is clamped to <c>0..</c><see cref="LegacyMaxWarehouseLevel"/> rather than
         /// rejected, so a corrupt save degrades to the biggest sane warehouse instead of refusing
         /// to load. Each coefficient is held to a positive minimum and the result floored at
         /// <c>roundTo</c>, so no asset value can produce zero.</para>
@@ -100,7 +112,7 @@ namespace KingdomRuler.Modules.Trade
         /// </remarks>
         private static float Grow(float baseValue, float growth, float roundTo, int level)
         {
-            int clamped = Math.Clamp(level, 0, MaxWarehouseLevel);
+            int clamped = Math.Clamp(level, 0, LegacyMaxWarehouseLevel);
 
             baseValue = Math.Max(baseValue, 1f);
             growth    = Math.Max(growth,    0.01f);
@@ -121,6 +133,8 @@ namespace KingdomRuler.Modules.Trade
             if (OfferRefreshTimeSeconds   < 1f)    OfferRefreshTimeSeconds   = 1f;
             if (InstantRefreshCrystalCost < 1)     InstantRefreshCrystalCost = 1;
             if (OfferBaseAmount           < 1f)    OfferBaseAmount           = 1f;
+            OfferCapacityShare = Mathf.Clamp(OfferCapacityShare, MinOfferCapacityShare, MaxOfferCapacityShare);
+            if (MaxWarehouseLevel         < 1)     MaxWarehouseLevel         = 1;
 
             if (CapacityBase    < 1f)    CapacityBase    = 1f;
             if (CapacityGrowth  <= 1f)   CapacityGrowth  = 1.01f;

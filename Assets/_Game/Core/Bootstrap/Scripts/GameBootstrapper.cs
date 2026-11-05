@@ -13,8 +13,9 @@ using KingdomRuler.Modules.Laws;
 using KingdomRuler.Modules.Laws.UI;
 using VContainer;
 using VContainer.Unity;
-using KingdomRuler.Modules.Trade;
-using KingdomRuler.Modules.Trade.Presenters;
+using TradeConfig = KingdomRuler.Modules.Trade.TradeConfig;
+using TradeManager = KingdomRuler.Modules.TradeLegacy.TradeManager;
+using TradePresenter = KingdomRuler.Modules.TradeLegacy.Presenters.TradePresenter;
 
 namespace KingdomRuler.Core
 {
