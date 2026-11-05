@@ -1,5 +1,8 @@
 using System;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 using KingdomRuler.Systems.Events;
 using KingdomRuler.Systems.Ledger;
 
@@ -108,20 +111,23 @@ namespace KingdomRuler.Tests.EditMode.Systems
             _bus.Subscribe<GoldChangedEvent>(_ => throw new InvalidOperationException("boom"));
             _bus.Subscribe<GoldChangedEvent>(_ => afterRan = true);
 
-            Assert.Throws<InvalidOperationException>(() => _bus.Publish(new GoldChangedEvent(100, 50)));
+            LogAssert.Expect(LogType.Exception, new Regex("boom"));
+            Assert.DoesNotThrow(() => _bus.Publish(new GoldChangedEvent(100, 50)),
+                "A subscriber's exception must never reach the publisher.");
 
             Assert.IsTrue(beforeRan, "Subscriber registered before the thrower must still run.");
             Assert.IsTrue(afterRan, "Subscriber registered after the thrower must still run.");
         }
 
         [Test]
-        public void Publish_MultipleSubscribersThrow_AggregatesThemAll()
+        public void Publish_MultipleSubscribersThrow_LogsEachOne()
         {
             _bus.Subscribe<GoldChangedEvent>(_ => throw new InvalidOperationException("one"));
             _bus.Subscribe<GoldChangedEvent>(_ => throw new InvalidOperationException("two"));
 
-            var ex = Assert.Throws<AggregateException>(() => _bus.Publish(new GoldChangedEvent(1, 1)));
-            Assert.AreEqual(2, ex.InnerExceptions.Count);
+            LogAssert.Expect(LogType.Exception, new Regex("one"));
+            LogAssert.Expect(LogType.Exception, new Regex("two"));
+            Assert.DoesNotThrow(() => _bus.Publish(new GoldChangedEvent(1, 1)));
         }
 
         [Test]

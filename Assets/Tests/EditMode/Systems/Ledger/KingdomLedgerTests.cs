@@ -1,7 +1,10 @@
 using System;
+using System.Text.RegularExpressions;
 using KingdomRuler.Systems.Events;
 using KingdomRuler.Systems.Ledger;
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace KingdomRuler.Tests.EditMode.Systems
 {
@@ -461,6 +464,52 @@ namespace KingdomRuler.Tests.EditMode.Systems
 
         #endregion
 
+        #region Non-finite Guard Tests
+
+        // NaN or ±Infinity would loop the level-up forever or poison the save; each is refused.
+
+        [TestCase(float.PositiveInfinity)]
+        [TestCase(float.NaN)]
+        public void AddCharacteristicPoints_NonFinite_IsRefusedAndChangesNothing(float points)
+        {
+            LogAssert.Expect(LogType.Error, new Regex("non-finite"));
+            _ledger.AddCharacteristicPoints(CharacteristicType.Army, points);
+
+            var state = _ledger.GetCharacteristic(CharacteristicType.Army);
+            Assert.AreEqual(1, state.Level);
+            Assert.AreEqual(0f, state.PointsIntoCurrentLevel);
+        }
+
+        [Test]
+        public void ReduceCharacteristicPoints_NonFinite_IsRefused()
+        {
+            _ledger.AddCharacteristicPoints(CharacteristicType.Army, 40f);
+
+            LogAssert.Expect(LogType.Error, new Regex("non-finite"));
+            _ledger.ReduceCharacteristicPoints(CharacteristicType.Army, float.NaN);
+
+            Assert.AreEqual(40f, _ledger.GetCharacteristic(CharacteristicType.Army).PointsIntoCurrentLevel);
+        }
+
+        [Test]
+        public void TradeResourceMutations_NonFinite_AreRefused()
+        {
+            _ledger.AddTradeResource(TradeResourceType.Wood, 10f);
+
+            LogAssert.Expect(LogType.Error, new Regex("non-finite"));
+            Assert.AreEqual(0f, _ledger.AddTradeResource(TradeResourceType.Wood, float.NaN));
+            LogAssert.Expect(LogType.Error, new Regex("non-finite"));
+            Assert.IsFalse(_ledger.SpendTradeResource(TradeResourceType.Wood, float.NaN));
+            LogAssert.Expect(LogType.Error, new Regex("non-finite"));
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, float.PositiveInfinity);
+
+            var wood = _ledger.GetTradeResource(TradeResourceType.Wood);
+            Assert.AreEqual(10f, wood.Amount);
+            Assert.AreEqual(100f, wood.Capacity);
+        }
+
+        #endregion
+
         #region Offline Accrual Tests
 
         [Test]
@@ -469,7 +518,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
             _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 86400f);
             
             var now = DateTime.UtcNow;
-            _ledger.GetTradeResource(TradeResourceType.Wood).LastUpdatedUtc = now.AddSeconds(-10);
+            _ledger.ResetRegenBaseline(now.AddSeconds(-10));
 
             _ledger.AccruePassiveResourceRegen(now);
 
@@ -484,7 +533,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
             _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
             
             var now = DateTime.UtcNow;
-            _ledger.GetTradeResource(TradeResourceType.Wood).LastUpdatedUtc = now.AddDays(-2);
+            _ledger.ResetRegenBaseline(now.AddDays(-2));
 
             _ledger.AccruePassiveResourceRegen(now);
 
@@ -497,7 +546,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
             _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
             
             var now = DateTime.UtcNow;
-            _ledger.GetTradeResource(TradeResourceType.Wood).LastUpdatedUtc = now;
+            _ledger.ResetRegenBaseline(now);
 
             _ledger.AccruePassiveResourceRegen(now);
 

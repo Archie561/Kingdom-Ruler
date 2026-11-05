@@ -18,7 +18,7 @@ namespace KingdomRuler.Systems.Popups
     ///
     /// <para>A popup owns its content, its animation and its lifetime — it destroys itself once
     /// it has animated out. Where it sits among the other popups, the backdrop and the sounds
-    /// belong to the manager, which reacts to <see cref="Shown"/> and <see cref="Closed"/>.</para>
+    /// belong to <see cref="PopupSystem"/>, which reacts to <see cref="Shown"/> and <see cref="Closed"/>.</para>
     /// </remarks>
     public abstract class Popup : MonoBehaviour
     {
@@ -78,7 +78,7 @@ namespace KingdomRuler.Systems.Popups
             gameObject.SetActive(true);
             _isShown = true;
 
-            // The manager stacks it, moves the backdrop behind it and plays the open sound.
+            // PopupSystem stacks it, moves the backdrop behind it and plays the open sound.
             Shown?.Invoke();
             PlayOpenAnimation();
         }
@@ -113,7 +113,7 @@ namespace KingdomRuler.Systems.Popups
             if (_isClosed) return false;
             _isClosed = true;
 
-            // The manager hears first, so its stack is already up to date when the caller
+            // PopupSystem hears first, so its stack is already up to date when the caller
             // resumes — a caller that opens the next popup straight away gets it on top.
             Closed?.Invoke();
             ReleaseCaller();

@@ -3,8 +3,8 @@ using Newtonsoft.Json;
 namespace KingdomRuler.Systems.Save
 {
     /// <summary>
-    /// One characteristic's persisted state. Nested under <see cref="LedgerStateDto"/>,
-    /// keyed by CharacteristicType name.
+    /// One characteristic's saved state. Nested under <see cref="LedgerStateDto"/>, keyed by
+    /// <c>CharacteristicType</c> name.
     /// </summary>
     public sealed class CharacteristicStateDto
     {
@@ -13,9 +13,5 @@ namespace KingdomRuler.Systems.Save
 
         [JsonProperty("pointsIntoCurrentLevel")]
         public float PointsIntoCurrentLevel { get; set; }
-
-        // "permanentFloor" was removed in schemaVersion 2. It always equalled Level, so
-        // nothing is lost: a v1 save's floor is recoverable as its level. Newtonsoft
-        // ignores the now-unknown key on load, so v1 saves still deserialize cleanly.
     }
 }

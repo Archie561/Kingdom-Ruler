@@ -2,10 +2,7 @@ using System.Collections.Generic;
 
 namespace KingdomRuler.Systems.Ledger
 {
-    /// <summary>
-    /// Immutable read-only copy of the Ledger state for afford-checks and display.
-    /// Prevents mutation during a frame/calculation.
-    /// </summary>
+    /// <summary>An immutable copy of the Ledger's amounts and levels at one moment.</summary>
     public sealed class LedgerSnapshot
     {
         public long Gold { get; }

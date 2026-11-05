@@ -3,20 +3,23 @@ using System.Collections.Generic;
 using KingdomRuler.Systems.Events;
 using KingdomRuler.Systems.Clock;
 using KingdomRuler.Systems.Save;
+using UnityEngine;
 
 namespace KingdomRuler.Systems.Ledger
 {
     /// <summary>
-    /// Single source of truth for all mutable game resource state.
-    /// Every module reads and writes through this one API.
-    /// PRIORITY #1: A bug here is save-corrupting or economy-breaking.
+    /// The single source of truth for gold, crystals, trade resources and characteristics. Every
+    /// module reads and writes through this API; a bug here corrupts saves or the economy.
     /// </summary>
+    /// <remarks>
+    /// Levelling questions go through the Ledger (<see cref="PointsRequiredForLevel"/>,
+    /// <see cref="PointsRemainingForNextLevel"/>) rather than to
+    /// <see cref="CharacteristicLevelingCurve"/> directly, so it stays the one place that knows how
+    /// a characteristic levels.
+    /// </remarks>
     public sealed class KingdomLedger
     {
-        /// <summary>
-        /// GDD §7: an empty warehouse refills to full in 24 hours, whatever its capacity —
-        /// so the regen rate is always capacity ÷ this.
-        /// </summary>
+        /// <summary>An empty warehouse refills in 24 hours whatever its capacity (GDD §7), so regen = capacity ÷ this.</summary>
         private const float SecondsPerDay = 86400f;
 
         private const float DefaultWarehouseCapacity = 100f;
@@ -30,10 +33,6 @@ namespace KingdomRuler.Systems.Ledger
 
         public long Gold => _gold;
         public int Crystals => _crystals;
-
-        // Callers ask the Ledger about levelling (PointsRequiredForLevel /
-        // PointsRemainingForNextLevel) rather than reading CharacteristicLevelingCurve themselves:
-        // the Ledger stays the one place that knows how a characteristic levels.
 
         public KingdomLedger(EventBus eventBus)
         {
@@ -117,6 +116,7 @@ namespace KingdomRuler.Systems.Ledger
         /// </summary>
         public float AddTradeResource(TradeResourceType type, float amount)
         {
+            if (IsRejectedAsNonFinite(amount, nameof(AddTradeResource))) return 0f;
             if (amount < 0) throw new ArgumentException("Use SpendTradeResource for negative changes.", nameof(amount));
             var state = _tradeResources[type];
             float spaceAvailable = state.Capacity - state.Amount;
@@ -133,6 +133,7 @@ namespace KingdomRuler.Systems.Ledger
         /// </summary>
         public bool SpendTradeResource(TradeResourceType type, float amount)
         {
+            if (IsRejectedAsNonFinite(amount, nameof(SpendTradeResource))) return false;
             if (amount < 0) throw new ArgumentException("Amount must be non-negative.", nameof(amount));
             var state = _tradeResources[type];
             if (state.Amount < amount) return false;
@@ -150,22 +151,19 @@ namespace KingdomRuler.Systems.Ledger
 
         /// <summary>Set warehouse capacity (for upgrades).</summary>
         /// <remarks>
-        /// <para>The regen rate is recomputed here and nowhere else. GDD §7 fixes the <i>fill
-        /// time</i> at 24 hours rather than the rate, so a bigger warehouse must produce more per
-        /// hour to still fill in a day. This derivation is Ledger-owned
-        /// (<c>ARCHITECTURE.md</c> §4.3): callers hand over a capacity, never a rate.</para>
+        /// <para>Callers hand over a capacity, never a rate: GDD §7 fixes the <i>fill time</i> at 24
+        /// hours, so the regen rate is derived here and nowhere else (<c>ARCHITECTURE.md</c> §4.3).</para>
         ///
-        /// <para>The stored amount is clamped down with the capacity. A designer retuning the
-        /// curve downwards would otherwise leave a warehouse holding more than it can hold, which
-        /// then never regenerates (it is already "full") and reads as a stuck bar.</para>
+        /// <para>The stored amount is clamped down with the capacity; otherwise a warehouse retuned
+        /// smaller would hold more than it can, never regenerate, and read as a stuck bar.</para>
         /// </remarks>
         public void SetWarehouseCapacity(TradeResourceType type, float newCapacity)
         {
+            if (IsRejectedAsNonFinite(newCapacity, nameof(SetWarehouseCapacity))) return;
             if (newCapacity <= 0) throw new ArgumentException("Capacity must be positive.", nameof(newCapacity));
             var state = _tradeResources[type];
             state.Capacity = newCapacity;
             if (state.Amount > newCapacity) state.Amount = newCapacity;
-            // Recalculate regen rate: fill time stays at 24h
             state.RegenRatePerSecond = newCapacity / SecondsPerDay;
         }
 
@@ -190,12 +188,12 @@ namespace KingdomRuler.Systems.Ledger
         }
 
         /// <summary>
-        /// Add points to a characteristic. May trigger level-up(s).
-        /// Thresholds come from the Ledger's own curve — deliberately not a parameter,
-        /// so every mechanic levels a characteristic at the identical rate.
+        /// Add points to a characteristic, levelling it up as many times as they cover. The curve
+        /// is deliberately not a parameter, so every mechanic levels a characteristic at one rate.
         /// </summary>
         public void AddCharacteristicPoints(CharacteristicType type, float points)
         {
+            if (IsRejectedAsNonFinite(points, nameof(AddCharacteristicPoints))) return;
             if (points <= 0) return;
             var state = _characteristics[type];
 
@@ -211,26 +209,19 @@ namespace KingdomRuler.Systems.Ledger
                 required = CharacteristicLevelingCurve.PointsRequired(state.Level);
             }
 
-            // Publish only once the mutation has fully settled. EventBus.Publish is
-            // synchronous, so a subscriber runs inside this call — publishing from inside
-            // the loop above let a Presenter observe (and render) a half-applied state,
-            // with the level already bumped but the remaining points not yet carried over.
+            // Publish only after the loop: the bus is synchronous, so a subscriber publishing from
+            // inside it would render a level already bumped with its points not yet carried over.
             for (int level = startLevel + 1; level <= state.Level; level++)
                 _eventBus.Publish(new CharacteristicLeveledUpEvent(type, level));
         }
 
         /// <summary>
-        /// Reduce points within the current level (from negative card effects).
+        /// Remove progress within the current level, stopping at zero. A characteristic never drops
+        /// below a level it has reached (GDD §6), so the floor is simply the current level.
         /// </summary>
-        /// <remarks>
-        /// Per GDD §6 a characteristic never drops below a level it has reached, so this
-        /// only ever eats into progress within the current level and stops at zero — the
-        /// level itself is never decremented. There is deliberately no separate "permanent
-        /// floor" to track: the floor is always exactly the current level, so storing it
-        /// would be storing a copy of <see cref="CharacteristicState.Level"/>.
-        /// </remarks>
         public void ReduceCharacteristicPoints(CharacteristicType type, float points)
         {
+            if (IsRejectedAsNonFinite(points, nameof(ReduceCharacteristicPoints))) return;
             if (points <= 0) return;
             var state = _characteristics[type];
             state.PointsIntoCurrentLevel = Math.Max(0f, state.PointsIntoCurrentLevel - points);
@@ -245,32 +236,17 @@ namespace KingdomRuler.Systems.Ledger
         // --- Offline Accrual ---
 
         /// <summary>
-        /// Fast-forward passive resource regeneration for all trade resources (GDD §7 — an empty
-        /// warehouse refills over 24 hours, scaled to its capacity).
+        /// Settle passive regeneration of every trade resource up to <paramref name="now"/> (GDD §7).
         /// </summary>
         /// <remarks>
-        /// <para><b>Deliberately publishes no <c>TradeResourceChangedEvent</c>, and this is not an
-        /// oversight.</b> It runs on every game-clock tick, four times a second, so
-        /// publishing would put six messages per tick — around 24 a second, forever, on every
-        /// screen — onto the shared bus to announce a delta of roughly a third of a thousandth of
-        /// a warehouse. That is exactly the idle battery drain GDD §3 forbids in a game people
-        /// leave installed.</para>
+        /// <para><b>Publishes no <c>TradeResourceChangedEvent</c>, deliberately.</b> It runs on every
+        /// clock tick, so publishing would put ~24 messages a second on the bus, forever, to announce
+        /// tiny deltas — the idle battery drain GDD §3 forbids. Discrete changes go on the bus;
+        /// continuous drift is polled by the views (<c>ARCHITECTURE.md</c> §4.5).</para>
         ///
-        /// <para>The seam is: <b>discrete changes go on the bus; continuous drift is polled.</b>
-        /// Accepting an offer, upgrading a warehouse and a Cities purchase all publish normally
-        /// through <see cref="AddTradeResource"/> / <see cref="SpendTradeResource"/>. The
-        /// warehouse bars read the amount each frame and redraw only when the displayed value
-        /// changes, the same way the Laws countdown is rendered (<c>ARCHITECTURE.md</c> §4.5).</para>
-        ///
-        /// <para>Takes <paramref name="now"/> rather than reading a clock: the Ledger holds no
-        /// <c>IClock</c>, so something outside it always decides when time has passed. That is
-        /// what keeps this directly unit-testable.</para>
-        ///
-        /// <para>Who calls it: during play, the game clock — <c>GameBootstrapper</c> subscribes
-        /// this method to <c>IClock.Ticked</c>. On load, <c>TradeManager.LoadFromDto</c>, the
-        /// first moment warehouse capacities are final. And <b>anything that decides from a trade
-        /// amount, or changes a capacity, calls it first</b> — accepting an offer, upgrading a
-        /// warehouse — so correctness never depends on whether a tick happened to land.</para>
+        /// <para>Called on every clock tick (subscribed by <c>GameBootstrapper</c>; the Ledger holds no
+        /// clock), on load once capacities are final, and by anything that decides from a trade
+        /// amount or changes a capacity — first, so correctness never depends on when a tick landed.</para>
         /// </remarks>
         public void AccruePassiveResourceRegen(DateTime now)
         {
@@ -284,12 +260,9 @@ namespace KingdomRuler.Systems.Ledger
         /// Start every warehouse's regen clock at <paramref name="now"/>, accruing nothing.
         /// </summary>
         /// <remarks>
-        /// For a <b>new game only</b> — loading a save restores each resource's own timestamp,
-        /// which is what makes offline accrual work. This exists because
-        /// <see cref="TradeResourceState"/> seeds its baseline from the system clock at
-        /// construction, which is not the injected <c>IClock</c>: without this, a fresh game's
-        /// first accrual measures from whenever the object happened to be built rather than from
-        /// when the game actually started.
+        /// New game only; a load restores each resource's own timestamp. Needed because
+        /// <see cref="TradeResourceState"/> seeds its baseline from the system clock at construction,
+        /// not from the injected <c>IClock</c>.
         /// </remarks>
         public void ResetRegenBaseline(DateTime now)
         {
@@ -299,10 +272,7 @@ namespace KingdomRuler.Systems.Ledger
             }
         }
 
-        /// <summary>
-        /// Create an immutable snapshot of the current ledger state.
-        /// Used for afford-checks and UI display to avoid mutation during a frame.
-        /// </summary>
+        /// <summary>An immutable copy of the current amounts and levels.</summary>
         public LedgerSnapshot TakeSnapshot()
         {
             var resourceAmounts = new Dictionary<TradeResourceType, float>();
@@ -332,9 +302,8 @@ namespace KingdomRuler.Systems.Ledger
                 dto.TradeResources[kvp.Key.ToString()] = new TradeResourceStateDto
                 {
                     Amount = kvp.Value.Amount,
-                    // Capacity is a bootstrap value here; Trade re-asserts it from the upgrade
-                    // level on load. The regen rate is not persisted at all — it is always
-                    // capacity ÷ 86400 (schema v5).
+                    // A fallback only: Trade re-derives capacity from the upgrade level on load.
+                    // The regen rate is not saved; it always follows from capacity.
                     Capacity       = kvp.Value.Capacity,
                     LastUpdatedUtc = kvp.Value.LastUpdatedUtc.ToString("O")
                 };
@@ -356,15 +325,11 @@ namespace KingdomRuler.Systems.Ledger
         /// Restore the ledger from a save DTO.
         /// </summary>
         /// <remarks>
-        /// Every field is validated rather than trusted. This is the highest-consequence
-        /// read in the game: the save file is plain JSON on the device, so its contents are
-        /// whatever happens to be on disk — hand-edited, truncated by a crash mid-write, or
-        /// written by an older build. Anything unreadable falls back to the value the
-        /// freshly-constructed ledger already holds, so a partial save degrades to partial
-        /// defaults instead of a corrupt economy or a divide-by-zero regen rate.
-        ///
-        /// Entries are keyed by enum *name*, so reordering the enums is safe; an unknown
-        /// name (a resource that existed in an older build) is skipped.
+        /// Every field is validated rather than trusted: the file is plain JSON on the device and
+        /// may be hand-edited, truncated or from another build. Anything unreadable keeps the value
+        /// the fresh ledger already holds, so a damaged save degrades to defaults rather than to a
+        /// corrupt economy. Entries are keyed by enum <i>name</i>, so reordering an enum is safe;
+        /// an unknown name is skipped.
         /// </remarks>
         public void LoadFromDto(LedgerStateDto dto)
         {
@@ -383,14 +348,15 @@ namespace KingdomRuler.Systems.Ledger
 
                     // A non-positive capacity would make the warehouse unusable and, via
                     // the 24h-fill rule, produce a zero regen rate. Keep the default.
-                    if (kvp.Value.Capacity > 0f)
+                    if (kvp.Value.Capacity > 0f && float.IsFinite(kvp.Value.Capacity))
                         state.Capacity = kvp.Value.Capacity;
 
-                    // Always derived, never read from the file (schema v5 dropped the field):
-                    // GDD §7 fixes the fill time at 24h, so the rate follows from capacity.
                     state.RegenRatePerSecond = state.Capacity / SecondsPerDay;
 
-                    state.Amount = Math.Clamp(kvp.Value.Amount, 0f, state.Capacity);
+                    // Math.Clamp passes NaN straight through, so a non-finite amount is checked first.
+                    state.Amount = float.IsFinite(kvp.Value.Amount)
+                        ? Math.Clamp(kvp.Value.Amount, 0f, state.Capacity)
+                        : 0f;
 
                     state.LastUpdatedUtc = ParseUtcOr(kvp.Value.LastUpdatedUtc, state.LastUpdatedUtc);
                 }
@@ -411,9 +377,22 @@ namespace KingdomRuler.Systems.Ledger
                 // Progress must sit inside the current level; anything else means the file
                 // and the curve disagree, and carrying it would trigger a phantom level-up.
                 float required = CharacteristicLevelingCurve.PointsRequired(state.Level);
-                state.PointsIntoCurrentLevel =
-                    Math.Clamp(kvp.Value.PointsIntoCurrentLevel, 0f, Math.Max(0f, required - 0.001f));
+                float points = kvp.Value.PointsIntoCurrentLevel;
+                state.PointsIntoCurrentLevel = float.IsFinite(points)
+                    ? Math.Clamp(points, 0f, Math.Max(0f, required - 0.001f))
+                    : 0f;
             }
+        }
+
+        /// <summary>
+        /// NaN or ±Infinity would loop the level-up forever or poison the save, so it is refused
+        /// rather than thrown — a throw would abandon the caller's transaction halfway.
+        /// </summary>
+        private static bool IsRejectedAsNonFinite(float value, string operation)
+        {
+            if (float.IsFinite(value)) return false;
+            Debug.LogError($"[KingdomLedger] {operation} refused a non-finite amount ({value}).");
+            return true;
         }
 
         private static DateTime ParseUtcOr(string iso, DateTime fallback) =>

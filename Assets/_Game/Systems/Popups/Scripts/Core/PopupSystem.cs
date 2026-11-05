@@ -28,7 +28,7 @@ namespace KingdomRuler.Systems.Popups
             public const string Close = "sfx_ui_popup_close";
         }
 
-        [Tooltip("The popup prefabs this manager can open.")]
+        [Tooltip("The popup prefabs that can be created.")]
         [SerializeField] private PopupRegistry _registry;
 
         [Header("Backdrop")]
@@ -104,7 +104,7 @@ namespace KingdomRuler.Systems.Popups
 
         private void OnPopupClosed(Popup popup)
         {
-            // Quitting: the manager and its popups are being destroyed together.
+            // Quitting: this system and its popups are being destroyed together.
             if (this == null) return;
 
             // Closed before it was ever shown: it was never on screen, so nothing to update.

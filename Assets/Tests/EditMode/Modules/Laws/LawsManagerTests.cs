@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -14,6 +15,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
     public sealed class LawsManagerTests
     {
         private FakeClock     _clock;
+        private EventBus      _eventBus;
         private KingdomLedger _ledger;
         private LawsConfig    _config;
         private LawsManager   _manager;
@@ -23,7 +25,8 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         public void SetUp()
         {
             _clock  = new FakeClock();
-            _ledger = new KingdomLedger(new EventBus());
+            _eventBus = new EventBus();
+            _ledger   = new KingdomLedger(_eventBus);
 
             _config = ScriptableObject.CreateInstance<LawsConfig>();
             _config.MaxHeldCards             = 8;
@@ -129,6 +132,24 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _manager.ResolveActiveCard(LawDecision.Accept);
 
             Assert.AreEqual(25f, Points(CharacteristicType.Army));
+            Assert.AreEqual(30f, Points(CharacteristicType.Welfare));
+        }
+
+        /// <summary>A crashing level-up listener must not cut a card's remaining effects short.</summary>
+        [Test]
+        public void AThrowingLevelUpSubscriber_DoesNotStopTheRemainingEffects()
+        {
+            _eventBus.Subscribe<CharacteristicLeveledUpEvent>(_ => throw new InvalidOperationException("listener bug"));
+            ShowCard(accept: new[]
+            {
+                new LawCardEffect(CharacteristicType.Army, 150f),     // levels up → the listener throws
+                new LawCardEffect(CharacteristicType.Welfare, 30f)
+            });
+
+            LogAssert.Expect(LogType.Exception, new Regex("listener bug"));
+            Assert.IsTrue(_manager.ResolveActiveCard(LawDecision.Accept));
+
+            Assert.AreEqual(2, _ledger.GetCharacteristic(CharacteristicType.Army).Level);
             Assert.AreEqual(30f, Points(CharacteristicType.Welfare));
         }
 

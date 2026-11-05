@@ -56,9 +56,8 @@ namespace KingdomRuler.Tests.EditMode.Systems
         }
 
         /// <summary>
-        /// The second save takes the File.Replace branch — the one the old
-        /// delete-then-move code got wrong, and the one that actually runs in a real
-        /// session, since the first save only happens once ever.
+        /// The second save takes the File.Replace branch — the one that runs in a real
+        /// session, since the first save happens only once.
         /// </summary>
         [Test]
         public void Save_OverExistingFile_ReplacesItWithTheNewState()
@@ -89,32 +88,44 @@ namespace KingdomRuler.Tests.EditMode.Systems
         }
 
         [Test]
-        public void Load_WithCorruptJson_DiscardsTheFileAndReturnsNull()
+        public void Load_WithCorruptJson_KeepsTheFileAsideAndReturnsNull()
         {
             File.WriteAllText(_service.SavePath, "{ this is not valid json ");
 
             Assert.IsNull(_service.Load(), "An unreadable save must not surface as a broken state.");
-            Assert.IsFalse(File.Exists(_service.SavePath),
-                "The corrupt file must be removed so the next save starts clean (ARCHITECTURE.md §5).");
+            Assert.IsFalse(File.Exists(_service.SavePath), "The next save must start clean.");
+            Assert.AreEqual("{ this is not valid json ", File.ReadAllText(_service.CorruptCopyPath),
+                "The unreadable save must be kept, byte for byte, so it can be recovered.");
         }
 
         [Test]
-        public void Load_WithTruncatedJson_DiscardsTheFileAndReturnsNull()
+        public void Load_WithASecondCorruptSave_KeepsOnlyTheLatest()
         {
-            // What a crash mid-write used to be able to leave behind.
+            File.WriteAllText(_service.SavePath, "first garbage");
+            _service.Load();
+            File.WriteAllText(_service.SavePath, "second garbage");
+            _service.Load();
+
+            Assert.AreEqual("second garbage", File.ReadAllText(_service.CorruptCopyPath));
+        }
+
+        [Test]
+        public void Load_WithTruncatedJson_KeepsTheFileAsideAndReturnsNull()
+        {
             _service.Save(StateWithGold(500));
             var full = File.ReadAllText(_service.SavePath);
             File.WriteAllText(_service.SavePath, full.Substring(0, full.Length / 2));
 
             Assert.IsNull(_service.Load());
             Assert.IsFalse(File.Exists(_service.SavePath));
+            Assert.IsTrue(File.Exists(_service.CorruptCopyPath));
         }
 
         [Test]
         public void Load_AfterCorruptFileDiscarded_CanSaveAndLoadAgain()
         {
             File.WriteAllText(_service.SavePath, "garbage");
-            _service.Load(); // discards it
+            _service.Load(); // moves it aside
 
             Assert.IsTrue(_service.Save(StateWithGold(7)));
             Assert.AreEqual(7, _service.Load().Ledger.Gold);

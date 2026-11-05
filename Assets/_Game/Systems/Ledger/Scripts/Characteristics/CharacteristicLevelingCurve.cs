@@ -7,16 +7,12 @@ namespace KingdomRuler.Systems.Ledger
     /// <c>required(N) = round(base × growth^(N-1) / roundTo) × roundTo</c>.
     /// </summary>
     /// <remarks>
-    /// <para><b>Owned by the Ledger, and only the Ledger reads it.</b> Laws and Random Occurrences
-    /// both award characteristic points, and a characteristic must level at the same rate whichever
-    /// of them awarded the points. When each mechanic supplied its own curve, Laws built one from
-    /// its config while the occurrences module used a flat <c>level => 100</c>, and the same
-    /// characteristic levelled at two rates (<c>ARCHITECTURE.md</c> §4.3, <c>CLAUDE.md</c> §1.1).
-    /// One formula, called only by <see cref="KingdomLedger"/>, makes that impossible.</para>
+    /// <para><b>Only <see cref="KingdomLedger"/> reads it.</b> Several mechanics award
+    /// characteristic points, and a characteristic must level at the same rate whichever one did
+    /// (<c>ARCHITECTURE.md</c> §4.3).</para>
     ///
-    /// <para><b>Constants, not an asset.</b> These are rules of the Ledger, so they live in its
-    /// code; retuning the curve is a code change. A formula rather than a per-level table keeps
-    /// every level defined, including ones no designer has reached yet.</para>
+    /// <para>Constants rather than an asset: they are rules of the Ledger, so retuning is a code
+    /// change. A formula rather than a table keeps every level defined, including unreached ones.</para>
     /// </remarks>
     public static class CharacteristicLevelingCurve
     {
@@ -33,8 +29,7 @@ namespace KingdomRuler.Systems.Ledger
         /// <remarks>
         /// Always strictly positive — load-bearing, because
         /// <see cref="KingdomLedger.AddCharacteristicPoints"/> levels up in a loop while the points
-        /// meet the requirement. With fixed positive constants that holds by construction; a test
-        /// checks it across 200 levels so an edit to the constants cannot break it unnoticed.
+        /// meet the requirement. A test checks it across 200 levels.
         /// </remarks>
         public static float PointsRequired(int level)
         {

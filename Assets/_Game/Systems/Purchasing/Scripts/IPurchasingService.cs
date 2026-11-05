@@ -1,4 +1,4 @@
-using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 
 namespace KingdomRuler.Systems.Purchasing
 {
@@ -8,6 +8,6 @@ namespace KingdomRuler.Systems.Purchasing
     /// </summary>
     public interface IPurchasingService
     {
-        Task<PurchaseResult> PurchaseCrystalPack(string packId);
+        UniTask<PurchaseResult> PurchaseCrystalPack(string packId);
     }
 }

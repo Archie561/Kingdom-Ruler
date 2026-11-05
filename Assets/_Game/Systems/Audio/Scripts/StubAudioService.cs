@@ -2,10 +2,7 @@ using UnityEngine;
 
 namespace KingdomRuler.Systems.Audio
 {
-    /// <summary>
-    /// Stub audio service that logs calls but plays nothing.
-    /// Replaced with a real implementation once audio assets exist.
-    /// </summary>
+    /// <summary>Logs each call and plays nothing, until audio assets exist.</summary>
     public sealed class StubAudioService : IAudioService
     {
         public void PlaySfx(string sfxId)

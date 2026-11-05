@@ -1,5 +1,7 @@
-using System.Threading.Tasks;
+using System.Collections;
+using Cysharp.Threading.Tasks;
 using NUnit.Framework;
+using UnityEngine.TestTools;
 using KingdomRuler.Systems.Purchasing;
 
 namespace KingdomRuler.Tests.EditMode.Systems
@@ -15,30 +17,30 @@ namespace KingdomRuler.Tests.EditMode.Systems
             _service = new MockPurchasingService();
         }
 
-        [Test]
-        public async Task PurchaseCrystalPack_ReturnsSuccess()
+        [UnityTest]
+        public IEnumerator PurchaseCrystalPack_ReturnsSuccess() => UniTask.ToCoroutine(async () =>
         {
             var result = await _service.PurchaseCrystalPack("test_pack_100");
 
             Assert.IsTrue(result.Success);
-        }
+        });
 
-        [Test]
-        public async Task PurchaseCrystalPack_AwardsCrystals()
+        [UnityTest]
+        public IEnumerator PurchaseCrystalPack_AwardsCrystals() => UniTask.ToCoroutine(async () =>
         {
             var result = await _service.PurchaseCrystalPack("test_pack_100");
 
             Assert.Greater(result.CrystalsAwarded, 0,
                 "Mock purchase should award a positive number of crystals.");
-        }
+        });
 
-        [Test]
-        public async Task PurchaseCrystalPack_NoErrorMessage()
+        [UnityTest]
+        public IEnumerator PurchaseCrystalPack_NoErrorMessage() => UniTask.ToCoroutine(async () =>
         {
             var result = await _service.PurchaseCrystalPack("test_pack_100");
 
             Assert.IsNull(result.ErrorMessage);
-        }
+        });
 
         [Test]
         public void PurchaseResult_Succeeded_Factory()

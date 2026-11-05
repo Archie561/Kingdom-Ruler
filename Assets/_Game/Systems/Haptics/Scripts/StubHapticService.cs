@@ -2,9 +2,7 @@ using UnityEngine;
 
 namespace KingdomRuler.Systems.Haptics
 {
-    /// <summary>
-    /// No-op haptic service for Editor and platforms without haptic support.
-    /// </summary>
+    /// <summary>Logs each call instead of vibrating, until a device implementation exists.</summary>
     public sealed class StubHapticService : IHapticService
     {
         public void TriggerLight()

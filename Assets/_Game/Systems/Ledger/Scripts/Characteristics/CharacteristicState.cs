@@ -1,18 +1,17 @@
 namespace KingdomRuler.Systems.Ledger
 {
     /// <summary>
-    /// Mutable state for a single characteristic. Owned exclusively by KingdomLedger.
+    /// State of one characteristic. Read-only outside <c>KingdomRuler.Systems</c>: every change goes
+    /// through <see cref="KingdomLedger"/>.
     /// </summary>
     /// <remarks>
-    /// The permanent level floor from GDD §6 is implicit: <see cref="Level"/> is never
-    /// decremented, so the floor is always the current level. It is deliberately not a
-    /// separate field — one used to exist and was provably always equal to
-    /// <see cref="Level"/>, which made the level-drop branch that read it unreachable.
+    /// There is no "permanent level floor" field: <see cref="Level"/> never decreases, so the floor
+    /// from GDD §6 is always the current level.
     /// </remarks>
     public sealed class CharacteristicState
     {
-        public int Level { get; set; }
-        public float PointsIntoCurrentLevel { get; set; }
+        public int Level { get; internal set; }
+        public float PointsIntoCurrentLevel { get; internal set; }
 
         public CharacteristicState()
         {

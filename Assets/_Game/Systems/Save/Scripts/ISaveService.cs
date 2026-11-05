@@ -14,8 +14,9 @@ namespace KingdomRuler.Systems.Save
         bool Save(GameStateDto state);
 
         /// <summary>
-        /// Read the saved state, or null if there is none. An unreadable save is discarded
-        /// and null returned, so the caller starts a fresh game (ARCHITECTURE.md §5).
+        /// Read the saved state, or null if there is none. An unreadable save is set aside — never
+        /// destroyed — and null returned, so the caller starts a fresh game (ARCHITECTURE.md §5).
+        /// Must not throw: this runs at startup.
         /// </summary>
         GameStateDto Load();
 

@@ -1,11 +1,11 @@
-using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 
 namespace KingdomRuler.Systems.Purchasing
 {
     /// <summary>
     /// Mock purchasing service that instantly succeeds.
-    /// Crystal crediting to the Ledger is handled by the caller (ShopManager).
+    /// The caller credits the crystals through the Ledger.
     /// </summary>
     public sealed class MockPurchasingService : IPurchasingService
     {
@@ -13,10 +13,10 @@ namespace KingdomRuler.Systems.Purchasing
         // CrystalPackDefinition data assets once the Shop module exists.
         private const int DefaultCrystalsPerPack = 100;
 
-        public Task<PurchaseResult> PurchaseCrystalPack(string packId)
+        public UniTask<PurchaseResult> PurchaseCrystalPack(string packId)
         {
             Debug.Log($"[MockPurchasingService] Mock purchase for pack '{packId}' — instant success.");
-            return Task.FromResult(PurchaseResult.Succeeded(DefaultCrystalsPerPack));
+            return UniTask.FromResult(PurchaseResult.Succeeded(DefaultCrystalsPerPack));
         }
     }
 }

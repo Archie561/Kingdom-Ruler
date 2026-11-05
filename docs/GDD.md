@@ -134,9 +134,8 @@ current trade offers below.
     `capacity(L) = round(base × growth^L / roundTo) × roundTo` and
     `crystalCost(L) = max(1, round(base × growth^L))`, coefficients on `TradeConfig`.
     Same style as §6 and for the same reason §6 gives — a formula keeps every level defined,
-    including ones no designer has reached. (This clause previously also said "designer-editable
-    table per resource", which contradicted it; the table reading is dropped. Per-resource
-    coefficient overrides can be layered on later if a resource needs to differ.)
+    including ones no designer has reached. Per-resource coefficient overrides can be layered on
+    later if a resource needs to differ.
   - Upgrade levels are capped at a high ceiling purely as a **save-integrity guard** — an
     unbounded level read from an edited save produces an infinite capacity and a corrupt
     economy. It is not a design cap and no player will reach it.
@@ -210,9 +209,8 @@ here.
 
 > **Naming.** This mechanic is called *Random Occurrences*, not "Random Events", throughout the
 > codebase and these docs. "Event" is reserved for messages on the `Systems/Events` pub/sub
-> (`CharacteristicLeveledUpEvent`, `GoldChangedEvent`, …) — see `ARCHITECTURE.md` §4.2. The two meanings
-> collided constantly in code (`EventsManager` vs. event-bus events), so the mechanic gets the
-> distinct word.
+> (`CharacteristicLeveledUpEvent`, `GoldChangedEvent`, …) — see `ARCHITECTURE.md` §4.2 — so the
+> mechanic gets a distinct word.
 
 **Delivery:** a mailbox icon/badge on the home (Map) screen. Opening it shows pending occurrence
 letters. Each occurrence presents **a choice between two outcomes**, not a flat notification —

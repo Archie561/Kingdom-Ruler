@@ -246,7 +246,8 @@ Assets/
                             # Named Events, not EventBus: a namespace may not share its
                             # class's name, or C# resolves `EventBus` to the namespace.
       Ledger/
-        Scripts/            # KingdomLedger (the one source of truth) at the root, then one
+        Scripts/            # KingdomLedger (the one source of truth) and the shared
+                            # DefinitionRegistry / IDefinition at the root, then one
                             # folder per game resource holding everything about it — type,
                             # state, definition, registry and its rules. All one namespace,
                             # KingdomRuler.Systems.Ledger: the folders organize, they do not
@@ -551,6 +552,18 @@ the GDD first.
 *inside* the call that changed the state. Finish mutating, then publish — never publish from inside
 a loop that is still applying changes, or a Presenter can render a half-applied state.
 
+**A throwing subscriber never reaches the publisher.** `EventBus` logs it and carries on delivering,
+the same policy as `GameClock` (§4.5). The Ledger publishes mid-transaction — a level-up inside a
+card's effects — so a rethrow would abandon the rest of that transaction.
+
+**Ledger state is read-only outside `KingdomRuler.Systems`.** `GetCharacteristic` and
+`GetTradeResource` return state objects with `internal` setters, so a module can read them but every
+change goes through a `KingdomLedger` method — and through its validation and events.
+
+**Non-finite amounts are refused.** NaN or ±Infinity would loop the level-up forever or poison the
+save, so every mutator logs and ignores one (rather than throwing mid-transaction), and
+`LoadFromDto` treats one in the file as unreadable.
+
 #### Where new math goes — the ownership test
 
 Every mechanic brings its own calculations (warehouse upgrade costs, business profit, offer
@@ -607,6 +620,11 @@ trade resources were the obvious next one, and `TradeResourceRegistry` +
    reported there as a warning (§8). A half-wired registry degrades rather than breaking —
    `NameKeyFor` falls back to the derivation, so text keeps working and only the icon is
    absent.
+
+**Both registries share one implementation**, `DefinitionRegistry<TType, TDefinition>`
+(`Systems/Ledger/Scripts/`), over definitions implementing `IDefinition<TType>` (type, icon, name
+key). A new kind of registered thing is a definition asset type implementing that interface plus a
+sealed registry subclass that supplies its key derivation — a few lines each.
 
 Presenters read the registry and pass the resolved sprite out on their view-data struct; Views
 never hold the registry themselves, for the same reason they never hold a content asset.
@@ -905,13 +923,17 @@ Rules that reach beyond this system:
   Mono/CoreCLR, not IL2CPP). Ship a `link.xml` preserving the Newtonsoft.Json assembly, and
   test save/load on an actual device build early — don't discover this the week before
   submission.
-- **DTOs are versioned from day one** (`{ "schemaVersion": N, ... }`), and `GameStateDto` keeps a
-  schema history comment recording what changed at each bump.
-- **Migration is deliberately deferred.** No real player saves exist yet, so an unreadable save is
-  discarded and a fresh one started rather than migrated. Keep bumping `schemaVersion` and recording
-  what changed — that history is what the first real migration will be written from. Write that
-  migration when there is player data worth preserving, which is **before the first external build**,
-  not before.
+- **DTOs are versioned** (`{ "schemaVersion": N, ... }`). Bump it on every shape change, even an
+  additive one.
+- **Migration is deliberately deferred.** Until the first external build every save is a
+  developer's, so an unreadable save is set aside and a fresh one started rather than migrated, and
+  no schema history is kept. From that build on, `GameStateDto` records each bump — what changed and
+  how an older save reads — and the first migration is written from that record **before** any
+  change that would break a player's save.
+- **An unreadable save is kept, never deleted.** `LocalJsonSaveService` moves it to
+  `<save>.corrupt` (the latest one only): the failure may be ours rather than the file's — IL2CPP
+  stripping can break deserialization of a good save on device only — and a kept file can still be
+  recovered.
 - Domain objects are not serialized directly — map to/from plain DTOs at the save boundary,
   so `Model/` classes stay free to evolve without fighting a serializer.
 - Cloud save later (per the GDD, intentionally deferred) is a second `ISaveService`
@@ -919,8 +941,7 @@ Rules that reach beyond this system:
 
 ## 6. Purchasing / IAP abstraction
 
-- `IPurchasingService` with something like `PurchaseCrystalPack(string packId) ->
-  PurchaseResult` (async).
+- `IPurchasingService` with `PurchaseCrystalPack(string packId) -> UniTask<PurchaseResult>`.
 - **Current implementation:** `MockPurchasingService` — instantly returns success, caller
   credits crystals via `KingdomLedger`. No store SDK, no receipts.
 - Real store billing later is a second implementation behind the same call sites — this is
@@ -1026,8 +1047,33 @@ instead; `docs/modules/Popups.md` §7 is the worked example.
   its production constructor `[Inject]`. VContainer otherwise picks the constructor with the most
   parameters and fails to resolve the test-only one at startup.
 - Prefer small interfaces (`ISaveService`, `IPurchasingService`, `IClock`) over base classes.
+- **Async code uses UniTask, never `System.Threading.Tasks.Task`** — it allocates less, runs its
+  continuations on Unity's main thread, and is what the popups already await (§4.7). Tests of async
+  code use `[UnityTest]` with `UniTask.ToCoroutine`.
 - No `static` mutable game state outside what the composition root owns — no
   singletons-by-convention scattered through the codebase.
+
+### Comments and documentation
+
+- **Describe the code as it is now — never a past state.** No "this used to…", "replaced X",
+  "was renamed", "removed in schema v3". History lives in git. If an old fact still matters (a
+  save key kept for compatibility, say), state it as a current rule.
+- **A comment explains *why*, or *how* where the logic is not obvious.** It earns its place by
+  preventing a mistake: a trap (Unity's overloaded `== null`, a synchronous event running inside
+  the caller), a constraint the code cannot show (a load-bearing order, an invariant), or why the
+  simpler-looking alternative is wrong. It never restates what the code says — if the code needs a
+  comment to be read, rename first (§3, "Naming").
+- **XML doc comments on public members when the name does not say everything** — what null or
+  zero means, units, side effects, what throws. A member whose name says it all gets none.
+- **Short.** A sentence or two; a `<remarks>` paragraph only for a real design rule. Long
+  reasoning belongs in the module's doc under `docs/modules/`, not in the file.
+- **A rejected alternative** is worth recording only when someone would otherwise try it, and then
+  as a present-tense rule ("not X, because Y"), not as a story.
+- **The docs follow the same rules.** `GDD.md`, this file and the module docs describe the current
+  design and its rules. Verification records (what was checked in Play mode) are current facts and
+  stay.
+- **A wrong comment is worse than none.** When behaviour changes, its comments change in the same
+  edit.
 
 ## 11. Suggested `.gitignore` additions (Unity-specific)
 

@@ -3,14 +3,15 @@ using System;
 namespace KingdomRuler.Systems.Ledger
 {
     /// <summary>
-    /// Mutable state for a single trade resource. Owned exclusively by KingdomLedger.
+    /// State of one trade resource. Read-only outside <c>KingdomRuler.Systems</c>: every change goes
+    /// through <see cref="KingdomLedger"/>.
     /// </summary>
     public sealed class TradeResourceState
     {
-        public float Amount { get; set; }
-        public float Capacity { get; set; }
-        public float RegenRatePerSecond { get; set; }
-        public DateTime LastUpdatedUtc { get; set; }
+        public float Amount { get; internal set; }
+        public float Capacity { get; internal set; }
+        public float RegenRatePerSecond { get; internal set; }
+        public DateTime LastUpdatedUtc { get; internal set; }
 
         public TradeResourceState(float capacity, float regenRatePerSecond)
         {
@@ -24,13 +25,11 @@ namespace KingdomRuler.Systems.Ledger
         /// Fast-forward passive regeneration from <see cref="LastUpdatedUtc"/> to the given time.
         /// </summary>
         /// <remarks>
-        /// A baseline in the future <b>resynchronises</b> rather than being ignored. Returning
-        /// early instead would strand the resource permanently: nothing else ever moves
-        /// <see cref="LastUpdatedUtc"/> backwards, so a device clock that ran ahead and was later
-        /// corrected would stop that warehouse regenerating for good. Resyncing costs the player
-        /// only the drift itself.
+        /// A baseline in the future <b>resynchronises</b> to <paramref name="now"/>. Nothing else
+        /// moves <see cref="LastUpdatedUtc"/> backwards, so ignoring it would leave a warehouse
+        /// whose device clock ran ahead and was corrected never regenerating again.
         /// </remarks>
-        public void AccruePassiveRegen(DateTime now)
+        internal void AccruePassiveRegen(DateTime now)
         {
             if (now <= LastUpdatedUtc)
             {

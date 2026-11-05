@@ -15,6 +15,29 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
     {
         private KingdomLedger NewLedger() => new KingdomLedger(new EventBus());
 
+        // ── Non-finite values in the file ─────────────────────────────────────────
+
+        /// <summary>Math.Clamp passes NaN through, so a NaN in the file would otherwise survive loading.</summary>
+        [Test]
+        public void Load_NonFiniteValues_FallBackToDefaults()
+        {
+            var dto = new LedgerStateDto();
+            dto.TradeResources["Wood"] = new TradeResourceStateDto
+            {
+                Amount = float.NaN, Capacity = float.PositiveInfinity, LastUpdatedUtc = null
+            };
+            dto.Characteristics["Army"] = new CharacteristicStateDto { Level = 2, PointsIntoCurrentLevel = float.NaN };
+
+            var ledger = NewLedger();
+            ledger.LoadFromDto(dto);
+
+            var wood = ledger.GetTradeResource(TradeResourceType.Wood);
+            Assert.AreEqual(0f, wood.Amount);
+            Assert.AreEqual(100f, wood.Capacity);
+            Assert.AreEqual(2, ledger.GetCharacteristic(CharacteristicType.Army).Level);
+            Assert.AreEqual(0f, ledger.GetCharacteristic(CharacteristicType.Army).PointsIntoCurrentLevel);
+        }
+
         // ── Round trip ────────────────────────────────────────────────────────────
 
         [Test]

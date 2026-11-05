@@ -16,11 +16,8 @@ namespace KingdomRuler.Systems.Localization
 
         public UnityLocalizationService()
         {
-            // Localization loads asynchronously, so anything constructed at boot — this service
-            // included — runs before a single table exists. Resolve to placeholders until then.
-            //
-            // Note what is deliberately NOT here: the SelectedLocaleChanged subscription. See
-            // OnInitialisationComplete.
+            // Localization loads asynchronously; until it is done, Resolve returns placeholders.
+            // The SelectedLocaleChanged subscription is deliberately not here — see OnInitialisationComplete.
             var init = LocalizationSettings.InitializationOperation;
             if (init.IsDone) OnInitialisationComplete();
             else init.Completed += _ => OnInitialisationComplete();
@@ -60,10 +57,8 @@ namespace KingdomRuler.Systems.Localization
         {
             if (onReady == null) return;
 
-            // Gated on "initialisation finished", NOT on IsReady. A project with no locales
-            // configured leaves SelectedLocale null forever, and if the boot gate waited on
-            // that the game would never load its first scene — a black screen is a far worse
-            // failure than untranslated text.
+            // Gated on initialisation finishing, not on IsReady: with no locale configured
+            // SelectedLocale stays null forever, and the game would never load its first scene.
             if (_initialisationAnnounced) onReady();
             else _pendingReadyCallbacks += onReady;
         }
@@ -82,15 +77,9 @@ namespace KingdomRuler.Systems.Localization
         /// Marks the service usable and starts listening for locale changes.
         /// </summary>
         /// <remarks>
-        /// The subscription lives here rather than in the constructor because of a measured
-        /// failure: a handler attached to <c>SelectedLocaleChanged</c> before initialisation
-        /// had completed was never invoked afterwards, while one attached after it was invoked
-        /// normally — same static event, same instance. Subscribing at construction therefore
-        /// looked correct and silently did nothing, and the symptom was remote from the cause:
-        /// switching language updated the <c>LocalizeStringEvent</c> chrome (which listens on
-        /// its own) while every Presenter-built string stayed in the previous language.
-        ///
-        /// Unsubscribe-then-subscribe keeps this idempotent if initialisation ever re-runs.
+        /// The <c>SelectedLocaleChanged</c> subscription must happen here: a handler attached
+        /// before initialisation completes is never invoked. Unsubscribe-then-subscribe keeps this
+        /// idempotent if initialisation ever re-runs.
         /// </remarks>
         private void OnInitialisationComplete()
         {
@@ -100,12 +89,9 @@ namespace KingdomRuler.Systems.Localization
             LocalizationSettings.SelectedLocaleChanged += OnSelectedLocaleChanged;
             _subscribedToLocaleChanges = true;
 
-            // Unity's own default here is a full sentence — "No translation found for 'x' in
-            // y" — which is fine in a console and wrong on a phone: dropped into a card title
-            // it wraps, overflows, and reads as a layout bug rather than a missing entry.
-            // Setting it on the database rather than only in Resolve() matters, because the
-            // LocalizeStringEvent components on the static chrome never call this service and
-            // would otherwise still render the sentence.
+            // Unity's default is a full sentence ("No translation found for…"), which overflows a
+            // label and reads as a layout bug. Set on the database, not only in Resolve, so the
+            // LocalizeStringEvent chrome — which never calls this service — gets it too.
             LocalizationSettings.StringDatabase.NoTranslationFoundMessage = MissingEntryFormat;
 
             // Cleared before invoking so a callback that re-enters WhenReady runs immediately
@@ -125,9 +111,8 @@ namespace KingdomRuler.Systems.Localization
         private const string MissingEntryFormat = "[{key}]";
 
         /// <summary>
-        /// Missing text renders as the key in brackets. Deliberately conspicuous: blank
-        /// labels look like a layout bug and get chased in the wrong place, whereas
-        /// "[1.title]" names the entry that needs adding.
+        /// Missing text renders as the key in brackets — conspicuous on purpose, so it names the
+        /// entry to add instead of looking like a blank layout bug.
         /// </summary>
         private static string Placeholder(string key) => $"[{key}]";
     }

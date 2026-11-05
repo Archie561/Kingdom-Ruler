@@ -6,9 +6,9 @@ using UnityEngine;
 namespace KingdomRuler.Systems.Save
 {
     /// <summary>
-    /// Saves game state as a JSON file in Application.persistentDataPath.
-    /// Uses Newtonsoft.Json (not JsonUtility) per project convention.
-    /// IL2CPP caveat: ensure link.xml preserves Newtonsoft.Json assembly.
+    /// Saves game state as a JSON file in <see cref="Application.persistentDataPath"/>, with
+    /// Newtonsoft.Json. Under IL2CPP the <c>link.xml</c> beside this file must keep preserving the
+    /// Newtonsoft assembly, or loading fails on device only.
     /// </summary>
     public sealed class LocalJsonSaveService : ISaveService
     {
@@ -21,14 +21,9 @@ namespace KingdomRuler.Systems.Save
             : this(Application.persistentDataPath) { }
 
         /// <summary>
-        /// Save into an explicit directory.
+        /// Save into an explicit directory, so tests can exercise the file handling — atomic
+        /// replace, corrupt-file recovery, temp cleanup — against a real directory.
         /// </summary>
-        /// <remarks>
-        /// This overload exists so the file handling — atomic replace, corrupt-file
-        /// recovery, temp cleanup — can be tested against a real directory. Those paths are
-        /// the whole point of this class, and pinning the location to
-        /// <c>persistentDataPath</c> left them completely uncovered.
-        /// </remarks>
         public LocalJsonSaveService(string saveDirectory)
         {
             if (string.IsNullOrWhiteSpace(saveDirectory))
@@ -46,19 +41,19 @@ namespace KingdomRuler.Systems.Save
         /// <summary>Absolute path of the save file this instance reads and writes.</summary>
         public string SavePath => _savePath;
 
+        /// <summary>Where an unreadable save is kept, so it can still be recovered by hand.</summary>
+        public string CorruptCopyPath => _savePath + ".corrupt";
+
         /// <summary>
         /// Write the save file, replacing any previous one atomically.
         /// </summary>
         /// <remarks>
-        /// Write-to-temp then swap. The swap uses <see cref="File.Replace(string,string,string)"/>
-        /// rather than delete-then-move: the latter leaves a window in which the real save
-        /// has been deleted and the replacement not yet renamed, so a crash or a kill (which
-        /// on mobile is routine, not exceptional) during that window loses the game outright —
-        /// the exact failure the temp file was there to prevent.
+        /// <para>Write to a temp file, then swap with <see cref="File.Replace(string,string,string)"/>.
+        /// Delete-then-move would leave a moment with no save on disk, and on mobile a kill at that
+        /// moment is routine.</para>
         ///
-        /// Returns false rather than throwing: a save that fails is bad, but taking down the
-        /// caller mid-shutdown is worse, and there is nothing useful for a caller to do about
-        /// a full disk beyond logging it.
+        /// <para>Returns false rather than throwing: callers save at shutdown, where an exception
+        /// has nowhere useful to go.</para>
         /// </remarks>
         public bool Save(GameStateDto state)
         {
@@ -97,6 +92,15 @@ namespace KingdomRuler.Systems.Save
             }
         }
 
+        /// <summary>
+        /// Read the save, or null if there is none. An unreadable save is moved to
+        /// <see cref="CorruptCopyPath"/> rather than deleted.
+        /// </summary>
+        /// <remarks>
+        /// Kept, not deleted, because the failure may be ours rather than the file's — on device,
+        /// IL2CPP stripping can break deserialization of a perfectly good save. Only the latest
+        /// unreadable save is kept.
+        /// </remarks>
         public GameStateDto Load()
         {
             if (!File.Exists(_savePath))
@@ -111,9 +115,24 @@ namespace KingdomRuler.Systems.Save
             {
                 Debug.LogWarning(
                     $"[LocalJsonSaveService] Save file could not be read ({ex.GetType().Name}: {ex.Message}). " +
-                    "Deleting corrupt save and starting fresh.");
-                Delete();
+                    $"Keeping it as '{CorruptCopyPath}' and starting fresh.");
+                TryMoveAside();
                 return null;
+            }
+        }
+
+        // Must not throw: it runs inside Load's error path, and an exception here would stop startup.
+        private void TryMoveAside()
+        {
+            try
+            {
+                if (File.Exists(CorruptCopyPath)) File.Delete(CorruptCopyPath);
+                File.Move(_savePath, CorruptCopyPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[LocalJsonSaveService] Could not move the unreadable save aside " +
+                               $"({ex.GetType().Name}: {ex.Message}). It will be overwritten by the next save.");
             }
         }
 

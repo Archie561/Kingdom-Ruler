@@ -96,8 +96,7 @@ subscriber already holds a direct reference to the publisher — if so, a plain 
 simpler than a bus round-trip.
 
 **Naming:** the mailbox mechanic in `GDD.md` §10 is **Random Occurrences**, never "Random Events".
-"Event" means a message on the event bus, and the two collided badly in code. Don't reintroduce
-`Event`-prefixed names for that module.
+"Event" means a message on the event bus. Don't use `Event`-prefixed names for that module.
 
 ## 4. Unity MCP Server (live Editor access) & Unity-specific hazards
 
@@ -111,9 +110,7 @@ deliberately:
   risky operation** — anything already referenced by a scene, prefab, or ScriptableObject
   carries a GUID in its `.meta` that breaks silently if the file moves without it. Do those
   operations through MCP's asset tools, not raw `mv`/`rm`, so the Editor's own AssetDatabase
-  keeps the GUID bookkeeping intact. This is the resolution to what used to be a hard
-  "ask the human to do it in the Editor" hazard — MCP lets you do Editor-native asset
-  operations yourself.
+  keeps the GUID bookkeeping intact.
 - **Use MCP to verify, not just to build.** After a change, use it to check the console for
   compile errors and to actually run EditMode (and PlayMode where relevant) tests, rather
   than asserting they'd pass. The "compiles clean" and "tests pass" items in the Definition
@@ -156,10 +153,10 @@ A task isn't complete until:
       cross-cutting, under `Systems/` (it has behaviour and is injected) or `Shared/` (a passive
       building block), not invented as a new top-level folder. `Core/` is the composition root
       only.
-- [ ] Any new user-facing text is authored as a **String Table key field** on its data asset, not a
-      hardcoded display string. Resolving those keys through Unity Localization at render time is
-      deliberately deferred until the main mechanics are done (`ARCHITECTURE.md` §2) — so a View
-      currently showing the raw key is expected, but a content asset holding literal English is not.
+- [ ] Any new user-facing text goes through a String Table, never a hardcoded display string:
+      fixed chrome via a `LocalizeStringEvent` on the prefab, text built in code via the module's
+      `<X>UIText` keys, data-derived text via a key **derived** from the data (no key fields on
+      assets) — `ARCHITECTURE.md` §2. A content asset holding literal English is a bug.
 - [ ] Any player-facing action has its feel hooks — animation, sound, haptic where the GDD
       calls for one — at least stubbed, even if final art/audio lands later.
 - [ ] `GDD.md` / `ARCHITECTURE.md` are updated if the task changed what they describe.
@@ -194,7 +191,10 @@ A task isn't complete until:
 - Never use `JsonUtility` for save data — this project standardizes on Newtonsoft.Json (see
   the IL2CPP hazard note above).
 - Never cram a module's content list (all its cities, businesses, cards, or occurrences) into one
-  big Config SO — content items are one-asset-each under that module's `Data/` folder;
+  big Config SO — content items are one-asset-each under that module's `ScriptableObjects/<Content>/` folder;
   `Config/` is for tunable parameters only (`ARCHITECTURE.md` §7).
 - Never report "compiles" or "tests pass" without having actually checked the console and run
   the tests through Unity MCP — see §4.
+- Never write comments or docs that record how things used to be. Comments explain the *why* (and
+  the *how* of non-obvious logic) of the code as it is now — see `ARCHITECTURE.md` §10, "Comments
+  and documentation".

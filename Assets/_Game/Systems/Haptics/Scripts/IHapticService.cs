@@ -1,9 +1,8 @@
 namespace KingdomRuler.Systems.Haptics
 {
     /// <summary>
-    /// Abstraction for haptic feedback. GDD §3 specifies:
-    /// - Light impact on swipe-decision, purchase confirmation, level-up
-    /// - Do not overuse elsewhere
+    /// Haptic feedback. Light impact only on swipe decisions, purchase confirmations and
+    /// level-ups (<c>GDD.md</c> §3) — anywhere else it becomes noise.
     /// </summary>
     public interface IHapticService
     {

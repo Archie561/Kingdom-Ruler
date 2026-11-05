@@ -3,42 +3,16 @@ using Newtonsoft.Json;
 namespace KingdomRuler.Systems.Save
 {
     /// <summary>
-    /// Root save data transfer object. Versioned from day one to support
-    /// forward-compatible migrations.
-    ///
-    /// <para><b>Migration policy during development: there is none, by decision.</b>
-    /// No real player saves exist yet, so a save that cannot be read is discarded and a
-    /// fresh one started (see LocalJsonSaveService.Load). Write the first migration step
-    /// when there is something worth preserving — before then it is code maintained
-    /// against a case that cannot occur.</para>
-    ///
-    /// Schema history — kept current so the first real migration has its inputs:
-    ///   v1: initial shape.
-    ///   v2: removed CharacteristicStateDto.permanentFloor. It was always equal to
-    ///       `level`, so nothing is lost — Newtonsoft ignores the now-unknown key.
-    ///   v3: renamed the "events" section to "randomOccurrences", and within it
-    ///       "pendingEventIds" to "pendingOccurrenceIds" (the mechanic was renamed —
-    ///       GDD §10). Older saves deserialize that section as null, so the mailbox
-    ///       starts empty.
-    ///   v4: laws."lastReplenishCheckUtc" became "nextReplenishDueUtc" — the replenish
-    ///       timer now stores the deadline itself rather than the moment it was last
-    ///       settled. An older save's key is ignored, so the queue restarts one interval
-    ///       from load.
-    ///   v5: trade gained "activeOffers" — the generated offers are now persisted, so
-    ///       relaunching the app can no longer reroll them for free — and
-    ///       trade."lastOfferRefreshUtc" became "nextOfferRefreshDueUtc", storing the
-    ///       refresh deadline rather than the moment it was last settled (the same change
-    ///       laws made in v4, for the same reason). ledger."tradeResources".*.
-    ///       "regenRatePerSecond" was removed: it is always capacity ÷ 86400, and warehouse
-    ///       capacity is itself derived from trade."warehouseLevels" on load. A v4 save
-    ///       deserializes the new fields as null, so one fresh batch of offers is generated
-    ///       and the refresh timer starts one interval from load.
-    ///   v6: removed the "economy", "cities" and "randomOccurrences" sections. Those modules
-    ///       were placeholders with no screen and no content, and were deleted until they are
-    ///       actually built; their sections return with them. Nothing is lost — no game ever
-    ///       wrote meaningful state into them — and Newtonsoft ignores the now-unknown keys in
-    ///       an older save.
+    /// The root of the save file. One section per module that has state.
     /// </summary>
+    /// <remarks>
+    /// <para>Bump <see cref="CurrentSchemaVersion"/> whenever the shape changes, even additively.</para>
+    ///
+    /// <para><b>No migrations yet, by decision</b> (<c>ARCHITECTURE.md</c> §5): until the first
+    /// external build every save is a developer's, so an unreadable one is discarded and a fresh
+    /// game started. From that build on, record each bump here — what changed and how an older save
+    /// reads — because that is what the first migration will be written from.</para>
+    /// </remarks>
     public sealed class GameStateDto
     {
         public const int CurrentSchemaVersion = 6;
@@ -46,7 +20,6 @@ namespace KingdomRuler.Systems.Save
         [JsonProperty("schemaVersion")]
         public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
-        // Sub-DTOs will be added here as modules are built:
         [JsonProperty("ledger")]
         public LedgerStateDto Ledger { get; set; }
 
