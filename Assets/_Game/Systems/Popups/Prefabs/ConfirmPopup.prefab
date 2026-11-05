@@ -865,8 +865,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: KingdomRuler.Shared::KingdomRuler.Shared.Popups.Views.ConfirmPopupView
   _panel: {fileID: 7271764234246802957}
   _openDuration: 0.2
-  _closeDuration: 0.13
-  _collapsedScale: 0.85
+  _closeDuration: 0.2
+  _openFromScale: 0.85
   _titleLabel: {fileID: 276569579212352799}
   _bodyLabel: {fileID: 9009497794840027533}
   _confirmButton: {fileID: 5678791220636359785}

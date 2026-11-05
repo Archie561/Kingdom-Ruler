@@ -27,9 +27,11 @@ namespace KingdomRuler.Systems.Popups
         [SerializeField] private RectTransform _panel;
 
         [Header("Animation")]
-        [SerializeField] private float _openDuration   = 0.20f;
-        [SerializeField] private float _closeDuration  = 0.13f;
-        [SerializeField] private float _collapsedScale = 0.85f;
+        [SerializeField] private float _openDuration  = 0.20f;
+        [Tooltip("Seconds to shrink the panel to nothing before the popup is destroyed.")]
+        [SerializeField] private float _closeDuration = 0.20f;
+        [Tooltip("Scale the panel opens from, as a fraction of its full size.")]
+        [SerializeField] private float _openFromScale = 0.85f;
 
         private bool _isShown;
         private bool _isClosed;
@@ -87,7 +89,7 @@ namespace KingdomRuler.Systems.Popups
         {
             if (_panel == null) return;
 
-            _panel.localScale = Vector3.one * _collapsedScale;
+            _panel.localScale = Vector3.one * _openFromScale;
 
             // SetUpdate(true): animate even if the game is paused behind the popup.
             // SetLink: a popup destroyed mid-tween takes its tween with it.
@@ -128,8 +130,11 @@ namespace KingdomRuler.Systems.Popups
                 return;
             }
 
+            // All the way to zero: destroying it part-way shrunk reads as the popup blinking out.
+            // InQuad, not InBack: InBack swells the panel for half the duration, leaving the
+            // visible shrink to the last few frames.
             _panel.DOKill();   // an open animation still running
-            _panel.DOScale(_collapsedScale, _closeDuration)
+            _panel.DOScale(0f, _closeDuration)
                   .SetEase(Ease.InQuad)
                   .SetUpdate(true)
                   .SetLink(gameObject)

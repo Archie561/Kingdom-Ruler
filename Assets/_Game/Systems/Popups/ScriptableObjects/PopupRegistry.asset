@@ -14,3 +14,4 @@ MonoBehaviour:
   m_EditorClassIdentifier: KingdomRuler.Shared::KingdomRuler.Shared.Popups.PopupRegistry
   _prefabs:
   - {fileID: 7863084233408702507, guid: d886e0d6ac184724e859f9cded48b74a, type: 3}
+  - {fileID: 5955796315803397079, guid: 7671fc033732ce64d881433b0d6fcba6, type: 3}

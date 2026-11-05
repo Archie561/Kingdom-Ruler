@@ -72,7 +72,9 @@ passive bonus, encouraging regional completion over random purchases.
 ## 6. Mechanic 1 — Law Enactment
 
 **Screen:** Law tab. Shows the current law card (Tinder-style swipe: right = accept,
-left = reject) plus a compact readout of all 6 characteristic bars/levels.
+left = reject) plus a compact readout of all 6 characteristic dials/levels. Tapping anywhere on that
+readout opens the **characteristics popup**: all six characteristics as large rows, each with its
+level, its points as *current / needed for the next level*, and a buy-up button with its price.
 
 - Player holds up to **8 law cards** at once. A card is **short flavor text and nothing else** —
   no readout of which characteristics it affects, and no numbers.
@@ -89,7 +91,8 @@ left = reject) plus a compact readout of all 6 characteristic bars/levels.
   continues. Plain sequential or fixed-order cycling is explicitly not the intended feel.
 - Accepting or rejecting a law both apply *some* effect (this is the point — every law
   matters, there's no "safe" choice) to 1–3 of the 6 characteristics.
-- Characteristics level up via an accumulating point total. **Level floor is permanent** —
+- Characteristics level up via an accumulating point total. **Points are always whole numbers** —
+  card effects, the total and each level's requirement. **Level floor is permanent** —
   once a characteristic reaches level *N*, no card can ever push it back below *N*'s
   threshold, only slow further gain or (rarely) reduce progress *within* the current level.
 - **Points required to reach level *N* is a formula, not a lookup table:**
@@ -104,8 +107,12 @@ left = reject) plus a compact readout of all 6 characteristic bars/levels.
   points (Laws today, Random Occurrences per §10) must level a given characteristic at the same
   rate — see `ARCHITECTURE.md` §4.3.
 - **Crystal buy-up:** player may spend crystals to instantly fill the remaining points needed
-  for the next level. **[ASSUMED — CONFIRM]** Cost = `ceil(points_remaining / 20)` crystals,
-  minimum 1.
+  for the next level. Points are priced in batches: **[ASSUMED — CONFIRM]** 10 points per crystal,
+  so cost = `round(points_remaining / 10)` crystals with halves rounding up, **minimum 1** — 28
+  points cost 3, 22 cost 2, 25 cost 3, 3 cost 1.
+  - Every buy-up is confirmed first. The confirmation shows the price; if the player cannot
+    afford it, it says so and the confirm button stays inactive. Confirming closes only the
+    confirmation — the characteristics popup stays open at the new level.
 - **Replenishment:** when a card is resolved, a new one begins queuing, taking **2 minutes**
   per card (this timer runs in real time, including while the app is closed — see offline
   accrual note in `ARCHITECTURE.md`). If all 8 slots are empty and none are queued, show a

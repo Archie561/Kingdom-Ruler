@@ -175,39 +175,42 @@ namespace KingdomRuler.Systems.Ledger
         }
 
         /// <summary>Points needed to advance from <paramref name="level"/> to the next.</summary>
-        public float PointsRequiredForLevel(int level) => CharacteristicLevelingCurve.PointsRequired(level);
+        public int PointsRequiredForLevel(int level) => CharacteristicLevelingCurve.PointsRequired(level);
 
         /// <summary>
         /// Points still needed for this characteristic to reach its next level.
         /// Never negative.
         /// </summary>
-        public float PointsRemainingForNextLevel(CharacteristicType type)
+        public int PointsRemainingForNextLevel(CharacteristicType type)
         {
             var state = _characteristics[type];
-            return Math.Max(0f, CharacteristicLevelingCurve.PointsRequired(state.Level) - state.PointsIntoCurrentLevel);
+            return Math.Max(0, CharacteristicLevelingCurve.PointsRequired(state.Level) - state.PointsIntoCurrentLevel);
         }
 
         /// <summary>
         /// Add points to a characteristic, levelling it up as many times as they cover. The curve
         /// is deliberately not a parameter, so every mechanic levels a characteristic at one rate.
         /// </summary>
-        public void AddCharacteristicPoints(CharacteristicType type, float points)
+        public void AddCharacteristicPoints(CharacteristicType type, int points)
         {
-            if (IsRejectedAsNonFinite(points, nameof(AddCharacteristicPoints))) return;
             if (points <= 0) return;
             var state = _characteristics[type];
 
             int startLevel = state.Level;
-            state.PointsIntoCurrentLevel += points;
+
+            // Summed as long, so a large award cannot overflow before the loop consumes it. After the
+            // loop the remainder is below one level's requirement, which always fits an int.
+            long total = (long)state.PointsIntoCurrentLevel + points;
 
             // Terminates because CharacteristicLevelingCurve.PointsRequired is guaranteed positive.
-            float required = CharacteristicLevelingCurve.PointsRequired(state.Level);
-            while (state.PointsIntoCurrentLevel >= required)
+            int required = CharacteristicLevelingCurve.PointsRequired(state.Level);
+            while (total >= required)
             {
-                state.PointsIntoCurrentLevel -= required;
+                total -= required;
                 state.Level++;
                 required = CharacteristicLevelingCurve.PointsRequired(state.Level);
             }
+            state.PointsIntoCurrentLevel = (int)total;
 
             // Publish only after the loop: the bus is synchronous, so a subscriber publishing from
             // inside it would render a level already bumped with its points not yet carried over.
@@ -219,12 +222,11 @@ namespace KingdomRuler.Systems.Ledger
         /// Remove progress within the current level, stopping at zero. A characteristic never drops
         /// below a level it has reached (GDD §6), so the floor is simply the current level.
         /// </summary>
-        public void ReduceCharacteristicPoints(CharacteristicType type, float points)
+        public void ReduceCharacteristicPoints(CharacteristicType type, int points)
         {
-            if (IsRejectedAsNonFinite(points, nameof(ReduceCharacteristicPoints))) return;
             if (points <= 0) return;
             var state = _characteristics[type];
-            state.PointsIntoCurrentLevel = Math.Max(0f, state.PointsIntoCurrentLevel - points);
+            state.PointsIntoCurrentLevel = Math.Max(0, state.PointsIntoCurrentLevel - points);
         }
 
         /// <summary>Check if characteristic meets or exceeds required level.</summary>
@@ -376,16 +378,13 @@ namespace KingdomRuler.Systems.Ledger
 
                 // Progress must sit inside the current level; anything else means the file
                 // and the curve disagree, and carrying it would trigger a phantom level-up.
-                float required = CharacteristicLevelingCurve.PointsRequired(state.Level);
-                float points = kvp.Value.PointsIntoCurrentLevel;
-                state.PointsIntoCurrentLevel = float.IsFinite(points)
-                    ? Math.Clamp(points, 0f, Math.Max(0f, required - 0.001f))
-                    : 0f;
+                int required = CharacteristicLevelingCurve.PointsRequired(state.Level);
+                state.PointsIntoCurrentLevel = Math.Clamp(kvp.Value.PointsIntoCurrentLevel, 0, required - 1);
             }
         }
 
         /// <summary>
-        /// NaN or ±Infinity would loop the level-up forever or poison the save, so it is refused
+        /// A NaN or ±Infinity trade amount would poison the economy and the save, so it is refused
         /// rather than thrown — a throw would abandon the caller's transaction halfway.
         /// </summary>
         private static bool IsRejectedAsNonFinite(float value, string operation)

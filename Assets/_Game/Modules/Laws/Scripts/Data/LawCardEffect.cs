@@ -11,9 +11,9 @@ namespace KingdomRuler.Modules.Laws
     public struct LawCardEffect
     {
         public CharacteristicType Characteristic;
-        public float Points;
+        public int Points;
 
-        public LawCardEffect(CharacteristicType characteristic, float points)
+        public LawCardEffect(CharacteristicType characteristic, int points)
         {
             Characteristic = characteristic;
             Points = points;

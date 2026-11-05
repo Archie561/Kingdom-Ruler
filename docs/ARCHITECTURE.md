@@ -519,7 +519,9 @@ It also owns the **leveling math** — the points-required-per-level curve — e
 Laws exercises it. Anything that mutates a characteristic (Laws now, Random Occurrences later per
 the GDD) calls into this one implementation rather than each module reimplementing or duplicating
 it. A module can still own its own *config* for how it presents this to the player (e.g. Laws'
-crystal buy-up divisor), but the curve itself is Ledger-owned.
+points per crystal for buy-ups), but the curve itself is Ledger-owned. **Characteristic points are
+integers** throughout — the curve, the state, the API and card effects — and a level's requirement
+is capped (`MaxPointsRequired`, far beyond play) so arithmetic on it can never overflow.
 
 **The curve is a formula, not a table, and the Ledger holds it — callers do not pass it in.**
 Concretely:
@@ -560,9 +562,11 @@ card's effects — so a rethrow would abandon the rest of that transaction.
 `GetTradeResource` return state objects with `internal` setters, so a module can read them but every
 change goes through a `KingdomLedger` method — and through its validation and events.
 
-**Non-finite amounts are refused.** NaN or ±Infinity would loop the level-up forever or poison the
-save, so every mutator logs and ignores one (rather than throwing mid-transaction), and
-`LoadFromDto` treats one in the file as unreadable.
+**Non-finite trade amounts are refused.** Trade resources stay decimal, and a NaN or ±Infinity
+would poison the economy and the save, so every trade mutator logs and ignores one (rather than
+throwing mid-transaction), and `LoadFromDto` treats one in the file as unreadable. Characteristic
+points are integers and cannot be non-finite; the save reads them through
+`WholeNumberJsonConverter`, so a file holding `25.0` still loads.
 
 #### Where new math goes — the ownership test
 

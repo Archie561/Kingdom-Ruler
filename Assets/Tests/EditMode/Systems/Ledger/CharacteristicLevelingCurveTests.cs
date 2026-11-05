@@ -9,12 +9,12 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
     public sealed class CharacteristicLevelingCurveTests
     {
         // GDD §6: required(N) = round(100 × 1.35^(N-1) / 10) × 10
-        [TestCase(1, 100f)]
-        [TestCase(2, 140f)]
-        [TestCase(3, 180f)]
-        [TestCase(4, 250f)]
-        [TestCase(5, 330f)]
-        public void PointsRequired_MatchesGddFormula(int level, float expected)
+        [TestCase(1, 100)]
+        [TestCase(2, 140)]
+        [TestCase(3, 180)]
+        [TestCase(4, 250)]
+        [TestCase(5, 330)]
+        public void PointsRequired_MatchesGddFormula(int level, int expected)
         {
             Assert.AreEqual(expected, CharacteristicLevelingCurve.PointsRequired(level));
         }
@@ -31,14 +31,21 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
         /// zero requirement would spin forever and publish level-up events without end. With
         /// fixed constants that cannot happen — this fails the moment an edit to them would let it.
         /// </summary>
+        /// <summary>Far beyond play the formula would overflow an int; it is capped instead, and stays positive.</summary>
+        [Test]
+        public void PointsRequired_IsCapped_AtExtremeLevels()
+        {
+            Assert.AreEqual(CharacteristicLevelingCurve.MaxPointsRequired, CharacteristicLevelingCurve.PointsRequired(500));
+        }
+
         [Test]
         public void PointsRequired_IsPositiveAndRising_ForEveryReachableLevel()
         {
-            float previous = 0f;
+            int previous = 0;
             for (int level = 1; level <= 200; level++)
             {
-                float current = CharacteristicLevelingCurve.PointsRequired(level);
-                Assert.Greater(current, 0f, $"Non-positive requirement at level {level}.");
+                int current = CharacteristicLevelingCurve.PointsRequired(level);
+                Assert.Greater(current, 0, $"Non-positive requirement at level {level}.");
                 Assert.GreaterOrEqual(current, previous, $"The requirement fell at level {level}.");
                 previous = current;
             }
@@ -61,7 +68,7 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
             var viaLaws        = new KingdomLedger(new EventBus());
             var viaOccurrences = new KingdomLedger(new EventBus());
 
-            const float points = 375f;
+            const int points = 375;
             viaLaws.AddCharacteristicPoints(CharacteristicType.Army, points);
             viaOccurrences.AddCharacteristicPoints(CharacteristicType.Army, points);
 
@@ -79,15 +86,15 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
             var atOnce   = new KingdomLedger(new EventBus());
             var inPieces = new KingdomLedger(new EventBus());
 
-            atOnce.AddCharacteristicPoints(CharacteristicType.Science, 300f);
-            foreach (var chunk in new[] { 120f, 90f, 90f })
+            atOnce.AddCharacteristicPoints(CharacteristicType.Science, 300);
+            foreach (var chunk in new[] { 120, 90, 90 })
                 inPieces.AddCharacteristicPoints(CharacteristicType.Science, chunk);
 
             var a = atOnce.GetCharacteristic(CharacteristicType.Science);
             var b = inPieces.GetCharacteristic(CharacteristicType.Science);
 
             Assert.AreEqual(a.Level, b.Level);
-            Assert.AreEqual(a.PointsIntoCurrentLevel, b.PointsIntoCurrentLevel, 0.001f);
+            Assert.AreEqual(a.PointsIntoCurrentLevel, b.PointsIntoCurrentLevel);
         }
     }
 }

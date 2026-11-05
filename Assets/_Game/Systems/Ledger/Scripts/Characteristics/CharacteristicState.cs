@@ -11,12 +11,12 @@ namespace KingdomRuler.Systems.Ledger
     public sealed class CharacteristicState
     {
         public int Level { get; internal set; }
-        public float PointsIntoCurrentLevel { get; internal set; }
+        public int PointsIntoCurrentLevel { get; internal set; }
 
         public CharacteristicState()
         {
             Level = 1;
-            PointsIntoCurrentLevel = 0f;
+            PointsIntoCurrentLevel = 0;
         }
     }
 }

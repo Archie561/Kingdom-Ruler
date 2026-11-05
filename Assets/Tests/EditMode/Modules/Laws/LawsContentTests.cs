@@ -66,13 +66,12 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             text.Report();
         }
 
-        /// <summary>The refill popup only appears when the queue is short — easy never to see.</summary>
+        /// <summary>Popup text only appears in particular states — easy never to see.</summary>
         [Test]
-        public void TheRefillMessages_ExistInEveryLocale()
+        public void EveryCodeResolvedMessage_ExistsInEveryLocale()
         {
             var text = new LocalizationCheck(LawsUIText.StringTable);
-            text.Require(LawsUIText.RefillTitle);
-            text.Require(LawsUIText.RefillBody);
+            foreach (var key in LawsUIText.AllKeys) text.Require(key);
             text.Report();
         }
     }

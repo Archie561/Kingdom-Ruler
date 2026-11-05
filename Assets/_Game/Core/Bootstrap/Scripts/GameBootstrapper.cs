@@ -21,12 +21,10 @@ namespace KingdomRuler.Core
     public sealed class GameBootstrapper : LifetimeScope
     {
         [Header("Systems")]
-        [Tooltip("Icons and name keys for the 6 characteristics. Ledger-owned because Laws, " +
-                 "Cities and Random Occurrences all display them — see ARCHITECTURE.md §4.3.")]
+        [Tooltip("Icons and name keys for the 6 characteristics (ARCHITECTURE.md §4.3).")]
         [SerializeField] private CharacteristicRegistry _characteristicRegistry;
 
-        [Tooltip("Icons and name keys for the 6 trade resources. Ledger-owned for the same " +
-                 "reason — Trade draws them on warehouses and offers, Cities on purchase costs.")]
+        [Tooltip("Icons and name keys for the 6 trade resources (ARCHITECTURE.md §4.3).")]
         [SerializeField] private TradeResourceRegistry _tradeResourceRegistry;
 
         [Header("Modules")]
@@ -38,16 +36,12 @@ namespace KingdomRuler.Core
             // Systems
             builder.Register<EventBus>(Lifetime.Singleton);
 
-            // The game clock: tells the time, and ticks every time-driven system four times a
-            // second. Registered as an entry point, which also makes it the IClock everyone
-            // receives. Each manager with a timer subscribes itself in its constructor.
+            // An entry point, so VContainer ticks it; it is also the IClock everyone receives.
             builder.RegisterEntryPoint<GameClock>();
 
             builder.Register<KingdomLedger>(Lifetime.Singleton);
 
-            // Warehouses regenerate on the game clock. Wired here rather than inside the Ledger,
-            // which deliberately holds no clock: something outside it always says when time has
-            // passed (see KingdomLedger.AccruePassiveResourceRegen).
+            // Wired here because the Ledger deliberately holds no clock (KingdomLedger.AccruePassiveResourceRegen).
             builder.RegisterBuildCallback(c =>
                 c.Resolve<IClock>().Ticked += c.Resolve<KingdomLedger>().AccruePassiveResourceRegen);
 
@@ -63,9 +57,8 @@ namespace KingdomRuler.Core
             builder.Register<LawsPresenter>(Lifetime.Singleton);
 
             // Trade module.
-            // Explicit factory for the same reason as Laws: TradeManager has a second
-            // constructor taking a System.Random (so tests can pin the offer batch), and
-            // VContainer picks the constructor with the most parameters.
+            // Explicit factory: TradeManager has a second, test-only constructor taking a
+            // System.Random, and VContainer would otherwise pick that one (ARCHITECTURE.md §10).
             builder.Register(c => new TradeManager(
                     c.Resolve<KingdomLedger>(), c.Resolve<IClock>(), c.Resolve<TradeConfig>()),
                 Lifetime.Singleton);
@@ -73,8 +66,7 @@ namespace KingdomRuler.Core
             builder.RegisterInstance(ResolveTradeConfig());
 
             // Services
-            // Explicit factory: LocalJsonSaveService has a second constructor taking a
-            // directory (for tests), and we want the persistentDataPath one here.
+            // Explicit factory: picks the persistentDataPath constructor over the test-only one.
             builder.Register<ISaveService>(_ => new LocalJsonSaveService(), Lifetime.Singleton);
             builder.Register<MockPurchasingService>(Lifetime.Singleton).As<IPurchasingService>();
             builder.Register<StubAudioService>(Lifetime.Singleton).As<IAudioService>();
@@ -84,23 +76,17 @@ namespace KingdomRuler.Core
             // Save lifecycle — knows every module, so it lives with the composition root.
             builder.Register<GameStateCoordinator>(Lifetime.Singleton);
 
-            // Popups. PopupSystem is a MonoBehaviour in this scene rather than in Main, so
-            // it can be resolved by Presenters that are built here at startup.
+            // In the Bootstrap scene, not Main, so Presenters built at startup can resolve it.
             builder.RegisterComponentInHierarchy<PopupSystem>();
 
-            // Entry point
             builder.RegisterEntryPoint<GameEntryPoint>();
         }
 
-        /// <summary>
-        /// The wired registry, or an empty one if the asset isn't assigned yet.
-        /// </summary>
-        /// <remarks>
-        /// Never null: registering a null instance would fail every resolve downstream, and
-        /// an unassigned registry is a wiring mistake, not a reason for the game to refuse to
-        /// start. An empty one degrades honestly — <c>NameKeyFor</c> still derives the right
-        /// key, so text keeps working and only the icons are missing.
-        /// </remarks>
+        // The Resolve… methods never return null: registering null would fail every resolve
+        // downstream, and a missing asset is a wiring mistake, not a reason to refuse to start. An
+        // empty registry still derives every name key, so only the icons go missing; an empty
+        // config runs on its defaults.
+
         private CharacteristicRegistry ResolveCharacteristicRegistry()
         {
             if (_characteristicRegistry != null) return _characteristicRegistry;
@@ -112,23 +98,6 @@ namespace KingdomRuler.Core
             return ScriptableObject.CreateInstance<CharacteristicRegistry>();
         }
 
-        /// <summary>
-        /// The wired trade-resource registry, or an empty one if the asset isn't assigned yet.
-        /// </summary>
-        /// <remarks>
-        /// Same contract as <see cref="ResolveCharacteristicRegistry"/>, for the same reason:
-        /// registering null would fail every resolve downstream, while an empty registry degrades
-        /// honestly — <c>NameKeyFor</c> still derives the right key, so text keeps working and
-        /// only the icons are absent.
-        /// </remarks>
-        /// <summary>
-        /// The wired Trade config, or a defaults instance if the asset isn't assigned yet.
-        /// </summary>
-        /// <remarks>
-        /// Same contract as the registries above. Without this an unassigned field registered
-        /// null and <c>TradeManager</c>'s constructor threw at startup, taking the whole game
-        /// down rather than degrading to defaults.
-        /// </remarks>
         private TradeConfig ResolveTradeConfig()
         {
             if (_tradeConfig != null) return _tradeConfig;

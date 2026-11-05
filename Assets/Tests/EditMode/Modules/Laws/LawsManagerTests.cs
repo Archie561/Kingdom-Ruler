@@ -32,7 +32,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _config.MaxHeldCards             = 8;
             _config.CardReplenishTimeSeconds = 120f;
             _config.CrystalCostPerRefill     = 2;
-            _config.CrystalBuyUpDivisor      = 20f;
+            _config.PointsPerCrystal         = 10;
             _config.AllCards                 = new[] { Card("card") };
             _created.Add(_config);
 
@@ -71,52 +71,52 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             Wait(1);
         }
 
-        private float Points(CharacteristicType type) => _ledger.GetCharacteristic(type).PointsIntoCurrentLevel;
+        private int Points(CharacteristicType type) => _ledger.GetCharacteristic(type).PointsIntoCurrentLevel;
 
         // ── Resolving a card: effects ─────────────────────────────────────────────
 
         [Test]
         public void Accept_AppliesTheAcceptEffects()
         {
-            ShowCard(accept: new[] { new LawCardEffect(CharacteristicType.Army, 10f) },
-                     reject: new[] { new LawCardEffect(CharacteristicType.Army, 99f) });
+            ShowCard(accept: new[] { new LawCardEffect(CharacteristicType.Army, 10) },
+                     reject: new[] { new LawCardEffect(CharacteristicType.Army, 99) });
 
             Assert.IsTrue(_manager.ResolveActiveCard(LawDecision.Accept));
-            Assert.AreEqual(10f, Points(CharacteristicType.Army));
+            Assert.AreEqual(10, Points(CharacteristicType.Army));
         }
 
         [Test]
         public void Reject_AppliesTheRejectEffects()
         {
-            ShowCard(accept: new[] { new LawCardEffect(CharacteristicType.Science, 99f) },
-                     reject: new[] { new LawCardEffect(CharacteristicType.Science, 5f) });
+            ShowCard(accept: new[] { new LawCardEffect(CharacteristicType.Science, 99) },
+                     reject: new[] { new LawCardEffect(CharacteristicType.Science, 5) });
 
             Assert.IsTrue(_manager.ResolveActiveCard(LawDecision.Reject));
-            Assert.AreEqual(5f, Points(CharacteristicType.Science));
+            Assert.AreEqual(5, Points(CharacteristicType.Science));
         }
 
         /// <summary>Cards author one signed number; getting the sign backwards would invert every negative law.</summary>
         [Test]
         public void ANegativeEffect_RemovesProgress()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Army, 60f);
-            ShowCard(accept: new[] { new LawCardEffect(CharacteristicType.Army, -25f) });
+            _ledger.AddCharacteristicPoints(CharacteristicType.Army, 60);
+            ShowCard(accept: new[] { new LawCardEffect(CharacteristicType.Army, -25) });
 
             _manager.ResolveActiveCard(LawDecision.Accept);
 
-            Assert.AreEqual(35f, Points(CharacteristicType.Army));
+            Assert.AreEqual(35, Points(CharacteristicType.Army));
         }
 
         [Test]
         public void ANegativeEffect_NeverDropsALevel()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Army, 150f);   // → level 2
-            ShowCard(accept: new[] { new LawCardEffect(CharacteristicType.Army, -9999f) });
+            _ledger.AddCharacteristicPoints(CharacteristicType.Army, 150);   // → level 2
+            ShowCard(accept: new[] { new LawCardEffect(CharacteristicType.Army, -9999) });
 
             _manager.ResolveActiveCard(LawDecision.Accept);
 
             Assert.AreEqual(2, _ledger.GetCharacteristic(CharacteristicType.Army).Level);
-            Assert.AreEqual(0f, Points(CharacteristicType.Army));
+            Assert.AreEqual(0, Points(CharacteristicType.Army));
         }
 
         [Test]
@@ -124,15 +124,15 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         {
             ShowCard(accept: new[]
             {
-                new LawCardEffect(CharacteristicType.Army, 10f),
-                new LawCardEffect(CharacteristicType.Welfare, 30f),
-                new LawCardEffect(CharacteristicType.Army, 15f)
+                new LawCardEffect(CharacteristicType.Army, 10),
+                new LawCardEffect(CharacteristicType.Welfare, 30),
+                new LawCardEffect(CharacteristicType.Army, 15)
             });
 
             _manager.ResolveActiveCard(LawDecision.Accept);
 
-            Assert.AreEqual(25f, Points(CharacteristicType.Army));
-            Assert.AreEqual(30f, Points(CharacteristicType.Welfare));
+            Assert.AreEqual(25, Points(CharacteristicType.Army));
+            Assert.AreEqual(30, Points(CharacteristicType.Welfare));
         }
 
         /// <summary>A crashing level-up listener must not cut a card's remaining effects short.</summary>
@@ -142,15 +142,15 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _eventBus.Subscribe<CharacteristicLeveledUpEvent>(_ => throw new InvalidOperationException("listener bug"));
             ShowCard(accept: new[]
             {
-                new LawCardEffect(CharacteristicType.Army, 150f),     // levels up → the listener throws
-                new LawCardEffect(CharacteristicType.Welfare, 30f)
+                new LawCardEffect(CharacteristicType.Army, 150),     // levels up → the listener throws
+                new LawCardEffect(CharacteristicType.Welfare, 30)
             });
 
             LogAssert.Expect(LogType.Exception, new Regex("listener bug"));
             Assert.IsTrue(_manager.ResolveActiveCard(LawDecision.Accept));
 
             Assert.AreEqual(2, _ledger.GetCharacteristic(CharacteristicType.Army).Level);
-            Assert.AreEqual(30f, Points(CharacteristicType.Welfare));
+            Assert.AreEqual(30, Points(CharacteristicType.Welfare));
         }
 
         [Test]
@@ -159,7 +159,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             ShowCard();
 
             Assert.IsTrue(_manager.ResolveActiveCard(LawDecision.Reject));
-            Assert.AreEqual(0f, Points(CharacteristicType.Army));
+            Assert.AreEqual(0, Points(CharacteristicType.Army));
         }
 
         [Test]
@@ -279,24 +279,35 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
         // ── Buy-up ────────────────────────────────────────────────────────────────
 
-        // Level 1 needs 100 points (GDD §6).
-        [TestCase(0f,     20f, 5)]   // 100 / 20
-        [TestCase(5f,     20f, 5)]   // 95 / 20 rounds up
-        [TestCase(0f,     30f, 4)]   // 100 / 30 rounds up
-        [TestCase(99f,    20f, 1)]   // a tiny remainder still costs the minimum of 1
-        [TestCase(99.99f, 20f, 1)]
-        public void BuyUpCost_IsTheRemainderOverTheDivisor_RoundedUp(float pointsHeld, float divisor, int expected)
+        // Level 1 needs 100 points (GDD §6). The pointsHeld column sets how many remain.
+        [TestCase(0,  10, 10)]   // 100 remaining
+        [TestCase(72, 10, 3)]    // 28 remaining → 2.8 → 3
+        [TestCase(78, 10, 2)]    // 22 remaining → 2.2 → 2
+        [TestCase(75, 10, 3)]    // 25 remaining → 2.5 → 3: halves round up, not to even
+        [TestCase(65, 10, 4)]    // 35 remaining → 3.5 → 4
+        [TestCase(97, 10, 1)]    // 3 remaining → 0.3 → the minimum of 1
+        [TestCase(99, 10, 1)]    // 1 remaining → the minimum of 1
+        [TestCase(0,  20, 5)]    // the rate is tunable
+        public void BuyUpCost_IsTheRemainderPerCrystal_RoundedToNearest(int pointsHeld, int pointsPerCrystal, int expected)
         {
-            _config.CrystalBuyUpDivisor = divisor;
+            _config.PointsPerCrystal = pointsPerCrystal;
             _ledger.AddCharacteristicPoints(CharacteristicType.Army, pointsHeld);
 
             Assert.AreEqual(expected, _manager.BuyUpCost(CharacteristicType.Army));
         }
 
+        /// <summary>The curve caps a level's requirement, so even an absurd level prices positive.</summary>
         [Test]
-        public void BuyUpCost_WithANonPositiveDivisor_Throws()
+        public void BuyUpCost_AtAnExtremeLevel_IsPositive()
         {
-            _config.CrystalBuyUpDivisor = 0f;
+            _ledger.AddCharacteristicPoints(CharacteristicType.Army, int.MaxValue);
+            Assert.Greater(_manager.BuyUpCost(CharacteristicType.Army), 0);
+        }
+
+        [Test]
+        public void BuyUpCost_WithANonPositiveRate_Throws()
+        {
+            _config.PointsPerCrystal = 0;
             Assert.Throws<InvalidOperationException>(() => _manager.BuyUpCost(CharacteristicType.Army));
         }
 
@@ -319,18 +330,18 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         [Test]
         public void TryBuyUp_WithoutEnoughCrystals_ChangesNothing()
         {
-            _ledger.AddCrystals(4);   // costs 5
+            _ledger.AddCrystals(9);   // costs 10
 
             Assert.IsFalse(_manager.CanAffordBuyUp(CharacteristicType.Army));
             Assert.IsFalse(_manager.TryBuyUp(CharacteristicType.Army));
             Assert.AreEqual(1, _ledger.GetCharacteristic(CharacteristicType.Army).Level);
-            Assert.AreEqual(4, _ledger.Crystals);
+            Assert.AreEqual(9, _ledger.Crystals);
         }
 
         [Test]
         public void CanAffordBuyUp_WithExactlyThePrice_IsTrue()
         {
-            _ledger.AddCrystals(5);
+            _ledger.AddCrystals(10);
             Assert.IsTrue(_manager.CanAffordBuyUp(CharacteristicType.Army));
         }
 

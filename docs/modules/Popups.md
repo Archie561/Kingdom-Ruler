@@ -226,6 +226,11 @@ about two prefabs of the same type.
 a setup mistake and should be loud; whatever the caller would do after a "yes" never runs either
 way, so it still fails closed.
 
+**Closing shrinks the panel all the way to zero** (InQuad, `_closeDuration` 0.2 s) before the popup is
+destroyed. Destroying it part-way shrunk reads as the popup blinking out, and an ease that overshoots
+first (InBack) spends half the duration swelling, leaving the visible shrink to the last few frames.
+Opening scales up from `_openFromScale`.
+
 **The choice arrives on the tap**, before the close animation — so the purchase, its sound and its
 haptic are not delayed by ~130 ms of tween.
 

@@ -31,6 +31,10 @@ namespace KingdomRuler.Modules.Laws.UI
         [Tooltip("One dial per characteristic. Matched by each dial's own Type, so order does not matter.")]
         [SerializeField] private CharacteristicDialView[] _dials;
 
+        [Tooltip("Covers the whole dial panel and opens the characteristics popup — one large target " +
+                 "instead of six small ones.")]
+        [SerializeField] private Button _characteristicsButton;
+
         [Header("Timer & Refill")]
         [SerializeField] private TextMeshProUGUI _timerLabel;
         [SerializeField] private Button          _refillButton;
@@ -60,6 +64,7 @@ namespace KingdomRuler.Modules.Laws.UI
 
             _card.Swiped += decision => _presenter.ResolveCard(decision);
             _refillButton.onClick.AddListener(() => _presenter.RequestRefill().Forget());
+            _characteristicsButton.onClick.AddListener(() => _presenter.OpenCharacteristics().Forget());
 
             _presenter.StateChanged            += Refresh;
             _presenter.CardArrived             += _card.PlayArrival;

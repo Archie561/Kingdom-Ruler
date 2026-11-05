@@ -292,31 +292,31 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void AddCharacteristicPoints_IncreasesPointsIntoCurrentLevel()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 40f);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 40);
 
             var state = _ledger.GetCharacteristic(CharacteristicType.Medicine);
             Assert.AreEqual(1, state.Level);
-            Assert.AreEqual(40f, state.PointsIntoCurrentLevel);
+            Assert.AreEqual(40, state.PointsIntoCurrentLevel);
         }
 
         [Test]
         public void AddCharacteristicPoints_TriggersLevelUp_WhenThresholdReached()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 100f);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 100);
 
             var state = _ledger.GetCharacteristic(CharacteristicType.Medicine);
             Assert.AreEqual(2, state.Level);
-            Assert.AreEqual(0f, state.PointsIntoCurrentLevel);
+            Assert.AreEqual(0, state.PointsIntoCurrentLevel);
         }
 
         [Test]
         public void AddCharacteristicPoints_CarriesOverExcessPoints_AfterLevelUp()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 130f);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 130);
 
             var state = _ledger.GetCharacteristic(CharacteristicType.Medicine);
             Assert.AreEqual(2, state.Level);
-            Assert.AreEqual(30f, state.PointsIntoCurrentLevel);
+            Assert.AreEqual(30, state.PointsIntoCurrentLevel);
         }
 
         [Test]
@@ -325,7 +325,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
             CharacteristicLeveledUpEvent? receivedEvent = null;
             _eventBus.Subscribe<CharacteristicLeveledUpEvent>(e => receivedEvent = e);
 
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 110f);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 110);
 
             Assert.IsNotNull(receivedEvent);
             Assert.AreEqual(CharacteristicType.Medicine, receivedEvent.Value.CharacteristicType);
@@ -336,22 +336,35 @@ namespace KingdomRuler.Tests.EditMode.Systems
         public void AddCharacteristicPoints_MultipleLevelUpsInOneCall()
         {
             // 250 = 100 (clears level 1) + 140 (clears level 2), leaving 10 into level 3.
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 250f);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 250);
 
             var state = _ledger.GetCharacteristic(CharacteristicType.Medicine);
             Assert.AreEqual(3, state.Level);
-            Assert.AreEqual(10f, state.PointsIntoCurrentLevel);
+            Assert.AreEqual(10, state.PointsIntoCurrentLevel);
+        }
+
+        /// <summary>An award far larger than any level must level up through it, not overflow.</summary>
+        [Test]
+        public void AddCharacteristicPoints_HugeAward_DoesNotOverflow()
+        {
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 400);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, int.MaxValue);
+
+            var state = _ledger.GetCharacteristic(CharacteristicType.Medicine);
+            Assert.Greater(state.Level, 1);
+            Assert.GreaterOrEqual(state.PointsIntoCurrentLevel, 0);
+            Assert.Less(state.PointsIntoCurrentLevel, _ledger.PointsRequiredForLevel(state.Level));
         }
 
         [Test]
         public void ReduceCharacteristicPoints_DecreasesPoints()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 60f);
-            _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 20f);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 60);
+            _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 20);
 
             var state = _ledger.GetCharacteristic(CharacteristicType.Medicine);
             Assert.AreEqual(1, state.Level);
-            Assert.AreEqual(40f, state.PointsIntoCurrentLevel);
+            Assert.AreEqual(40, state.PointsIntoCurrentLevel);
         }
 
         /// <summary>
@@ -362,34 +375,34 @@ namespace KingdomRuler.Tests.EditMode.Systems
         public void ReduceCharacteristicPoints_LargeReduction_NeverDropsTheLevel()
         {
             // 150 = 100 (clears level 1) + 50 into level 2.
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 150f);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 150);
 
             // Far more than the 50 points of progress held at level 2.
-            _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 200f);
+            _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 200);
 
             var state = _ledger.GetCharacteristic(CharacteristicType.Medicine);
             Assert.AreEqual(2, state.Level, "The level reached must be permanent.");
-            Assert.AreEqual(0f, state.PointsIntoCurrentLevel, "Progress clamps at zero.");
+            Assert.AreEqual(0, state.PointsIntoCurrentLevel, "Progress clamps at zero.");
         }
 
         [Test]
         public void ReduceCharacteristicPoints_AtZeroProgress_ClampsAndStaysAtLevelOne()
         {
-            _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 50f);
+            _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 50);
 
             var state = _ledger.GetCharacteristic(CharacteristicType.Medicine);
             Assert.AreEqual(1, state.Level);
-            Assert.AreEqual(0f, state.PointsIntoCurrentLevel);
+            Assert.AreEqual(0, state.PointsIntoCurrentLevel);
         }
 
         [Test]
         public void ReduceCharacteristicPoints_NeverPublishesALevelChange()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 300f);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 300);
 
             int published = 0;
             _eventBus.Subscribe<CharacteristicLeveledUpEvent>(_ => published++);
-            _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 10000f);
+            _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 10000);
 
             Assert.AreEqual(0, published, "Reductions never change the level, so nothing to announce.");
         }
@@ -397,7 +410,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void MeetsCharacteristicLevel_ReturnsTrue_WhenAtOrAboveRequired()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 240f); // 100 + 140 → level 3
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 240); // 100 + 140 → level 3
 
             Assert.IsTrue(_ledger.MeetsCharacteristicLevel(CharacteristicType.Medicine, 1));
             Assert.IsTrue(_ledger.MeetsCharacteristicLevel(CharacteristicType.Medicine, 2));
@@ -413,14 +426,14 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void LevelReached_IsPermanent_AcrossGainAndLoss()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 100f); // → level 2
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 100); // → level 2
             Assert.AreEqual(2, _ledger.GetCharacteristic(CharacteristicType.Medicine).Level);
 
-            _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 100f);
+            _ledger.ReduceCharacteristicPoints(CharacteristicType.Medicine, 100);
 
             var state = _ledger.GetCharacteristic(CharacteristicType.Medicine);
             Assert.AreEqual(2, state.Level, "Level 2 was reached, so it is permanent.");
-            Assert.AreEqual(0f, state.PointsIntoCurrentLevel);
+            Assert.AreEqual(0, state.PointsIntoCurrentLevel);
         }
 
         /// <summary>
@@ -433,14 +446,14 @@ namespace KingdomRuler.Tests.EditMode.Systems
         public void AddCharacteristicPoints_SubscriberAlwaysObservesFullySettledState()
         {
             // 250 = 100 (level 1) + 140 (level 2), leaving 10 into level 3.
-            var observed = new System.Collections.Generic.List<(int level, float points)>();
+            var observed = new System.Collections.Generic.List<(int level, int points)>();
             _eventBus.Subscribe<CharacteristicLeveledUpEvent>(_ =>
             {
                 var s = _ledger.GetCharacteristic(CharacteristicType.Medicine);
                 observed.Add((s.Level, s.PointsIntoCurrentLevel));
             });
 
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 250f);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 250);
 
             Assert.AreEqual(2, observed.Count, "Two level-ups should be announced.");
             foreach (var (level, points) in observed)
@@ -457,7 +470,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
             var levels = new System.Collections.Generic.List<int>();
             _eventBus.Subscribe<CharacteristicLeveledUpEvent>(e => levels.Add(e.NewLevel));
 
-            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 250f);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Medicine, 250);
 
             CollectionAssert.AreEqual(new[] { 2, 3 }, levels);
         }
@@ -466,30 +479,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
 
         #region Non-finite Guard Tests
 
-        // NaN or ±Infinity would loop the level-up forever or poison the save; each is refused.
-
-        [TestCase(float.PositiveInfinity)]
-        [TestCase(float.NaN)]
-        public void AddCharacteristicPoints_NonFinite_IsRefusedAndChangesNothing(float points)
-        {
-            LogAssert.Expect(LogType.Error, new Regex("non-finite"));
-            _ledger.AddCharacteristicPoints(CharacteristicType.Army, points);
-
-            var state = _ledger.GetCharacteristic(CharacteristicType.Army);
-            Assert.AreEqual(1, state.Level);
-            Assert.AreEqual(0f, state.PointsIntoCurrentLevel);
-        }
-
-        [Test]
-        public void ReduceCharacteristicPoints_NonFinite_IsRefused()
-        {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Army, 40f);
-
-            LogAssert.Expect(LogType.Error, new Regex("non-finite"));
-            _ledger.ReduceCharacteristicPoints(CharacteristicType.Army, float.NaN);
-
-            Assert.AreEqual(40f, _ledger.GetCharacteristic(CharacteristicType.Army).PointsIntoCurrentLevel);
-        }
+        // A NaN or ±Infinity trade amount would poison the economy and the save; each is refused.
 
         [Test]
         public void TradeResourceMutations_NonFinite_AreRefused()
@@ -584,7 +574,7 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void TakeSnapshot_ReturnsCorrectCharacteristicLevels()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Science, 100f); // level 2
+            _ledger.AddCharacteristicPoints(CharacteristicType.Science, 100); // level 2
 
             var snapshot = _ledger.TakeSnapshot();
 

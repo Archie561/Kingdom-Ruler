@@ -15,7 +15,7 @@ namespace KingdomRuler.Systems.Save
     /// </remarks>
     public sealed class GameStateDto
     {
-        public const int CurrentSchemaVersion = 6;
+        public const int CurrentSchemaVersion = 7;
 
         [JsonProperty("schemaVersion")]
         public int SchemaVersion { get; set; } = CurrentSchemaVersion;

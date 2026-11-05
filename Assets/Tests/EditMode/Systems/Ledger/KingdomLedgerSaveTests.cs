@@ -26,7 +26,6 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
             {
                 Amount = float.NaN, Capacity = float.PositiveInfinity, LastUpdatedUtc = null
             };
-            dto.Characteristics["Army"] = new CharacteristicStateDto { Level = 2, PointsIntoCurrentLevel = float.NaN };
 
             var ledger = NewLedger();
             ledger.LoadFromDto(dto);
@@ -34,8 +33,6 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
             var wood = ledger.GetTradeResource(TradeResourceType.Wood);
             Assert.AreEqual(0f, wood.Amount);
             Assert.AreEqual(100f, wood.Capacity);
-            Assert.AreEqual(2, ledger.GetCharacteristic(CharacteristicType.Army).Level);
-            Assert.AreEqual(0f, ledger.GetCharacteristic(CharacteristicType.Army).PointsIntoCurrentLevel);
         }
 
         // ── Round trip ────────────────────────────────────────────────────────────
@@ -58,8 +55,8 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
         public void RoundTrip_PreservesEveryCharacteristic()
         {
             var source = NewLedger();
-            source.AddCharacteristicPoints(CharacteristicType.Army, 250f);      // → level 3, 10 in
-            source.AddCharacteristicPoints(CharacteristicType.Medicine, 40f);   // → level 1, 40 in
+            source.AddCharacteristicPoints(CharacteristicType.Army, 250);      // → level 3, 10 in
+            source.AddCharacteristicPoints(CharacteristicType.Medicine, 40);   // → level 1, 40 in
 
             var restored = NewLedger();
             restored.LoadFromDto(source.ToDto());
@@ -69,7 +66,7 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
                 var a = source.GetCharacteristic(type);
                 var b = restored.GetCharacteristic(type);
                 Assert.AreEqual(a.Level, b.Level, $"{type} level");
-                Assert.AreEqual(a.PointsIntoCurrentLevel, b.PointsIntoCurrentLevel, 0.001f, $"{type} points");
+                Assert.AreEqual(a.PointsIntoCurrentLevel, b.PointsIntoCurrentLevel, $"{type} points");
             }
         }
 
@@ -96,7 +93,7 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
         {
             var source = NewLedger();
             source.AddGold(999);
-            source.AddCharacteristicPoints(CharacteristicType.Science, 175f);
+            source.AddCharacteristicPoints(CharacteristicType.Science, 175);
             source.SetWarehouseCapacity(TradeResourceType.Clay, 250f);
 
             var json = Newtonsoft.Json.JsonConvert.SerializeObject(source.ToDto());
@@ -149,7 +146,7 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
         {
             var dto = new LedgerStateDto();
             dto.Characteristics[CharacteristicType.Army.ToString()] =
-                new CharacteristicStateDto { Level = 0, PointsIntoCurrentLevel = 0f };
+                new CharacteristicStateDto { Level = 0, PointsIntoCurrentLevel = 0 };
 
             var ledger = NewLedger();
             ledger.LoadFromDto(dto);
@@ -166,7 +163,7 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
         {
             var dto = new LedgerStateDto();
             dto.Characteristics[CharacteristicType.Army.ToString()] =
-                new CharacteristicStateDto { Level = 1, PointsIntoCurrentLevel = 999_999f };
+                new CharacteristicStateDto { Level = 1, PointsIntoCurrentLevel = 999_999 };
 
             var ledger = NewLedger();
             ledger.LoadFromDto(dto);
@@ -189,12 +186,12 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
         {
             var dto = new LedgerStateDto();
             dto.Characteristics[CharacteristicType.Army.ToString()] =
-                new CharacteristicStateDto { Level = 2, PointsIntoCurrentLevel = -50f };
+                new CharacteristicStateDto { Level = 2, PointsIntoCurrentLevel = -50 };
 
             var ledger = NewLedger();
             ledger.LoadFromDto(dto);
 
-            Assert.AreEqual(0f, ledger.GetCharacteristic(CharacteristicType.Army).PointsIntoCurrentLevel);
+            Assert.AreEqual(0, ledger.GetCharacteristic(CharacteristicType.Army).PointsIntoCurrentLevel);
         }
 
         [Test]

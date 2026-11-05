@@ -43,7 +43,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
             _config.MaxHeldCards             = 8;
             _config.CardReplenishTimeSeconds = 120f;
             _config.CrystalCostPerRefill     = 2;
-            _config.CrystalBuyUpDivisor      = 20f;
+            _config.PointsPerCrystal         = 10;
             _config.AllCards                 = new[] { Card("card") };
             _created.Add(_config);
 
@@ -126,7 +126,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         [Test]
         public void ActiveCard_RevealsNothingAboutItsEffects()
         {
-            ShowCard("card_x", accept: new[] { new LawCardEffect(CharacteristicType.Army, 10f) });
+            ShowCard("card_x", accept: new[] { new LawCardEffect(CharacteristicType.Army, 10) });
             Assert.IsTrue(_presenter.TryGetActiveCard(out var view));
 
             var fields = typeof(LawCardViewData)
@@ -182,7 +182,7 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         [Test]
         public void Dial_ProgressIsTheFractionOfTheCurrentLevel()
         {
-            _ledger.AddCharacteristicPoints(CharacteristicType.Infrastructure, 50f);   // of 100
+            _ledger.AddCharacteristicPoints(CharacteristicType.Infrastructure, 50);   // of 100
             Assert.AreEqual(0.5f, _presenter.GetDial(CharacteristicType.Infrastructure).Progress, 0.001f);
         }
 
@@ -219,10 +219,10 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
         [Test]
         public void ResolveCard_AppliesTheDecision()
         {
-            ShowCard(reject: new[] { new LawCardEffect(CharacteristicType.Education, 5f) });
+            ShowCard(reject: new[] { new LawCardEffect(CharacteristicType.Education, 5) });
 
             Assert.IsTrue(_presenter.ResolveCard(LawDecision.Reject));
-            Assert.AreEqual(5f, _ledger.GetCharacteristic(CharacteristicType.Education).PointsIntoCurrentLevel);
+            Assert.AreEqual(5, _ledger.GetCharacteristic(CharacteristicType.Education).PointsIntoCurrentLevel);
         }
 
         [TestCase(LawDecision.Accept, "sfx_laws_card_accept")]
@@ -374,36 +374,67 @@ namespace KingdomRuler.Tests.EditMode.Modules.Laws
 
         // ── Buy-up ────────────────────────────────────────────────────────────────
 
-        [Test]
-        public void BuyUp_ChargesTheQuotedPrice()
-        {
-            _ledger.AddCrystals(1000);
-            int quoted = _presenter.BuyUpCost(CharacteristicType.Army);
+        // The confirm flows themselves open popups, so they are verified in Play mode (ARCHITECTURE.md §8).
 
-            Assert.IsTrue(_presenter.CanAffordBuyUp(CharacteristicType.Army));
-            Assert.IsTrue(_presenter.BuyUp(CharacteristicType.Army));
-            Assert.AreEqual(1000 - quoted, _ledger.Crystals);
+        [Test]
+        public void Characteristics_HasOneRowPerCharacteristic()
+        {
+            var rows = _presenter.GetCharacteristics().Rows;
+
+            CollectionAssert.AreEquivalent(
+                Enum.GetValues(typeof(CharacteristicType)), rows.Select(r => r.Type));
         }
 
         [Test]
-        public void BuyUp_WithoutEnoughCrystals_IsRefused()
+        public void CharacteristicRow_ShowsLevelPointsRequiredAndPrice()
         {
-            Assert.IsFalse(_presenter.CanAffordBuyUp(CharacteristicType.Science));
-            Assert.IsFalse(_presenter.BuyUp(CharacteristicType.Science));
+            _ledger.AddCharacteristicPoints(CharacteristicType.Army, 186);   // level 2, 86 of 140
+
+            var row = _presenter.GetCharacteristics().Rows.Single(r => r.Type == CharacteristicType.Army);
+
+            Assert.AreEqual(2, row.Level);
+            Assert.AreEqual(86, row.Points);
+            Assert.AreEqual(140, row.PointsRequired);
+            Assert.AreEqual(86f / 140f, row.Progress, 0.001f);
+            Assert.AreEqual(_manager.BuyUpCost(CharacteristicType.Army), row.BuyUpCost, "Price shown == price charged.");
+            Assert.AreEqual("LawsUITable:ui.characteristic.level(2)", row.LevelText);
+            Assert.AreEqual("SharedTable:characteristic.army", row.Name);
+        }
+
+        /// <summary>The popup re-reads its data a few times a second; unchanged data must compare equal or it redraws every time.</summary>
+        [Test]
+        public void Characteristics_UnchangedState_ComparesEqual()
+        {
+            Assert.AreEqual(_presenter.GetCharacteristics(), _presenter.GetCharacteristics());
+
+            var before = _presenter.GetCharacteristics();
+            _ledger.AddCharacteristicPoints(CharacteristicType.Science, 10);
+            Assert.AreNotEqual(before, _presenter.GetCharacteristics());
         }
 
         [Test]
-        public void ALevelUp_PlaysItsFeelHooksAndNamesTheCharacteristic()
+        public void OpeningTheCharacteristics_SpendsNothing()
+        {
+            _ledger.AddCrystals(100);
+
+            LogAssert.Expect(LogType.Exception, new Regex("No popup registry"));
+            _presenter.OpenCharacteristics().Forget();
+
+            Assert.AreEqual(100, _ledger.Crystals);
+            Assert.AreEqual(1, _ledger.GetCharacteristic(CharacteristicType.Army).Level);
+        }
+
+        [Test]
+        public void ALevelUp_PlaysItsFeelHooksOnceAndNamesTheCharacteristic()
         {
             CharacteristicType? leveled = null;
             _presenter.CharacteristicLeveledUp += t => leveled = t;
-            _ledger.AddCrystals(100);
 
-            _presenter.BuyUp(CharacteristicType.Welfare);
+            _ledger.AddCharacteristicPoints(CharacteristicType.Welfare, 100);
 
             Assert.AreEqual(CharacteristicType.Welfare, leveled);
             Assert.Contains("sfx_laws_level_up", _audio.PlayedSfxIds);
-            Assert.GreaterOrEqual(_haptics.LightTriggerCount, 1);
+            Assert.AreEqual(1, _haptics.LightTriggerCount);
         }
 
         // ── Localization ──────────────────────────────────────────────────────────

@@ -23,7 +23,7 @@ Modules/Laws/
   Scripts/                              assembly KingdomRuler.Modules.Laws
     Data/                               what designers author
       LawCardDefinition.cs              one card: id + accept/reject effects
-      LawCardEffect.cs                  (characteristic, signed points)
+      LawCardEffect.cs                  (characteristic, signed whole points)
       LawDecision.cs                    Accept / Reject
       LawsConfig.cs                     tunable parameters + the card list
     Model/                              the mechanic — plain C#
@@ -35,16 +35,23 @@ Modules/Laws/
       LawsPresenter.cs                  model ↔ view; feel hooks
       LawsScreenView.cs                 the screen root and its simple widgets
       LawsUIText.cs                     String Table keys for text built in code
+      LevelFill.cs                      the level-progress fill shared by dials and popup rows
       Card/
         LawCardView.cs                  the swipeable card
         LawCardViewData.cs              what it draws
       CharacteristicDial/
         CharacteristicDialView.cs       one dial
         CharacteristicDialViewData.cs   what it draws
+      CharacteristicsPopup/
+        CharacteristicsPopup.cs         every characteristic with its buy-up button
+        CharacteristicsPopupData.cs     what it draws: one row per characteristic
+        CharacteristicRowView.cs        one row
+        CharacteristicRowViewData.cs    what a row draws
   ScriptableObjects/
     Config/LawsConfig.asset
     LawCards/                           one LawCardDefinition asset per card
-  Prefabs/                              LawsScreen, CharacteristicDial
+  Prefabs/                              LawsScreen, CharacteristicDial, CharacteristicsPopup,
+                                        CharacteristicRow
   Localization/                         LawsUITable (chrome), LawCardsTable (card text)
   Images/
 ```
@@ -58,7 +65,8 @@ UI**, and a stray `using …Laws.UI` in a model file is easy to spot.
 ```
  UI      LawsScreenView ──► LawsPresenter ──► LawsManager, KingdomLedger (reads only),
          ├─ LawCardView                         CharacteristicRegistry, PopupSystem,
-         └─ CharacteristicDialView              IAudioService, IHapticService, ILocalizationService
+         ├─ CharacteristicDialView              IAudioService, IHapticService, ILocalizationService
+         └─ CharacteristicsPopup (via PopupSystem) → CharacteristicRowView
                                                  │
  Model   LawsManager ──► LawQueue ──► LawDeck, ReplenishmentTimer
             │
@@ -80,9 +88,9 @@ Presenter — nothing else. `LawsManager` builds `LawQueue`, which builds `LawDe
 | Class | Responsibility |
 |---|---|
 | `LawCardDefinition` | One card: `CardId` and the accept/reject effect arrays. Holds no text — the id is the localization key (§6.13). `EffectsOf(decision)` picks the array. |
-| `LawCardEffect` | One `(CharacteristicType, float Points)` pair. Positive adds progress, negative removes it. |
+| `LawCardEffect` | One `(CharacteristicType, int Points)` pair. Positive adds progress, negative removes it. |
 | `LawDecision` | `Accept` / `Reject`. Used from the swipe all the way to the effects. |
-| `LawsConfig` | Queue cap, replenish interval, crystal costs, and `AllCards`. **Not** the leveling curve (§6.2). |
+| `LawsConfig` | Queue cap, replenish interval, crystal costs (`CrystalCostPerRefill`, `PointsPerCrystal`), and `AllCards`. **Not** the leveling curve (§6.2). |
 
 ### Model
 
@@ -117,8 +125,10 @@ and one taking a `System.Random` for tests.
 | `LawsPresenter` | Turns model state into localized view data, carries player actions to the manager, owns sound and haptics, gates passive sound on screen visibility. Plain C#, no Unity UI types. One per screen. |
 | `LawsScreenView` | The screen root. Renders the presenter's state onto its components and simple widgets (count, timer, refill button, waiting overlay), and forwards input. Displays the countdown but never advances it (§6.5). |
 | `LawCardView` | The card: its text, the drag-to-swipe gesture, its animations, and when to reveal the next card (§6.6). |
-| `CharacteristicDialView` | One dial: progress ring, icon, level, level-up animation (§6.11). |
-| `LawCardViewData`, `CharacteristicDialViewData` | Exactly what each view draws, already localized. Views never see a `LawCardDefinition` or the registry. |
+| `CharacteristicDialView` | One dial: progress ring, icon, level, level-up animation (§6.11). Not a tap target of its own. |
+| `CharacteristicsPopup` | A popup (`Popup<CharacteristicsPopupData, CharacteristicType>`) with one `CharacteristicRowView` per characteristic, matched by type. Its choice is the characteristic whose buy-up button was pressed (§6.14). |
+| `LevelFill` | The level-progress fill the dial ring and the popup's bars share: tweens to new values, and on a level-up fills, resets and fills the remainder. |
+| `LawCardViewData`, `CharacteristicDialViewData`, `CharacteristicsPopupData`, `CharacteristicRowViewData` | Exactly what each view draws, already localized. Views never see a `LawCardDefinition` or the registry. The popup's data compares field by field, because the popup re-reads it several times a second. |
 
 **When a UI element gets its own View class:** when it repeats (the dial ×6) or has behaviour of
 its own (the card's gesture and reveal). Everything else — a label, a button — is a serialized field
@@ -134,7 +144,7 @@ int  HeldCardCount, MaxCardCount, RefillCost;   float SecondsUntilNextCard;
 bool TryGetActiveCard(out LawCardViewData);     CharacteristicDialViewData GetDial(type);
 
 bool ResolveCard(LawDecision);   UniTaskVoid RequestRefill();   void SetScreenVisible(bool);
-int  BuyUpCost(type);   bool CanAffordBuyUp(type);   bool BuyUp(type);   // for the detail panel (§9)
+CharacteristicsPopupData GetCharacteristics();   UniTaskVoid OpenCharacteristics();
 ```
 
 ---
@@ -206,6 +216,16 @@ Refill button → LawsPresenter.RequestRefill()
        └─ Confirm → LawsManager.TryRefill()  charges RefillCost as it is now → QueueChanged
 ```
 
+### A buy-up
+```
+Tap anywhere on the dial panel → LawsPresenter.OpenCharacteristics()
+  └─ CharacteristicsPopup.Show(GetCharacteristics)        stays open, re-reads its rows
+       loop: Buy pressed on a row → ConfirmPopup.Ask(price, target level, canConfirm)
+               └─ Confirm → LawsManager.TryBuyUp(type)     price re-read now → Ledger levels up
+                    └─ CharacteristicLeveledUpEvent → level-up sound + haptic, dials and rows animate
+       tap outside → closes the top popup only: the confirmation first, then the characteristics popup
+```
+
 ### Save / load
 `GameStateCoordinator` calls `ToDto()` / `LoadFromDto()`. The DTO (`Systems/Save/Scripts/Dto/LawsStateDto`)
 holds five fields, each restoring one guarantee:
@@ -250,9 +270,13 @@ without it, a clock moved back a day would stall the queue for a day. It runs on
 
 ### 6.4 Prices and affordability live next to the charge
 `RefillCost`/`CanAffordRefill` and `BuyUpCost`/`CanAffordBuyUp` are on the manager, beside the methods
-that charge them; the presenter only reads them. The refill confirmation re-reads the price when the
-player confirms rather than using what the popup displayed. Tests assert **crystals quoted == crystals
+that charge them; the presenter only reads them. Both confirmations re-read the price when the player
+confirms rather than using what the popup displayed. Tests assert **crystals quoted == crystals
 deducted** at every buy-up level.
+
+**Buy-up price** = points remaining ÷ `PointsPerCrystal` (10), rounded to the nearest crystal with
+halves **up**, minimum 1. The rounding mode is explicit: C#'s default rounds halves to even, which
+would price 25 points at 2 crystals but 35 at 4.
 
 ### 6.5 Views display; they never drive the mechanic
 The replenishment timer advances on the game clock (`ARCHITECTURE.md` §4.5), so the queue is correct
@@ -312,9 +336,9 @@ countdown label is also only rewritten when its whole-second value changes.
 - **A missing icon hides the slot**: a UGUI `Image` with no sprite draws a white box.
 - **A level-up fills to full, resets, then fills the carried-over progress**, so the ring never runs
   backwards at the moment the player earned something.
-- **The dial is the tap target, and it is deliberately inert.** `CharacteristicDialView.Pressed` has no
-  subscriber: a large control must not spend crystals with nothing shown first. Its first listener is the
-  characteristic detail panel (§9), which then calls `LawsPresenter.BuyUp` behind its own confirmation.
+- **The dial is not a tap target.** The whole `CharacteristicsPanel` carries one Button (with a
+  raycast-target background, so taps between dials count too); taps on a dial bubble up to it. One large
+  target is easier to hit on a phone than six small ones, and it opens the characteristics popup (§6.14).
 
 All six rings are the same green. Per-characteristic colour would be data about a characteristic, so it
 belongs on `CharacteristicDefinition` beside the icon.
@@ -358,6 +382,21 @@ re-renders on `ILocalizationService.LocaleChanged`.
 
 None of this is reachable from EditMode tests; it is verified by a Play-mode pass in both locales.
 
+### 6.14 The characteristics popup
+- **All six at once, whichever dial was tapped.** Each row shows icon, name, level, `points / required`
+  with a progress bar, and a buy-up button with its price.
+- **The row's buy-up button is always tappable.** Affordability is shown in the confirmation: the price,
+  plus "Not enough crystals" and an inactive Confirm when the player is short. The crystal balance itself
+  belongs to the planned always-visible currency header, not to this popup.
+- **No close button.** A tap outside closes the topmost popup — the confirmation first, then this one.
+  Confirming closes only the confirmation; this popup stays open and redraws at the new level.
+- **One haptic per buy-up.** The purchase plays the crystal-spend sound only; the level-up that always
+  follows plays its sound and the haptic (GDD §3: haptics must not stack).
+- **A popup's data is compared field by field** (`IEquatable`), because the popup re-reads it at 4 Hz and
+  redraws only on a change; the default comparison would box, reflect and see a new array every time.
+- **Fixed text** (title, the button caption) is `LocalizeStringEvent` on the prefabs; the level line, the
+  confirmation and the notice are `LawsUIText` keys resolved in the presenter.
+
 ---
 
 ## 7. How to extend
@@ -366,7 +405,7 @@ None of this is reachable from EditMode tests; it is verified by a Play-mode pas
 effects, add it to `LawsConfig.AllCards`, and add `{CardId}.title` and `{CardId}.flavor` to
 `LawCardsTable` in every locale. `LawsContentTests` checks the id is unique and the text exists. No code.
 
-**Change queue size or timing** — `LawsConfig`. Nothing hardcodes 8 or 120.
+**Change queue size, timing or prices** — `LawsConfig`. Nothing hardcodes 8, 120 or the buy-up rate.
 
 **Add a crystal purchase** — a price property, an affordability check and a `Try…` method side by side on
 `LawsManager`; the presenter reads and calls them (§6.4).
@@ -401,18 +440,23 @@ derivation on the data type, the way `LawCardDefinition` does it (§6.13).
 
 | File | Covers |
 |---|---|
-| `LawsManagerTests` | Effects and their sign convention, the level floor, the clock subscription, `QueueChanged`, refill and buy-up pricing (**quoted == deducted** at every level), save round trip, offline catch-up, damaged deadlines |
+| `LawsManagerTests` | Effects and their sign convention, the level floor, the clock subscription, `QueueChanged`, refill pricing, buy-up pricing (rounding, halves up, minimum 1, the extreme-level cap, **quoted == deducted** at every level), save round trip, offline catch-up, damaged deadlines |
 | `LawQueueTests` | The held/replenishing invariant, draw-on-show, the cap, taking the shown card, restore |
 | `LawDeckTests` | One card per cycle, reshuffle, no back-to-back repeat across 50 seeds, restore, deleted cards |
 | `ReplenishmentTimerTests` | Maturing, remainder carry, backwards clocks, long absences, restore |
-| `LawsPresenterTests` | View data (including the card's shape), feel hooks, visibility gating, refill confirmation never spending on open, locale refresh |
-| `LawsContentTests` | The real cards: unique ids, title and flavor plus the refill text in every locale |
+| `LawsPresenterTests` | View data (the card's shape, the popup rows and their equality), feel hooks (one haptic per level-up), visibility gating, popups never spending on open, locale refresh |
+| `LawsContentTests` | The real cards: unique ids, title and flavor, plus every `LawsUIText` key in every locale |
 
 **Play mode** (MonoBehaviour + DOTween), always entered from `Bootstrap`; `LawsScreenView` logs an error
 and disables itself if started from `Main`. Verified: an existing save loads; a swipe applies immediately
 while the departing card keeps its text and the next scales in after; the last card flies off and then
 hides; the refill confirmation shows the live price, charges exactly that on confirm and nothing on open;
-a buy-up levels the dial with its fill and punch animations.
+a buy-up levels the dial with its fill and punch animations. The characteristics popup: a tap on a dial
+resolves to the panel's button and opens it; every row's level, points, required and price is correct;
+Buy opens a confirmation over it with the row's price; Confirm charges exactly that, closes only the
+confirmation and redraws the row and the dial at the new level; when short, the notice shows and Confirm
+is inactive and charges nothing; outside taps close the confirmation, then the popup. A save holding
+decimal points (`870.0`) loads.
 
 ---
 
@@ -420,10 +464,11 @@ a buy-up levels the dial with its fill and punch animations.
 
 | Gap | Status |
 |---|---|
-| No characteristic detail panel | Point totals and the crystal buy-up have nowhere to live; buy-up is unreachable from the UI. `CharacteristicDialView.Pressed` and the presenter's buy-up members are its hooks, and are tested. The next piece of this screen. |
 | No post-swipe effect feedback | The dials are the only signal of what a law did. The planned icon particles off the enacted card (GDD §6) are not built. |
 | Card copy carries the gameplay signal | The three placeholder cards telegraph nothing, and the Ukrainian text is a stand-in. Real copy is a design dependency. |
-| No characteristic icons | Everything is wired; the six definitions have no sprite. |
+| No characteristic icons | Everything is wired; the six definitions have no sprite. The popup rows hide the slot too. |
+| No currency header | The crystal balance is not on screen anywhere yet; it is planned as an always-visible header. |
+| Ukrainian plurals | "{0} кристалів" uses one form for every count; the entries are plain `{0}` formats, not Smart Strings. |
 | No in-game language switcher | Locale follows the OS, English as fallback. Runtime switching works; there is no UI for it. |
 | SFX ids are strings in `LawsPresenter` | Blocked on the audio system; `StubAudioService` no-ops. |
 | Prefab is greybox | Functional and re-styleable; no pixel art yet. |

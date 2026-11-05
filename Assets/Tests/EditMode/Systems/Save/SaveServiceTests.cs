@@ -67,7 +67,28 @@ namespace KingdomRuler.Tests.EditMode.Systems
 
             Assert.IsNotNull(loaded);
             Assert.AreEqual(4, loaded.Level);
-            Assert.AreEqual(25f, loaded.PointsIntoCurrentLevel);
+            Assert.AreEqual(25, loaded.PointsIntoCurrentLevel, "A whole number saved as 25.0 must load as an int.");
+        }
+
+        /// <summary>Points are whole numbers, but a save may hold them as decimals; it must still load.</summary>
+        [TestCase("870.0", 870)]
+        [TestCase("86.6",  87)]
+        [TestCase("86.5",  87)]
+        [TestCase("64",    64)]
+        public void CharacteristicPoints_StoredAsADecimal_LoadAsTheNearestWholeNumber(string stored, int expected)
+        {
+            var json   = "{\"level\": 3, \"pointsIntoCurrentLevel\": " + stored + "}";
+            var loaded = JsonConvert.DeserializeObject<CharacteristicStateDto>(json);
+
+            Assert.AreEqual(expected, loaded.PointsIntoCurrentLevel);
+        }
+
+        [Test]
+        public void CharacteristicPoints_AreWrittenAsWholeNumbers()
+        {
+            var json = JsonConvert.SerializeObject(new CharacteristicStateDto { Level = 2, PointsIntoCurrentLevel = 86 });
+            StringAssert.Contains("\"pointsIntoCurrentLevel\":86", json.Replace(" ", ""));
+            StringAssert.DoesNotContain("86.0", json);
         }
 
         [Test]

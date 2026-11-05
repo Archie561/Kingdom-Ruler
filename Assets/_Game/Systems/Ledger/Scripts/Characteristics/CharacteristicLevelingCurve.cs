@@ -17,13 +17,19 @@ namespace KingdomRuler.Systems.Ledger
     public static class CharacteristicLevelingCurve
     {
         /// <summary>Points required to clear level 1.</summary>
-        public const float BasePoints = 100f;
+        public const int BasePoints = 100;
 
         /// <summary>Multiplier per level. Above 1 means each level costs more than the last.</summary>
         public const float GrowthFactor = 1.35f;
 
         /// <summary>The result is rounded to the nearest multiple of this, for legible numbers.</summary>
-        public const float RoundToNearest = 10f;
+        public const int RoundToNearest = 10;
+
+        /// <summary>
+        /// The ceiling on any one level's requirement. The formula passes it around level 72 — far
+        /// beyond play — and capping it there leaves headroom so points added on top never overflow.
+        /// </summary>
+        public const int MaxPointsRequired = 1_000_000_000;
 
         /// <summary>Points needed to advance from <paramref name="level"/> to the next one.</summary>
         /// <remarks>
@@ -31,12 +37,13 @@ namespace KingdomRuler.Systems.Ledger
         /// <see cref="KingdomLedger.AddCharacteristicPoints"/> levels up in a loop while the points
         /// meet the requirement. A test checks it across 200 levels.
         /// </remarks>
-        public static float PointsRequired(int level)
+        public static int PointsRequired(int level)
         {
             if (level < 1) throw new ArgumentException("Level must be >= 1.", nameof(level));
 
-            double raw = BasePoints * Math.Pow(GrowthFactor, level - 1);
-            return (float)(Math.Round(raw / RoundToNearest) * RoundToNearest);
+            double raw     = BasePoints * Math.Pow(GrowthFactor, level - 1);
+            double rounded = Math.Round(raw / RoundToNearest) * RoundToNearest;
+            return rounded >= MaxPointsRequired ? MaxPointsRequired : (int)rounded;
         }
     }
 }

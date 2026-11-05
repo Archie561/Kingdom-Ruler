@@ -8,27 +8,18 @@ using KingdomRuler.Systems.Localization;
 namespace KingdomRuler.Core
 {
     /// <summary>
-    /// Root startup entry point. Registered as IStartable in the Bootstrap scope.
-    /// Responsibilities, in order:
-    ///   1. Hydrate every system from the save file (or start a fresh game).
+    /// Startup, in an order that is load-bearing (<c>ARCHITECTURE.md</c> §4.1):
+    ///   1. Hydrate every system from the save (or start a fresh game).
     ///   2. Wait for localization to finish loading.
     ///   3. Load the Main scene additively.
     ///   4. Inject the Views it brought with it.
     /// </summary>
     /// <remarks>
-    /// <para>Step 1 must finish before step 3: the Views render whatever state they find on
-    /// Start, and a module initialised after its View has already rendered would show a
-    /// blank screen until the next change. The dependency on GameStateCoordinator is
-    /// explicit rather than relying on entry-point registration order.</para>
+    /// <para>Step 1 before step 3: Views render whatever state they find on <c>Start</c>.</para>
     ///
-    /// <para>Step 2 must also finish before step 3, and this was verified by removing it:
-    /// with the scene loaded before localization finished, the ACCEPT/REJECT chrome kept the
-    /// English baked into the prefab and every Presenter-built string stayed on its
-    /// "[key]" placeholder — permanently, long after initialisation had completed.
-    /// <b>Neither path recovers on its own</b>, so do not assume the placeholders are a
-    /// transient first-frame flash that will resolve itself. Loading the scene into an
-    /// already-initialised localization system is what makes the text correct, and it costs
-    /// a few frames at boot, once.</para>
+    /// <para>Step 2 before step 3: a scene loaded earlier keeps its prefab text and its
+    /// <c>[key]</c> placeholders <b>permanently</b> — neither localization path recovers. It is not
+    /// a first-frame flash.</para>
     /// </remarks>
     public sealed class GameEntryPoint : IStartable, IDisposable
     {
@@ -51,8 +42,7 @@ namespace KingdomRuler.Core
         {
             _stateCoordinator.LoadOrInitialize();
 
-            // Runs synchronously if localization is already up, so this is not automatically
-            // a deferred path — see the class remarks for why the wait exists at all.
+            // Synchronous if localization is already up.
             _localization.WhenReady(LoadMainScene);
         }
 
@@ -70,14 +60,10 @@ namespace KingdomRuler.Core
         /// Inject the freshly-loaded scene's Views.
         /// </summary>
         /// <remarks>
-        /// The root LifetimeScope lives in the Bootstrap scene, and VContainer only wires
-        /// MonoBehaviours a scope can see in its own scene. Anything in an additively
-        /// loaded scene is therefore invisible to it: a View would reach Start with its
-        /// [Inject] method never called and null-ref on the first line.
-        ///
-        /// Injecting the roots here — rather than giving Main its own child scope — keeps
-        /// the single-root-scope rule in ARCHITECTURE.md §1.6 intact.
-        /// <c>InjectGameObject</c> walks children, so one call per root covers the tree.
+        /// VContainer only wires MonoBehaviours in its own scope's scene, and the root scope lives
+        /// in Bootstrap, so an additively loaded View would never be injected. Injecting the roots
+        /// here keeps the single root scope (<c>ARCHITECTURE.md</c> §1.6); <c>InjectGameObject</c>
+        /// walks children, so one call per root covers the tree.
         /// </remarks>
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {

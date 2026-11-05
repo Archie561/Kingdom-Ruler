@@ -115,11 +115,31 @@ namespace KingdomRuler.Modules.Laws.UI
 
         public CharacteristicDialViewData GetDial(CharacteristicType type)
         {
-            var   state    = _ledger.GetCharacteristic(type);
-            float required = _ledger.PointsRequiredForLevel(state.Level);
-            float progress = required > 0f ? Mathf.Clamp01(state.PointsIntoCurrentLevel / required) : 0f;
+            var state = _ledger.GetCharacteristic(type);
+            return new CharacteristicDialViewData(type, _characteristics.IconFor(type), state.Level, ProgressOf(state));
+        }
 
-            return new CharacteristicDialViewData(type, _characteristics.IconFor(type), state.Level, progress);
+        /// <summary>One row per characteristic, for the characteristics popup.</summary>
+        public CharacteristicsPopupData GetCharacteristics()
+        {
+            var rows = new CharacteristicRowViewData[AllCharacteristics.Length];
+            for (int i = 0; i < rows.Length; i++)
+            {
+                var type  = AllCharacteristics[i];
+                var state = _ledger.GetCharacteristic(type);
+
+                rows[i] = new CharacteristicRowViewData(
+                    type,
+                    _characteristics.IconFor(type),
+                    ResolveCharacteristicName(type),
+                    _localization.Resolve(LawsUIText.StringTable, LawsUIText.CharacteristicLevel, state.Level),
+                    state.Level,
+                    state.PointsIntoCurrentLevel,
+                    _ledger.PointsRequiredForLevel(state.Level),
+                    ProgressOf(state),
+                    _manager.BuyUpCost(type));
+            }
+            return new CharacteristicsPopupData(rows);
         }
 
         // ── Player actions ────────────────────────────────────────────────────────
@@ -153,19 +173,19 @@ namespace KingdomRuler.Modules.Laws.UI
             _haptics.TriggerLight();
         }
 
-        // Buy-up is for the characteristic detail panel, which is not built yet.
-
-        public int  BuyUpCost(CharacteristicType type)      => _manager.BuyUpCost(type);
-        public bool CanAffordBuyUp(CharacteristicType type) => _manager.CanAffordBuyUp(type);
-
-        public bool BuyUp(CharacteristicType type)
+        /// <summary>
+        /// Open the characteristics popup and keep it open until the player taps outside it. Each
+        /// buy-up press asks for confirmation on top; confirming closes only the confirmation.
+        /// </summary>
+        public async UniTaskVoid OpenCharacteristics()
         {
-            if (!_manager.TryBuyUp(type)) return false;
+            var popup = _popups.Create<CharacteristicsPopup>().Show(GetCharacteristics);
 
-            _audio.PlaySfx(Sfx.CrystalSpend);
-            _haptics.TriggerLight();
-            NotifyStateChanged();
-            return true;
+            while (popup.IsOpen)
+            {
+                CharacteristicType? chosen = await popup.WaitForChoice();
+                if (chosen.HasValue) await ConfirmBuyUp(chosen.Value);
+            }
         }
 
         /// <summary>Only sound depends on this: a card arriving on a hidden screen stays silent.</summary>
@@ -178,6 +198,45 @@ namespace KingdomRuler.Modules.Laws.UI
         }
 
         // ── Private ───────────────────────────────────────────────────────────────
+
+        private static readonly CharacteristicType[] AllCharacteristics =
+            (CharacteristicType[])Enum.GetValues(typeof(CharacteristicType));
+
+        private async UniTask ConfirmBuyUp(CharacteristicType type)
+        {
+            var choice = await _popups.Create<ConfirmPopup>().Ask(
+                () => new ConfirmPopupData(
+                    _localization.Resolve(LawsUIText.StringTable, LawsUIText.BuyUpTitle),
+                    DescribeBuyUp(type),
+                    canConfirm: _manager.CanAffordBuyUp(type)));
+
+            // The price is re-read by the manager now, not taken from what the popup showed.
+            if (choice != ConfirmPopupChoice.Confirm || !_manager.TryBuyUp(type)) return;
+
+            // No haptic here: the level-up that always follows a buy-up plays one.
+            _audio.PlaySfx(Sfx.CrystalSpend);
+        }
+
+        private string DescribeBuyUp(CharacteristicType type)
+        {
+            string offer = _localization.Resolve(LawsUIText.StringTable, LawsUIText.BuyUpBody,
+                _manager.BuyUpCost(type),
+                ResolveCharacteristicName(type),
+                _ledger.GetCharacteristic(type).Level + 1);
+
+            return _manager.CanAffordBuyUp(type)
+                ? offer
+                : offer + "\n" + _localization.Resolve(LawsUIText.StringTable, LawsUIText.NotEnoughCrystals);
+        }
+
+        private float ProgressOf(CharacteristicState state)
+        {
+            int required = _ledger.PointsRequiredForLevel(state.Level);
+            return Mathf.Clamp01((float)state.PointsIntoCurrentLevel / required);
+        }
+
+        private string ResolveCharacteristicName(CharacteristicType type) =>
+            _localization.Resolve(CharacteristicDefinition.StringTable, _characteristics.NameKeyFor(type));
 
         private string DescribeRefill() =>
             _localization.Resolve(LawsUIText.StringTable, LawsUIText.RefillBody,

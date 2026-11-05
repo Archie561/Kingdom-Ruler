@@ -1,9 +1,6 @@
 namespace KingdomRuler.Shared.Text
 {
-    /// <summary>
-    /// How this game writes durations. One definition, so a countdown reads the same wherever
-    /// it appears — on a screen and inside a popup describing the same timer.
-    /// </summary>
+    /// <summary>How this game writes durations, in one place, so a countdown reads the same everywhere.</summary>
     public static class TimeFormat
     {
         /// <summary>"m:ss" — the countdown format used by every timer in the game.</summary>

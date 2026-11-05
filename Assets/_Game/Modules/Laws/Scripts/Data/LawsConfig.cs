@@ -17,8 +17,9 @@ namespace KingdomRuler.Modules.Laws
         [Tooltip("Crystals per missing card for an instant refill.")]
         public int CrystalCostPerRefill = 2;
 
-        [Tooltip("Buy-up cost = ceil(pointsRemaining / this), minimum 1. Must be > 0.")]
-        public float CrystalBuyUpDivisor = 20f;
+        [Tooltip("Points one crystal buys. Buy-up price = round(points remaining / this), halves " +
+                 "rounding up, minimum 1. Must be > 0.")]
+        public int PointsPerCrystal = 10;
 
         [Header("Card Content")]
         [Tooltip("Every card that can appear. Each card stays a separate asset in ScriptableObjects/LawCards/.")]

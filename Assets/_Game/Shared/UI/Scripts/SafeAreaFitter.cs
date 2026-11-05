@@ -7,32 +7,21 @@ namespace KingdomRuler.Shared.UI
     /// rounded corners, the iPhone home indicator and the Android gesture bar.
     /// </summary>
     /// <remarks>
-    /// <para><c>GDD.md</c> §3 makes safe area non-negotiable across 19.5:9 down to 16:9. The
-    /// bottom nav bar is the sharpest case in the whole game: it sits exactly where the gesture
-    /// bar lives, so without this its tap targets land under system UI on most modern phones —
-    /// and the Editor's Game view shows nothing wrong, because <c>Screen.safeArea</c> is the
-    /// full rect there unless a device simulator resolution is selected.</para>
+    /// <para>The Editor's Game view shows no problem: <c>Screen.safeArea</c> is the full rect there
+    /// unless a device simulator resolution is selected. Check safe-area layout in the simulator.</para>
     ///
-    /// <para>Apply it to a <b>full-screen child</b> of the Canvas, with the actual content
-    /// inside that child. Applying it to a Canvas's own RectTransform does nothing — the Canvas
-    /// drives its own rect.</para>
+    /// <para>Apply it to a <b>full-screen child</b> of the Canvas, with the content inside it — the
+    /// Canvas drives its own rect, so on the Canvas itself this does nothing.</para>
     ///
-    /// <para><b>Inset the content, not the background.</b> A bar or panel that paints a
-    /// background must keep that background edge-to-edge while only its controls move inward,
-    /// or the device's own strip shows through underneath as a mismatched band. Put the
-    /// background inside this container but give it a rect that deliberately overshoots past
-    /// the inset edge — UGUI does not clip to the canvas, so the excess simply falls off the
-    /// screen. <c>BottomNavBar.prefab</c> is the worked example (<c>ARCHITECTURE.md</c> §4.6).</para>
+    /// <para><b>Inset the content, not the background</b>, or the device's strip shows through as a
+    /// mismatched band. Keep a background inside this container but give it a rect that overshoots
+    /// the inset edge; UGUI does not clip to the canvas. <c>BottomNavBar.prefab</c> is the worked
+    /// example (<c>ARCHITECTURE.md</c> §4.6), and has <see cref="_applyHorizontal"/> off so its
+    /// full-bleed background is never pulled in from the screen edges.</para>
     ///
-    /// <para>Turn <see cref="_applyHorizontal"/> off for a full-width bar. In portrait the
-    /// horizontal insets are zero anyway, and leaving it on would pull a full-bleed background
-    /// away from the screen edges the moment a device does report one.</para>
-    ///
-    /// <para>The re-check runs in <c>Update</c> and is two struct comparisons. It cannot be
-    /// event-driven: Unity raises no callback for a safe-area change, and the value moves on
-    /// rotation, on split-screen resize, and on the Editor's Game view being resized or
-    /// switched to a different simulated device. Anchors are only written when something
-    /// actually changed, so the steady-state cost is the comparison alone.</para>
+    /// <para>Re-checked in <c>Update</c> because Unity raises no safe-area-changed callback
+    /// (rotation, split-screen, a simulator switch). Anchors are only written on change, so the
+    /// steady-state cost is two comparisons.</para>
     /// </remarks>
     [RequireComponent(typeof(RectTransform))]
     [DisallowMultipleComponent]
@@ -60,16 +49,14 @@ namespace KingdomRuler.Shared.UI
 
         private void OnEnable()
         {
-            // Force the next check to write: the object may have been re-enabled after the
-            // resolution changed while it was off.
+            // Force a write: the resolution may have changed while this was disabled.
             _appliedSafeArea = new Rect(0f, 0f, 0f, 0f);
             _appliedPadding  = null;
             Apply();
         }
 
 #if UNITY_EDITOR
-        // So a designer dragging the padding in the Inspector sees it immediately, rather than
-        // only after the next resolution change.
+        // So padding edited in the Inspector applies immediately.
         private void OnValidate() => _appliedPadding = null;
 #endif
 
@@ -82,9 +69,8 @@ namespace KingdomRuler.Shared.UI
             var safeArea   = Screen.safeArea;
             var resolution = new Vector2Int(Screen.width, Screen.height);
 
-            // Resolution is part of the key, not just the safe area: the same safe-area rect in
-            // pixels means different anchors at a different screen size, and switching device
-            // profiles in the simulator can land on exactly that case.
+            // Resolution is part of the key: the same safe-area rect means different anchors at a
+            // different screen size.
             if (safeArea == _appliedSafeArea && resolution == _appliedResolution
                 && SamePadding(_appliedPadding, _padding)) return;
             if (resolution.x <= 0 || resolution.y <= 0) return;   // minimised / not yet laid out
@@ -103,10 +89,8 @@ namespace KingdomRuler.Shared.UI
             _rect.anchorMin = min;
             _rect.anchorMax = max;
 
-            // The safe area is expressed as anchors (resolution-independent fractions); the
-            // padding is expressed as offsets (canvas units, so it matches authored sizes like
-            // the nav bar's height). Mixing the two is deliberate — each is in the unit that
-            // makes it correct across devices.
+            // Safe area as anchors (resolution-independent), padding as offsets (canvas units, like
+            // the nav bar's authored height) — each in the unit that stays correct across devices.
             _rect.offsetMin = new Vector2(_padding.left,   _padding.bottom);
             _rect.offsetMax = new Vector2(-_padding.right, -_padding.top);
         }

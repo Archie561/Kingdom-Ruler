@@ -7,28 +7,18 @@ using UnityEngine.UI;
 namespace KingdomRuler.Modules.Navigation
 {
     /// <summary>
-    /// One tab in the bottom nav bar: an icon, a label, and its selected/unselected look.
-    /// Reports taps to <see cref="BottomNavBarView"/>; owns its own DOTween animations and no
-    /// state beyond what it draws.
+    /// One tab in the bottom nav bar: icon, label, selected/unselected look and its own DOTween
+    /// animations. Reports taps to <see cref="BottomNavBarView"/>.
     /// </summary>
     /// <remarks>
-    /// <para>The label's text is <b>not</b> set from here. It is fixed chrome, so a
-    /// <c>LocalizeStringEvent</c> component on the label renders it and keeps it correct across
-    /// a locale change with no code (<c>ARCHITECTURE.md</c> §2). Point that component at the
-    /// <c>NavigationUITable</c> entry <c>nav.&lt;screenid&gt;</c>. Nothing checks these
-    /// automatically: a missing label is on screen the moment the bar appears.</para>
+    /// <para>The label is fixed chrome: a <c>LocalizeStringEvent</c> on it renders the
+    /// <c>NavigationUITable</c> entry <c>nav.&lt;screenid&gt;</c>, with no code
+    /// (<c>ARCHITECTURE.md</c> §2).</para>
     ///
-    /// <para><b>The tab owns the screen it opens.</b> <see cref="ScreenId"/> carries all five
-    /// screens from <c>GDD.md</c> §13 while only Laws and Trade are built, so the unbuilt three
-    /// simply have no <see cref="_screen"/> assigned — which is what makes them unavailable.
-    /// Availability is <em>derived</em>, never authored: a separate "is available" flag would be
-    /// a second fact that has to agree with the reference, and the two would eventually
-    /// disagree (the reasoning in <c>docs/modules/Laws.md</c> §4 about deriving one count from
-    /// the other). Making a tab live is therefore one action — drag its screen in.</para>
-    ///
-    /// <para>If a tab ever needs to be disabled while its screen <em>does</em> exist — a
-    /// progression lock, say — that is a genuinely different concept and gets its own
-    /// <c>IsUnlocked</c>, rather than being folded back into this one.</para>
+    /// <para><b>Availability is derived, never authored:</b> a tab is available exactly when its
+    /// screen is assigned, so making it live is one action — drag the screen in. A tab that must be
+    /// disabled while its screen exists (a progression lock) is a different concept and gets its
+    /// own <c>IsUnlocked</c>.</para>
     /// </remarks>
     [RequireComponent(typeof(Button))]
     public sealed class NavTabButton : MonoBehaviour
@@ -69,14 +59,10 @@ namespace KingdomRuler.Modules.Navigation
         /// <summary>The screen root this tab opens, or null while that screen is unbuilt.</summary>
         public GameObject Screen => _screen;
 
-        /// <summary>
-        /// Whether this tab's screen exists and can be navigated to. Derived, never stored —
-        /// see the class remarks.
-        /// </summary>
+        /// <summary>Whether this tab's screen exists and can be navigated to.</summary>
         /// <remarks>
-        /// Explicit <c>!= null</c> rather than a null-coalescing form, because
-        /// <see cref="_screen"/> is a <c>UnityEngine.Object</c>: <c>??</c> bypasses Unity's
-        /// overloaded equality and would report a <em>destroyed</em> screen as available.
+        /// Explicit <c>!= null</c>: <see cref="_screen"/> is a <c>UnityEngine.Object</c>, and a
+        /// null-coalescing form would bypass Unity's equality and report a destroyed screen as available.
         /// </remarks>
         public bool IsAvailable => _screen != null;
 
@@ -88,8 +74,7 @@ namespace KingdomRuler.Modules.Navigation
             _button.interactable = IsAvailable;
             _button.onClick.AddListener(HandleClick);
 
-            // Paint the resting state before the first frame, so an unavailable tab is never
-            // briefly drawn as a normal one.
+            // Before the first frame, so an unavailable tab is never briefly drawn as a normal one.
             ApplyVisualState(animate: false);
         }
 
@@ -97,9 +82,7 @@ namespace KingdomRuler.Modules.Navigation
         {
             if (_button != null) _button.onClick.RemoveListener(HandleClick);
 
-            // A tween outliving the object it animates throws on its next step. The nav bar
-            // survives every scene the player sees, so this only matters on teardown — which
-            // is exactly when it would be missed.
+            // A tween outliving the object it animates throws on its next step.
             _rect.DOKill();
             if (_icon != null) _icon.DOKill();
             if (_label != null) _label.DOKill();
@@ -143,8 +126,7 @@ namespace KingdomRuler.Modules.Navigation
                 return;
             }
 
-            // Unscaled time, same reason as the screen fade: tab feedback must not stall
-            // half-way if Time.timeScale is ever zeroed.
+            // Unscaled, so tab feedback never stalls if Time.timeScale is zeroed.
             _rect.DOScale(scale, _tweenDuration).SetEase(Ease.OutBack).SetUpdate(true);
             if (_icon != null) _icon.DOColor(target, _tweenDuration).SetUpdate(true);
             if (_label != null) _label.DOColor(target, _tweenDuration).SetUpdate(true);
@@ -152,8 +134,8 @@ namespace KingdomRuler.Modules.Navigation
 
         private void HandleClick()
         {
-            // Belt and braces: Button.interactable already blocks this, but a tab that fired
-            // for an unbound screen would fail somewhere far less obvious.
+            // Button.interactable already blocks this; a tab firing for an unbound screen would
+            // fail somewhere far less obvious.
             if (!IsAvailable) return;
             OnPressed?.Invoke(_screenId);
         }

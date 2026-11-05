@@ -39,6 +39,30 @@ MonoBehaviour:
       return in {1}.
     m_Metadata:
       m_Items: []
+  - m_Id: 31114753790214144
+    m_Localized: Characteristics
+    m_Metadata:
+      m_Items: []
+  - m_Id: 31114754113175552
+    m_Localized: Level up
+    m_Metadata:
+      m_Items: []
+  - m_Id: 31114754113175553
+    m_Localized: Level {0}
+    m_Metadata:
+      m_Items: []
+  - m_Id: 31114754121564160
+    m_Localized: Raise the level?
+    m_Metadata:
+      m_Items: []
+  - m_Id: 31114754121564161
+    m_Localized: Spend {0} crystals to raise {1} to level {2}?
+    m_Metadata:
+      m_Items: []
+  - m_Id: 31114754121564162
+    m_Localized: Not enough crystals.
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

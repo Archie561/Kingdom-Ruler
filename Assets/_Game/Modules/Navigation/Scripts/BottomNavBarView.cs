@@ -10,33 +10,18 @@ namespace KingdomRuler.Modules.Navigation
     /// </summary>
     /// <remarks>
     /// <para><b>Each tab carries the screen it opens</b> (<see cref="NavTabButton.Screen"/>), so
-    /// this component holds one array and one lookup. A tab and its screen cannot disagree about
-    /// which <see cref="ScreenId"/> they serve, and "this tab is available" is not a separate
-    /// flag that could contradict the reference — it simply means the reference is set.</para>
+    /// this holds one array and one lookup, and a tab is available exactly when its screen is set.
+    /// Tabs are keyed by <see cref="ScreenId"/>, never by array index.</para>
     ///
-    /// <para>Display and input only. It plays no sound and fires no haptic — those belong to
-    /// the navigator, so a tap on the already-selected tab is silent by construction
-    /// (<see cref="ScreenNavigator.Show"/>).</para>
+    /// <para>Display and input only: sound and haptics belong to the navigator, so a tap on the
+    /// selected tab is silent by construction (<see cref="ScreenNavigator.Show"/>).</para>
     ///
-    /// <para><b>Switching is <c>SetActive</c>, not a Canvas toggle.</b> That is what makes a
-    /// screen's own <c>OnEnable</c>/<c>OnDisable</c> fire, which is how <c>LawsScreenView</c>
-    /// tells its Presenter to gate audio — a card arriving on another tab updates the queue
-    /// silently. Disabling only the Canvas would skip those callbacks and leave each View's
-    /// <c>Update</c> ticking unseen. The mechanics are unaffected either way: timers belong to
-    /// the game clock, not Views (<c>ARCHITECTURE.md</c> §4.5).</para>
+    /// <para><b>Switching is <c>SetActive</c>, not a Canvas toggle</b>, so each screen's own
+    /// <c>OnEnable</c>/<c>OnDisable</c> fire — that is how a screen gates its audio. The switch is a
+    /// hard cut, a known deviation from <c>GDD.md</c> §3 (<c>ARCHITECTURE.md</c> §4.6).</para>
     ///
-    /// <para><b>The switch is a hard cut.</b> There is no screen transition, which is a known
-    /// deviation from <c>GDD.md</c> §3's "animation on every state change" — recorded in
-    /// <c>ARCHITECTURE.md</c> §4.6 rather than left as a silent gap. The tab itself still
-    /// animates (<see cref="NavTabButton"/>), so the tap is not without feedback.</para>
-    ///
-    /// <para>Tabs are keyed by <see cref="ScreenId"/>, never by array index — the lesson from
-    /// the Laws characteristic bars (<c>docs/modules/Laws.md</c> §6.6). Index binding survives a
-    /// reorder and then quietly shows the wrong thing.</para>
-    ///
-    /// <para>Canvas note: this prefab's Canvas must sort <b>above</b> every screen. Laws nests a
-    /// <c>CardCanvas</c> at sorting order 10 with <c>Override Sorting</c>, so a bar left at the
-    /// default 0 is drawn underneath the law card. The prefab ships at 100.</para>
+    /// <para>The prefab's Canvas sorts at 100 so the bar draws above every screen, including
+    /// Laws' <c>CardCanvas</c> at 10.</para>
     /// </remarks>
     public sealed class BottomNavBarView : MonoBehaviour
     {
@@ -47,10 +32,6 @@ namespace KingdomRuler.Modules.Navigation
 
         private ScreenNavigator _navigator;
 
-        /// <summary>
-        /// Tabs by the screen they open. Each tab also holds that screen, so this one lookup
-        /// serves both jobs — there is no second map of ids to GameObjects to fall out of step.
-        /// </summary>
         private readonly Dictionary<ScreenId, NavTabButton> _tabsById = new();
 
         [Inject]
@@ -61,9 +42,7 @@ namespace KingdomRuler.Modules.Navigation
 
         private void Start()
         {
-            // Nothing injected us — almost always Play mode entered from Main instead of
-            // Bootstrap, so the root LifetimeScope never existed. Say so once and switch off,
-            // rather than null-reffing on the first tap.
+            // Almost always Play mode entered from Main instead of Bootstrap.
             if (_navigator == null)
             {
                 Debug.LogError(
@@ -81,12 +60,9 @@ namespace KingdomRuler.Modules.Navigation
 
             _navigator.CurrentChanged += Apply;
 
-            // Screens are authored ACTIVE in the scene and switched off here. Authoring them
-            // inactive instead would depend on whether VContainer's InjectGameObject walks
-            // inactive children, and a boot sequence that silently leaves a View uninjected is
-            // a bad thing to build on a maybe.
-            //
-            // The tabs are painted without animating: the opening screen is not a player action.
+            // Screens are authored active and switched off here, so injection never depends on
+            // whether InjectGameObject walks inactive children. No animation: the opening screen
+            // is not a player action.
             ApplyScreens(_navigator.Current);
             ApplySelection(_navigator.Current, animate: false);
         }
@@ -95,8 +71,7 @@ namespace KingdomRuler.Modules.Navigation
         {
             UnwireTabEvents();
 
-            // The navigator is a root-scope singleton that outlives this View, so a missed
-            // unsubscribe leaks into the next scene load.
+            // The navigator outlives this View.
             if (_navigator != null) _navigator.CurrentChanged -= Apply;
         }
 
@@ -111,8 +86,7 @@ namespace KingdomRuler.Modules.Navigation
         {
             if (!_tabsById.TryGetValue(target, out var targetTab) || targetTab.Screen == null)
             {
-                // Leave the current screen up rather than hiding everything: a blank app is a
-                // worse failure than a stuck tab, and the message says exactly what to fix.
+                // Leave the current screen up: a blank app is worse than a stuck tab.
                 Debug.LogError(
                     $"[BottomNavBarView] No screen is bound to '{target}', so it cannot be " +
                     "shown. Assign that screen's root on the matching tab.", this);
@@ -137,8 +111,7 @@ namespace KingdomRuler.Modules.Navigation
 
         private void WireTabEvents()
         {
-            // Method group, not a lambda: a lambda creates a fresh delegate each time and
-            // could never be unsubscribed in OnDestroy.
+            // Method group, so OnDestroy can unsubscribe the same delegate.
             foreach (var tab in _tabsById.Values)
                 tab.OnPressed += HandleTabPressed;
         }
@@ -173,8 +146,7 @@ namespace KingdomRuler.Modules.Navigation
             if (_tabsById.Count == 0)
                 Debug.LogError("[BottomNavBarView] No tabs are assigned.", this);
 
-            // Reachable at boot, unlike the tap-time error above: the app would open on
-            // nothing at all, with no input to blame.
+            // Checked at boot: the app would otherwise open on nothing.
             if (!_tabsById.TryGetValue(ScreenNavigator.DefaultScreen, out var defaultTab)
                 || defaultTab.Screen == null)
             {
@@ -184,8 +156,6 @@ namespace KingdomRuler.Modules.Navigation
                     "so the app will launch with nothing visible.", this);
             }
 
-            // Note there is deliberately no "tab says available but has no screen" check:
-            // availability *is* having a screen, so that state cannot be authored.
 #endif
         }
     }

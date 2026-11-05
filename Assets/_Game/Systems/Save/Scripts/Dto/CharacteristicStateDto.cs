@@ -12,6 +12,7 @@ namespace KingdomRuler.Systems.Save
         public int Level { get; set; }
 
         [JsonProperty("pointsIntoCurrentLevel")]
-        public float PointsIntoCurrentLevel { get; set; }
+        [JsonConverter(typeof(WholeNumberJsonConverter))]
+        public int PointsIntoCurrentLevel { get; set; }
     }
 }

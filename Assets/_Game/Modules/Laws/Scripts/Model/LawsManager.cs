@@ -124,16 +124,25 @@ namespace KingdomRuler.Modules.Laws
         }
 
         /// <summary>
-        /// Crystals to finish this characteristic's current level: <c>ceil(remaining / divisor)</c>,
-        /// minimum 1. 0 when nothing remains.
+        /// Crystals to finish this characteristic's current level: points remaining ÷
+        /// <c>PointsPerCrystal</c>, rounded to the nearest crystal (halves up), minimum 1. 0 when
+        /// nothing remains.
         /// </summary>
+        /// <remarks>
+        /// Rounding is set explicitly: C#'s default rounds halves to even, which would price 25
+        /// points at 2 crystals but 35 at 4. The result always fits an int, because the curve caps
+        /// a level's requirement.
+        /// </remarks>
         public int BuyUpCost(CharacteristicType type)
         {
-            if (_config.CrystalBuyUpDivisor <= 0f)
-                throw new InvalidOperationException("LawsConfig.CrystalBuyUpDivisor must be greater than 0.");
+            if (_config.PointsPerCrystal <= 0)
+                throw new InvalidOperationException("LawsConfig.PointsPerCrystal must be greater than 0.");
 
-            float remaining = _ledger.PointsRemainingForNextLevel(type);
-            return remaining <= 0f ? 0 : Math.Max(1, (int)Math.Ceiling(remaining / _config.CrystalBuyUpDivisor));
+            int remaining = _ledger.PointsRemainingForNextLevel(type);
+            if (remaining <= 0) return 0;
+
+            double crystals = Math.Round((double)remaining / _config.PointsPerCrystal, MidpointRounding.AwayFromZero);
+            return Math.Max(1, (int)crystals);
         }
 
         public bool CanAffordBuyUp(CharacteristicType type)
