@@ -67,7 +67,7 @@ passive bonus, encouraging regional completion over random purchases.
 | **Crystals** | Premium (real-money eventually, see §9) | Shop (mock IAP for now), ads, rare occurrence rewards | Law refill, instant trade refresh, warehouse capacity upgrade (alt path) |
 | **Gold** | Soft | Businesses (Economy screen) | Business purchases, city/village purchases, some occurrence choices |
 | **Characteristics (×6):** Medicine, Education, Army, Science, Infrastructure, Welfare | Soft, leveled stat | Law decisions, some occurrences | City/village purchase requirements (never spent down, only gate checks) |
-| **Trade resources (×6):** Stone, Wood, Metal, Minerals, Leather, Clay | Soft, stored with capacity | Passive regen, trade offers, some occurrences | Trade offers, warehouse upgrades (cross-resource cost), city/village purchases |
+| **Trade resources (×6):** Stone, Wood, Metal, Minerals, Leather, Clay | Soft, stored in whole units up to a warehouse capacity | Passive regen, trade offers, some occurrences | Trade offers, warehouse upgrades (cross-resource cost), city/village purchases |
 
 ## 6. Mechanic 1 — Law Enactment
 
@@ -122,15 +122,34 @@ level, its points as *current / needed for the next level*, and a buy-up button 
 
 ## 7. Mechanic 2 — Trading
 
-**Screen:** Trade tab. Warehouse levels for all 6 resources at the top, scrollable list of
-current trade offers below.
+**Screen:** Trade tab. Six **warehouse tiles** at the top, always visible, and below them the
+**offer list**, which fills the rest of the screen down to the nav bar and scrolls.
 
-- 6 resources, each with its own warehouse **capacity**. Resources **regenerate passively**
-  at a rate that fills an *empty* warehouse to 100% over **24 hours**, scaled to that
-  warehouse's current capacity (bigger warehouse = more resource per hour, same fill *time*).
+- **The tiles.** Each tile shows one resource: its icon, its name, its warehouse level, and the
+  stock as *amount / capacity* with a fill bar. They stay on screen because the player judges
+  every offer against these numbers — they must never be one tap away. The six sit in a 3×2
+  grid whose columns are the upgrade pairs (Stone over Wood, Metal over Minerals, Leather over
+  Clay), so the paired upgrade below reads at a glance.
+- **The warehouse popup.** Tapping anywhere on a tile opens that resource's own popup: its level,
+  stock / capacity, how regeneration is going (progress toward the next unit, the rate per hour,
+  and how long until the warehouse is full), and both upgrade options with their prices. It
+  stays open after an upgrade and redraws at the new level.
+- **The offer list's header** holds the countdown to the next refresh and the instant-refresh
+  button.
+
+The rules:
+
+- **Whole numbers throughout.** Stock, capacity, offer amounts and every price are whole units.
+- 6 resources, each with its own warehouse **capacity**. Resources **regenerate passively, one
+  whole unit at a time**, at a rate that fills an *empty* warehouse to 100% in **24 hours**,
+  scaled to that warehouse's current capacity (bigger warehouse = more resource per hour, same
+  fill *time*). Regenerated units go straight into the warehouse — there is nothing to collect,
+  which keeps Trade distinct from Economy's manual collection (§8). A full warehouse stops
+  regenerating until something is spent.
 - **Warehouse upgrade**, two payment paths:
   1. Crystals (flat premium option, cost scales with upgrade tier).
-  2. Spend **80% of the current capacity** of a *paired* resource's warehouse.
+  2. Spend **80% of the current capacity** of a *paired* resource's warehouse, rounded up to a
+     whole unit.
      **[ASSUMED — CONFIRM pairing]:** Stone↔Wood, Metal↔Minerals, Leather↔Clay.
      **Settled:** the cost is *computed from* the paired warehouse's **capacity** and
      *deducted from* that resource's **stored amount**. Upgrading Wood therefore costs 80% of
@@ -143,31 +162,50 @@ current trade offers below.
     Same style as §6 and for the same reason §6 gives — a formula keeps every level defined,
     including ones no designer has reached. Per-resource coefficient overrides can be layered on
     later if a resource needs to differ.
-  - Upgrade levels are capped at a high ceiling purely as a **save-integrity guard** — an
-    unbounded level read from an edited save produces an infinite capacity and a corrupt
-    economy. It is not a design cap and no player will reach it.
+  - Levels are shown counting from 1: a fresh warehouse is level 1. `L` in the formulas above
+    counts upgrades, so it is one less than the level shown.
+  - Upgrade levels are capped at **20**, as the player sees them — 19 upgrades
+    (`TradeConfig.MaxWarehouseLevel`, which may be raised later). A warehouse at the cap shows
+    *Fully upgraded*. A saved level above the cap is clamped to it on load.
+- **Every purchase is confirmed** — accepting an offer, the instant refresh and both upgrades.
+  The confirmation shows the price; if the player cannot pay, it says so and its confirm button
+  stays inactive. Confirming closes only the confirmation; a popup underneath (the warehouse
+  popup) stays open and redraws.
 - **Trade offer list:** 10 offers at a time, refresh **every 20 minutes**, or instantly for
   crystals. Refreshing discards all unused offers.
 - **Offer generation ratio (of the 10 offers):**
-  - 30% profitable (player receives more total units than they give)
-  - 45% neutral (roughly even) **[ASSUMED — CONFIRM exact split; brief said 40–50%]**
-  - 25% unprofitable (player gives more than they receive)
+  - 30% profitable (player receives more total units than they give — 110–140% of what they give)
+  - 45% neutral (roughly even — 95–105%) **[ASSUMED — CONFIRM exact split; brief said 40–50%]**
+  - 25% unprofitable (player gives more than they receive — 60–90%)
   - All 6 resources are valued identically (1 unit = 1 unit) for this calculation.
   - **These are long-run averages, not a per-batch guarantee.** 45% of 10 is 4.5, so no integer
     split of a single batch reaches it. Each batch takes the floor (3 profitable / 4 neutral /
     2 unprofitable) and awards the two spare slots by weighted chance, so the expectation is
     exactly 30/45/25 and any one list is 3/5/2 or 3/4/3.
+- **Offer size scales with warehouse capacity** **[ASSUMED — CONFIRM share = 20%]**. An offer
+  moves a share of the warehouses it trades with, measured on the smaller side:
+  `give total = max(10, round(0.20 × min(Σ give-side capacities, Σ receive-side capacities)))`, and
+  the receive total is the give total times the offer's profitability multiplier. Each side is
+  split across its resources in proportion to their capacities, with ±25% variation, every amount
+  a whole number of at least 1. Capacity rather than stock, so an offer does not shrink right
+  after the player trades stock away; the smaller side, so no amount ever exceeds about half of
+  its own warehouse — an offer never asks for more than a warehouse holds, and only overflows a
+  warehouse that is already about half full. Upgrading a warehouse makes every later offer that
+  touches it bigger; offers already on the list keep their terms. The share is
+  `TradeConfig.OfferCapacityShare`.
 - Each offer gives 2–3 resource types and asks for 2–3 different types; **give and receive
   sets never overlap** within one offer.
-- Tapping an offer opens a confirmation panel. If the player can't afford the ask, or a
-  received resource would overflow warehouse capacity, show a clear inline message
-  explaining which resource is the blocker — never silently disable the offer. All applicable
-  messages are listed at once, not just the first: an offer moves 2–3 types each way and several
-  can be short together.
-- **A full warehouse warns; it does not refuse.** Overflow is shown as a warning naming the
-  resource and how much will not fit, and the player may accept anyway and forfeit the excess.
-  The trade is refused **only** when the give side cannot be paid. What was actually received is
-  reported back, so the loss is always visible — it is a choice, never a silent deletion.
+- **Tapping an offer always opens its confirmation.** The row in the list shows only what is
+  given and what is received; it is never disabled or marked. In the confirmation, a resource
+  the player cannot pay is named with its shortfall and Accept is disabled; a received resource
+  that will not fit is named with how many units will be lost, and Accept stays enabled. All
+  applicable messages are listed at once, not just the first: an offer moves 2–3 types each way
+  and several can be short together.
+- **A full warehouse warns; it does not refuse.** The trade is refused **only** when the give
+  side cannot be paid; the player may accept an overflowing offer and forfeit the excess. After
+  an accept, a short receipt on the Trade screen lists what was received and, separately, what
+  was lost to a full warehouse — so the loss is always visible: a choice, never a silent
+  deletion.
 - **The current offers and the refresh deadline are saved.** Relaunching the app cannot reroll
   the list, which would otherwise be a free substitute for the crystal-priced instant refresh.
 

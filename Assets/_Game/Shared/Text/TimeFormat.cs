@@ -9,5 +9,12 @@ namespace KingdomRuler.Shared.Text
             if (totalSeconds < 0) totalSeconds = 0;
             return $"{totalSeconds / 60}:{totalSeconds % 60:D2}";
         }
+
+        /// <summary>"h:mm:ss" — for waits that can run past an hour, such as a warehouse filling.</summary>
+        public static string HoursMinutesSeconds(int totalSeconds)
+        {
+            if (totalSeconds < 0) totalSeconds = 0;
+            return $"{totalSeconds / 3600}:{totalSeconds / 60 % 60:D2}:{totalSeconds % 60:D2}";
+        }
     }
 }

@@ -7,10 +7,12 @@ namespace KingdomRuler.Systems.Save
     /// One persisted trade offer. Nested under <see cref="TradeStateDto"/>.
     /// </summary>
     /// <remarks>
-    /// Resources are keyed by <b>enum name</b>, not ordinal, and profitability is stored by name
+    /// <para>Resources are keyed by <b>enum name</b>, not ordinal, and profitability is stored by name
     /// too — so reordering <c>TradeResourceType</c> or <c>TradeProfitability</c> cannot silently
-    /// reassign what an offer trades. The same convention <see cref="LedgerStateDto"/> documents.
-    /// A name that no longer exists is skipped on load.
+    /// reassign what an offer trades. A name that no longer exists is skipped on load.</para>
+    ///
+    /// <para>Amounts are whole units, read through <see cref="WholeNumberJsonConverter"/> so a file
+    /// that stored <c>17.0</c> still loads.</para>
     /// </remarks>
     public sealed class TradeOfferDto
     {
@@ -23,11 +25,11 @@ namespace KingdomRuler.Systems.Save
         public string Profitability { get; set; }
 
         /// <summary>TradeResourceType name → units the player gives.</summary>
-        [JsonProperty("give")]
-        public Dictionary<string, float> Give { get; set; } = new();
+        [JsonProperty("give", ItemConverterType = typeof(WholeNumberJsonConverter))]
+        public Dictionary<string, int> Give { get; set; } = new();
 
         /// <summary>TradeResourceType name → units the player receives.</summary>
-        [JsonProperty("receive")]
-        public Dictionary<string, float> Receive { get; set; } = new();
+        [JsonProperty("receive", ItemConverterType = typeof(WholeNumberJsonConverter))]
+        public Dictionary<string, int> Receive { get; set; } = new();
     }
 }

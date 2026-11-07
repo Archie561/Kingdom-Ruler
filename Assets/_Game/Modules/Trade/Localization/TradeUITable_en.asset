@@ -18,18 +18,6 @@ MonoBehaviour:
   m_Metadata:
     m_Items: []
   m_TableData:
-  - m_Id: 1211129856
-    m_Localized: Trade
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1295015936
-    m_Localized: Warehouses
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1303404544
-    m_Localized: Offers
-    m_Metadata:
-      m_Items: []
   - m_Id: 1303404545
     m_Localized: The caravans are still on the road
     m_Metadata:
@@ -42,14 +30,6 @@ MonoBehaviour:
     m_Localized: You get
     m_Metadata:
       m_Items: []
-  - m_Id: 1303404548
-    m_Localized: Confirm
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1303404549
-    m_Localized: Cancel
-    m_Metadata:
-      m_Items: []
   - m_Id: 1303404550
     m_Localized: Refresh now
     m_Metadata:
@@ -58,24 +38,8 @@ MonoBehaviour:
     m_Localized: Upgrade
     m_Metadata:
       m_Items: []
-  - m_Id: 1303404552
-    m_Localized: Next refresh
-    m_Metadata:
-      m_Items: []
   - m_Id: 1303404553
     m_Localized: You need {0} more {1}
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1303404554
-    m_Localized: Your {0} warehouse only has room for {1}
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1303404555
-    m_Localized: This offer is no longer available
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1303404556
-    m_Localized: '{0} / {1}'
     m_Metadata:
       m_Items: []
   - m_Id: 1303404557
@@ -96,6 +60,69 @@ MonoBehaviour:
       m_Items: []
   - m_Id: 1303404561
     m_Localized: Refresh in {0}
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727298084864
+    m_Localized: Trade offer
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520320
+    m_Localized: '{0} {1} will not fit and will be lost'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520321
+    m_Localized: '{0} warehouse'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520322
+    m_Localized: +{0} per hour
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520323
+    m_Localized: Full in {0}
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520324
+    m_Localized: Full
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520325
+    m_Localized: Refresh the offers?
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520326
+    m_Localized: Spend {0} crystals to replace every offer now? Otherwise new offers
+      arrive in {1}.
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520327
+    m_Localized: Not enough crystals.
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520328
+    m_Localized: Upgrade the warehouse?
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520329
+    m_Localized: Spend {0} crystals to raise the {1} warehouse to level {2}? It will
+      hold {3}.
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520330
+    m_Localized: Spend {0} {1} to raise the {2} warehouse to level {3}? It will hold
+      {4}.
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520331
+    m_Localized: 'Not enough {0}: you have {1}.'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520332
+    m_Localized: +{0} {1}
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520333
+    m_Localized: "{0} {1} lost \u2014 the warehouse is full"
     m_Metadata:
       m_Items: []
   references:

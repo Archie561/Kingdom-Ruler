@@ -13,9 +13,8 @@ using KingdomRuler.Modules.Laws;
 using KingdomRuler.Modules.Laws.UI;
 using VContainer;
 using VContainer.Unity;
-using TradeConfig = KingdomRuler.Modules.Trade.TradeConfig;
-using TradeManager = KingdomRuler.Modules.TradeLegacy.TradeManager;
-using TradePresenter = KingdomRuler.Modules.TradeLegacy.Presenters.TradePresenter;
+using KingdomRuler.Modules.Trade;
+using KingdomRuler.Modules.Trade.UI;
 
 namespace KingdomRuler.Core
 {
@@ -58,13 +57,9 @@ namespace KingdomRuler.Core
             builder.Register<LawsPresenter>(Lifetime.Singleton);
 
             // Trade module.
-            // Explicit factory: TradeManager has a second, test-only constructor taking a
-            // System.Random, and VContainer would otherwise pick that one (ARCHITECTURE.md §10).
-            builder.Register(c => new TradeManager(
-                    c.Resolve<KingdomLedger>(), c.Resolve<IClock>(), c.Resolve<TradeConfig>()),
-                Lifetime.Singleton);
-            builder.Register<TradePresenter>(Lifetime.Singleton);
             builder.RegisterInstance(ResolveTradeConfig());
+            builder.Register<TradeManager>(Lifetime.Singleton);
+            builder.Register<TradePresenter>(Lifetime.Singleton);
 
             // Services
             // Explicit factory: picks the persistentDataPath constructor over the test-only one.

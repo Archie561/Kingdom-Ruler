@@ -19,10 +19,14 @@ namespace KingdomRuler.Systems.Ledger
     /// </remarks>
     public sealed class KingdomLedger
     {
-        /// <summary>An empty warehouse refills in 24 hours whatever its capacity (GDD §7), so regen = capacity ÷ this.</summary>
-        private const float SecondsPerDay = 86400f;
+        private const int DefaultWarehouseCapacity = 100;
 
-        private const float DefaultWarehouseCapacity = 100f;
+        /// <summary>
+        /// The largest capacity a warehouse may have — far above play (Trade's top level holds
+        /// ~333 thousand). It keeps whole-unit regeneration exact in <c>long</c> ticks
+        /// (<see cref="TradeResourceState"/>), whatever a module's curve is tuned to.
+        /// </summary>
+        public const int MaxWarehouseCapacity = 10_000_000;
 
         private readonly EventBus _eventBus;
 
@@ -43,7 +47,7 @@ namespace KingdomRuler.Systems.Ledger
             _tradeResources = new Dictionary<TradeResourceType, TradeResourceState>();
             foreach (TradeResourceType type in Enum.GetValues(typeof(TradeResourceType)))
             {
-                _tradeResources[type] = new TradeResourceState(DefaultWarehouseCapacity, DefaultWarehouseCapacity / SecondsPerDay);
+                _tradeResources[type] = new TradeResourceState(DefaultWarehouseCapacity);
             }
 
             _characteristics = new Dictionary<CharacteristicType, CharacteristicState>();
@@ -110,30 +114,22 @@ namespace KingdomRuler.Systems.Ledger
             return _tradeResources[type];
         }
 
-        /// <summary>
-        /// Add trade resource, capped at warehouse capacity.
-        /// Returns actual amount added (may be less than requested if at/near capacity).
-        /// </summary>
-        public float AddTradeResource(TradeResourceType type, float amount)
+        /// <summary>Add whole units, up to the warehouse's capacity. Returns how many fitted.</summary>
+        public int AddTradeResource(TradeResourceType type, int amount)
         {
-            if (IsRejectedAsNonFinite(amount, nameof(AddTradeResource))) return 0f;
             if (amount < 0) throw new ArgumentException("Use SpendTradeResource for negative changes.", nameof(amount));
             var state = _tradeResources[type];
-            float spaceAvailable = state.Capacity - state.Amount;
-            float actualAdded = Math.Min(amount, spaceAvailable);
-            if (actualAdded <= 0f) return 0f;
+            int added = Math.Min(amount, state.Capacity - state.Amount);
+            if (added <= 0) return 0;
 
-            state.Amount += actualAdded;
-            _eventBus.Publish(new TradeResourceChangedEvent(type, state.Amount, actualAdded));
-            return actualAdded;
+            state.Amount += added;
+            _eventBus.Publish(new TradeResourceChangedEvent(type, state.Amount, added));
+            return added;
         }
 
-        /// <summary>
-        /// Spend trade resource. Returns false if insufficient.
-        /// </summary>
-        public bool SpendTradeResource(TradeResourceType type, float amount)
+        /// <summary>Spend whole units. Returns false, spending nothing, when there are not enough.</summary>
+        public bool SpendTradeResource(TradeResourceType type, int amount)
         {
-            if (IsRejectedAsNonFinite(amount, nameof(SpendTradeResource))) return false;
             if (amount < 0) throw new ArgumentException("Amount must be non-negative.", nameof(amount));
             var state = _tradeResources[type];
             if (state.Amount < amount) return false;
@@ -143,28 +139,30 @@ namespace KingdomRuler.Systems.Ledger
             return true;
         }
 
-        /// <summary>Check if the player has at least this much of a trade resource.</summary>
-        public bool HasTradeResource(TradeResourceType type, float amount)
-        {
-            return _tradeResources[type].Amount >= amount;
-        }
+        public bool HasTradeResource(TradeResourceType type, int amount) => _tradeResources[type].Amount >= amount;
 
-        /// <summary>Set warehouse capacity (for upgrades).</summary>
+        /// <summary>Set a warehouse's capacity (for upgrades).</summary>
         /// <remarks>
         /// <para>Callers hand over a capacity, never a rate: GDD §7 fixes the <i>fill time</i> at 24
-        /// hours, so the regen rate is derived here and nowhere else (<c>ARCHITECTURE.md</c> §4.3).</para>
+        /// hours, so regeneration follows from capacity here and nowhere else (<c>ARCHITECTURE.md</c> §4.3).
+        /// Settle regen before calling, so the time already elapsed counts at the old rate.</para>
         ///
         /// <para>The stored amount is clamped down with the capacity; otherwise a warehouse retuned
-        /// smaller would hold more than it can, never regenerate, and read as a stuck bar.</para>
+        /// smaller would hold more than it can and never regenerate. A capacity above
+        /// <see cref="MaxWarehouseCapacity"/> is a tuning mistake: logged, and clamped.</para>
         /// </remarks>
-        public void SetWarehouseCapacity(TradeResourceType type, float newCapacity)
+        public void SetWarehouseCapacity(TradeResourceType type, int newCapacity)
         {
-            if (IsRejectedAsNonFinite(newCapacity, nameof(SetWarehouseCapacity))) return;
             if (newCapacity <= 0) throw new ArgumentException("Capacity must be positive.", nameof(newCapacity));
+            if (newCapacity > MaxWarehouseCapacity)
+            {
+                Debug.LogError($"[KingdomLedger] {type} capacity {newCapacity} is above the {MaxWarehouseCapacity} ceiling; clamped.");
+                newCapacity = MaxWarehouseCapacity;
+            }
+
             var state = _tradeResources[type];
             state.Capacity = newCapacity;
             if (state.Amount > newCapacity) state.Amount = newCapacity;
-            state.RegenRatePerSecond = newCapacity / SecondsPerDay;
         }
 
         // --- Characteristics ---
@@ -242,9 +240,10 @@ namespace KingdomRuler.Systems.Ledger
         /// </summary>
         /// <remarks>
         /// <para><b>Publishes no <c>TradeResourceChangedEvent</c>, deliberately.</b> It runs on every
-        /// clock tick, so publishing would put ~24 messages a second on the bus, forever, to announce
-        /// tiny deltas — the idle battery drain GDD §3 forbids. Discrete changes go on the bus;
-        /// continuous drift is polled by the views (<c>ARCHITECTURE.md</c> §4.5).</para>
+        /// clock tick, and at high capacities a unit lands in every warehouse on most ticks, so
+        /// publishing would put up to ~24 messages a second on the bus, forever — the idle battery
+        /// drain GDD §3 forbids. Discrete changes (trades, upgrades, purchases) go on the bus;
+        /// regeneration is polled by the views (<c>ARCHITECTURE.md</c> §4.5).</para>
         ///
         /// <para>Called on every clock tick (subscribed by <c>GameBootstrapper</c>; the Ledger holds no
         /// clock), on load once capacities are final, and by anything that decides from a trade
@@ -277,7 +276,7 @@ namespace KingdomRuler.Systems.Ledger
         /// <summary>An immutable copy of the current amounts and levels.</summary>
         public LedgerSnapshot TakeSnapshot()
         {
-            var resourceAmounts = new Dictionary<TradeResourceType, float>();
+            var resourceAmounts = new Dictionary<TradeResourceType, int>();
             foreach (var kvp in _tradeResources)
             {
                 resourceAmounts[kvp.Key] = kvp.Value.Amount;
@@ -305,7 +304,7 @@ namespace KingdomRuler.Systems.Ledger
                 {
                     Amount = kvp.Value.Amount,
                     // A fallback only: Trade re-derives capacity from the upgrade level on load.
-                    // The regen rate is not saved; it always follows from capacity.
+                    // Regen needs nothing else: its progress is in the timestamp.
                     Capacity       = kvp.Value.Capacity,
                     LastUpdatedUtc = kvp.Value.LastUpdatedUtc.ToString("O")
                 };
@@ -348,17 +347,12 @@ namespace KingdomRuler.Systems.Ledger
                     if (!Enum.TryParse<TradeResourceType>(kvp.Key, out var type)) continue;
                     if (!_tradeResources.TryGetValue(type, out var state)) continue;
 
-                    // A non-positive capacity would make the warehouse unusable and, via
-                    // the 24h-fill rule, produce a zero regen rate. Keep the default.
-                    if (kvp.Value.Capacity > 0f && float.IsFinite(kvp.Value.Capacity))
-                        state.Capacity = kvp.Value.Capacity;
+                    // A non-positive capacity would be a warehouse that never refills: keep the default.
+                    // (WholeNumberJsonConverter has already turned a NaN or a decimal into a whole number.)
+                    if (kvp.Value.Capacity > 0)
+                        state.Capacity = Math.Min(kvp.Value.Capacity, MaxWarehouseCapacity);
 
-                    state.RegenRatePerSecond = state.Capacity / SecondsPerDay;
-
-                    // Math.Clamp passes NaN straight through, so a non-finite amount is checked first.
-                    state.Amount = float.IsFinite(kvp.Value.Amount)
-                        ? Math.Clamp(kvp.Value.Amount, 0f, state.Capacity)
-                        : 0f;
+                    state.Amount = Math.Clamp(kvp.Value.Amount, 0, state.Capacity);
 
                     state.LastUpdatedUtc = ParseUtcOr(kvp.Value.LastUpdatedUtc, state.LastUpdatedUtc);
                 }
@@ -381,17 +375,6 @@ namespace KingdomRuler.Systems.Ledger
                 int required = CharacteristicLevelingCurve.PointsRequired(state.Level);
                 state.PointsIntoCurrentLevel = Math.Clamp(kvp.Value.PointsIntoCurrentLevel, 0, required - 1);
             }
-        }
-
-        /// <summary>
-        /// A NaN or ±Infinity trade amount would poison the economy and the save, so it is refused
-        /// rather than thrown — a throw would abandon the caller's transaction halfway.
-        /// </summary>
-        private static bool IsRejectedAsNonFinite(float value, string operation)
-        {
-            if (float.IsFinite(value)) return false;
-            Debug.LogError($"[KingdomLedger] {operation} refused a non-finite amount ({value}).");
-            return true;
         }
 
         private static DateTime ParseUtcOr(string iso, DateTime fallback) =>

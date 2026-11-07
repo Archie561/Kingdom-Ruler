@@ -15,18 +15,6 @@ MonoBehaviour:
   m_TableCollectionName: TradeUITable
   m_TableCollectionNameGuidString: cb5333437f202ac42aa7853a461bca98
   m_Entries:
-  - m_Id: 1211129856
-    m_Key: ui.trade_title
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1295015936
-    m_Key: ui.warehouses
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1303404544
-    m_Key: ui.offers
-    m_Metadata:
-      m_Items: []
   - m_Id: 1303404545
     m_Key: ui.no_offers
     m_Metadata:
@@ -39,14 +27,6 @@ MonoBehaviour:
     m_Key: ui.you_get
     m_Metadata:
       m_Items: []
-  - m_Id: 1303404548
-    m_Key: ui.confirm
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1303404549
-    m_Key: ui.cancel
-    m_Metadata:
-      m_Items: []
   - m_Id: 1303404550
     m_Key: ui.refresh_now
     m_Metadata:
@@ -55,24 +35,8 @@ MonoBehaviour:
     m_Key: ui.upgrade
     m_Metadata:
       m_Items: []
-  - m_Id: 1303404552
-    m_Key: ui.next_refresh
-    m_Metadata:
-      m_Items: []
   - m_Id: 1303404553
     m_Key: ui.blocker_insufficient
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1303404554
-    m_Key: ui.warning_overflow
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1303404555
-    m_Key: ui.blocker_unavailable
-    m_Metadata:
-      m_Items: []
-  - m_Id: 1303404556
-    m_Key: ui.warehouse_amount
     m_Metadata:
       m_Items: []
   - m_Id: 1303404557
@@ -93,6 +57,66 @@ MonoBehaviour:
       m_Items: []
   - m_Id: 1303404561
     m_Key: ui.refresh_in
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727298084864
+    m_Key: ui.offer.title
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520320
+    m_Key: ui.offer.overflow
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520321
+    m_Key: ui.warehouse.title
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520322
+    m_Key: ui.warehouse.rate
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520323
+    m_Key: ui.warehouse.full_in
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520324
+    m_Key: ui.warehouse.full
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520325
+    m_Key: ui.refresh.title
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520326
+    m_Key: ui.refresh.body
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520327
+    m_Key: ui.not_enough_crystals
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520328
+    m_Key: ui.upgrade.title
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520329
+    m_Key: ui.upgrade.body_crystals
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520330
+    m_Key: ui.upgrade.body_paired
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520331
+    m_Key: ui.upgrade.not_enough_paired
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520332
+    m_Key: ui.receipt.received
+    m_Metadata:
+      m_Items: []
+  - m_Id: 24663727566520333
+    m_Key: ui.receipt.forfeited
     m_Metadata:
       m_Items: []
   m_Metadata:

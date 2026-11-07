@@ -155,7 +155,7 @@
   |---|---|---|
   | `Systems/Localization/Tables/SharedTable` | characteristic names, cross-cutting words | Cities and Random Occurrences need the identical strings |
   | `Modules/<X>/Localization/<X>UITable` | that screen's fixed chrome | small, stable, changes with the screen |
-  | `Modules/Trade/Localization/TradeUITable` | Trade's chrome **and** its arg-taking messages | the first table in the project resolved from code, so it owns a `TradeUIText` keys type — see below |
+  | `Modules/Trade/Localization/TradeUITable` | Trade's chrome **and** its arg-taking messages | messages built from arguments are resolved from code, so it owns a `TradeUIText` keys type — see below (Laws' table has `LawsUIText` for the same reason) |
   | `Modules/Navigation/Localization/NavigationUITable` | the bottom bar's tab labels | the middle row's pattern — Navigation is a module (§4.6). Nothing outside the nav bar draws the word "Laws", so these are chrome, not cross-cutting words. It is resolved only by `LocalizeStringEvent` components, so no code names it and no test checks it — the tabs are on screen from the first frame |
   | `Modules/<X>/Localization/<X>…Table` | that module's content, keyed by id | grows with authored content; what a translator is handed in bulk |
 
@@ -309,8 +309,9 @@ Assets/
           LawCards/         # one LawCardDefinition asset per card
         Prefabs/
         Images/             # sprites/textures for this mechanic (see note below)
-      Trade/                # still on the older Domain/Presenters/Views layout; it takes the
-                            # Laws shape in its planned overhaul
+      Trade/                # Laws' shape: Data/ (TradeConfig), Model/ (TradeManager + pure
+                            # helpers), UI/ (one folder per component); Config/ only — offers
+                            # are generated, not authored (docs/modules/Trade.md)
       Economy/              # EMPTY until built (GDD §8). Each of these four is a folder name
                             # only. A module takes Laws' shape when it is built.
       Cities/               # EMPTY until built (GDD §9)
@@ -325,6 +326,7 @@ Assets/
       Modules/               # mirrors Modules/ — one test folder per module
       Systems/               # mirrors Systems/ — Ledger/ plus the service tests and the
                              # shared test fakes (TestServiceFakes)
+      Shared/                # mirrors Shared/ — Text/ (TimeFormat)
     PlayMode/                 # sparse — only for things that need the Unity runtime
 docs/
   GDD.md
@@ -512,7 +514,7 @@ cards are waiting.
 
 One class, `KingdomLedger`, owns:
 - Gold and Crystals (simple amounts)
-- 6 `TradeResourceState` (amount, capacity, regen rate)
+- 6 `TradeResourceState` (whole-unit amount and capacity, and when the unit in progress started)
 - 6 `CharacteristicState` (level, points-into-current-level, permanent level floor)
 
 It also owns the **leveling math** — the points-required-per-level curve — even though today only
@@ -562,11 +564,17 @@ card's effects — so a rethrow would abandon the rest of that transaction.
 `GetTradeResource` return state objects with `internal` setters, so a module can read them but every
 change goes through a `KingdomLedger` method — and through its validation and events.
 
-**Non-finite trade amounts are refused.** Trade resources stay decimal, and a NaN or ±Infinity
-would poison the economy and the save, so every trade mutator logs and ignores one (rather than
-throwing mid-transaction), and `LoadFromDto` treats one in the file as unreadable. Characteristic
-points are integers and cannot be non-finite; the save reads them through
-`WholeNumberJsonConverter`, so a file holding `25.0` still loads.
+**Trade amounts are integers, like characteristic points.** Stock, capacity and every amount the
+API moves are whole units — one number per resource, the one on screen, with no rounding for two
+mechanics to disagree on. Regeneration keeps no fraction either: a warehouse gains **one unit every
+`TicksPerDay / capacity`** (an empty one is full in exactly 24 h at any size), and
+`LastUpdatedUtc` is the moment the unit now in progress started, so the partial unit lives in the
+timestamp. That arithmetic is exact in `long` while capacity stays under ~10.6 million, so
+`KingdomLedger.MaxWarehouseCapacity` (10,000,000) is enforced: `SetWarehouseCapacity` and
+`LoadFromDto` clamp to it and log. Regen's read-outs — `TimePerUnit`, `NextUnitProgress(now)`,
+`TimeUntilFull(now)` — are on `TradeResourceState`, because they are regen's rules; they take `now`
+because the Ledger holds no clock. The save reads every whole-number field through
+`WholeNumberJsonConverter`, so a file holding `25.0` or `87.34` still loads.
 
 #### Where new math goes — the ownership test
 
@@ -580,7 +588,7 @@ valuation). Almost none of them belong in `Systems/Ledger`. Ask one question:
   Occurrences both award points) and the trade-resource regen rate derived from warehouse capacity.
 - **No → the module's own `Model/`.** The math produces a number *that module* then asks the Ledger
   to move. The Ledger neither knows nor cares how it was derived, and nothing else computes it.
-  `TradeConfig`'s warehouse curves and Laws' buy-up pricing (`LawsManager.BuyUpCost`) are this kind
+  Trade's `WarehouseCurve` and Laws' buy-up pricing (`LawsManager.BuyUpCost`) are this kind
   today; Economy's business cost and accrual math and Cities' affordability check will be too.
 
 Worked example: the leveling curve is Ledger-owned because two mechanics award characteristic points
@@ -670,7 +678,9 @@ View tells it *what* to show, never *when* to animate.
 ### 4.5 Offline/idle accrual
 
 Every timer-driven system (law queue, trade offer refresh, resource regen, business
-storage) stores a `lastUpdatedUtc` timestamp and a rate. On app resume and on load, each
+storage) stores a `lastUpdatedUtc` timestamp (or a deadline) and a rate. A whole-unit accrual
+keeps its partial progress in that timestamp rather than in a fractional amount — warehouse regen
+does (§4.3). On app resume and on load, each
 system computes `elapsed = now - lastUpdatedUtc` **once** and fast-forwards state
 accordingly (capped where a cap applies). This must not be simulated tick-by-tick — a
 player who was away 10 hours shouldn't cause 10 hours of simulated frames.
@@ -679,7 +689,7 @@ player who was away 10 hours shouldn't cause 10 hours of simulated frames.
 deadline beyond `now + period` back to that point. Moving the device clock forward cannot be
 prevented with a local save (`GDD.md` §12), but moving it back must not then stall a timer for as
 long as the clock moved — that would punish the player, against `GDD.md` §2. Laws does this in
-`ReplenishmentTimer.Advance`; every new timer must do the same.
+`ReplenishmentTimer.Advance` and Trade in `OfferRefreshTimer.Advance`; every new timer must do the same.
 
 **The Manager owns its timer and its schedule; the View only displays it.** A timer must never be
 advanced from a View's `Update()` — that couples the mechanic's progress to a UI object being alive
@@ -742,11 +752,12 @@ matching timestamp, so a tick that last ran a fraction of a second earlier persi
 stale pair that the next accrual covers exactly — no drift, no double-count.
 
 **Continuous drift is polled; discrete changes go on the bus.** `KingdomLedger.
-AccruePassiveResourceRegen` deliberately publishes **no** `TradeResourceChangedEvent`: at 4 Hz across six
-resources that would be ~24 messages a second, forever, on every screen, to announce a delta of
-roughly a third of a thousandth of a warehouse — precisely the idle battery drain `GDD.md` §3
-forbids. The warehouse bars read the amount each frame and redraw only when the displayed value
-changes, the same way the Laws countdown is rendered. Accepting an offer, upgrading a warehouse
+AccruePassiveResourceRegen` deliberately publishes **no** `TradeResourceChangedEvent`. Regen credits
+whole units, and a large warehouse gains one every fraction of a second, so at 4 Hz across six
+resources that would be up to ~24 messages a second, forever, on every screen, each announcing a
+single unit — precisely the idle battery drain `GDD.md` §3 forbids. Trade's resource tiles poll the
+Ledger every frame and redraw only when a unit has landed, the same way the Laws countdown is
+rendered; open popups re-read at their own 4 Hz. Accepting an offer, upgrading a warehouse
 and a Cities purchase all still publish normally. **"This mutation doesn't publish an event"
 reads like a bug and is not** — see the doc block on that method.
 

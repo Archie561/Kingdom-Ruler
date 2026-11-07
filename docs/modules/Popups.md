@@ -45,8 +45,9 @@ if (choice == ConfirmPopupChoice.Confirm) _manager.TryRefill();   // re-reads th
 ```
 
 **A panel that stays open** across several presses, with another popup opening on top of it —
-use `Show` and loop while it is open (no caller does this yet; the GDD §8 business panel is the
-first planned one):
+use `Show` and loop while it is open. `LawsPresenter.OpenCharacteristics` and
+`TradePresenter.OpenWarehouse` both work this way; the sketch below is the planned GDD §8 business
+panel:
 
 ```csharp
 var panel = _popups.Create<BusinessPopup>().Show(() => BuildBusinessData(id));
@@ -140,9 +141,11 @@ Systems/Popups/
 **Delete a kind's script folder and `Core/` must still compile.** That is the test for whether
 something belongs in `Core/`.
 
-A module's own popups (an occurrence letter, say) live in that module — a component folder under
-`Modules/<X>/Scripts/UI/` (`ARCHITECTURE.md` §3) and `Modules/<X>/Prefabs/` — and are added to the
-same shared registry. A serialized reference crosses assemblies freely, so this creates no asmdef cycle.
+A module's own popups live in that module — a component folder under `Modules/<X>/Scripts/UI/`
+(`ARCHITECTURE.md` §3) and `Modules/<X>/Prefabs/` — and are added to the same shared registry. Today
+those are Laws' `CharacteristicsPopup` and Trade's `TradeOfferPopup` and `WarehousePopup`; an
+occurrence letter will be the next. A serialized reference crosses assemblies freely, so this creates
+no asmdef cycle.
 
 ---
 
@@ -309,4 +312,3 @@ unfocused, so nothing animates and no graphic is raycastable (`depth == -1`) unt
 | Custom button labels | Labels come from the prefab; a popup needing different ones carries them in its data. |
 | Android back | Not wired. Should close the top popup through `PopupSystem`. |
 | No pooling | Instantiate and destroy per popup — fine at this frequency. |
-| Trade's confirm panel | Still a screen-local panel (`docs/modules/Trade.md`); moving it to a `TradeOfferPopup` is the next migration. |

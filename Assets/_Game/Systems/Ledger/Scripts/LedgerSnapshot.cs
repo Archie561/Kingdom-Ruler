@@ -7,13 +7,13 @@ namespace KingdomRuler.Systems.Ledger
     {
         public long Gold { get; }
         public int Crystals { get; }
-        public IReadOnlyDictionary<TradeResourceType, float> TradeResourceAmounts { get; }
+        public IReadOnlyDictionary<TradeResourceType, int> TradeResourceAmounts { get; }
         public IReadOnlyDictionary<CharacteristicType, int> CharacteristicLevels { get; }
 
         public LedgerSnapshot(
             long gold,
             int crystals,
-            Dictionary<TradeResourceType, float> tradeResourceAmounts,
+            Dictionary<TradeResourceType, int> tradeResourceAmounts,
             Dictionary<CharacteristicType, int> characteristicLevels)
         {
             Gold = gold;

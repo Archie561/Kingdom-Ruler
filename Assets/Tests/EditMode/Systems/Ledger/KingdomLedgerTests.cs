@@ -174,55 +174,55 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void AddTradeResource_IncreasesAmount()
         {
-            var added = _ledger.AddTradeResource(TradeResourceType.Wood, 50f);
-            Assert.AreEqual(50f, added);
-            Assert.AreEqual(50f, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
+            var added = _ledger.AddTradeResource(TradeResourceType.Wood, 50);
+            Assert.AreEqual(50, added);
+            Assert.AreEqual(50, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
         }
 
         [Test]
         public void AddTradeResource_CapsAtWarehouseCapacity_ReturnsActualAdded()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
-            var added = _ledger.AddTradeResource(TradeResourceType.Wood, 150f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
+            var added = _ledger.AddTradeResource(TradeResourceType.Wood, 150);
 
-            Assert.AreEqual(100f, added);
-            Assert.AreEqual(100f, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
+            Assert.AreEqual(100, added);
+            Assert.AreEqual(100, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
         }
 
         [Test]
         public void AddTradeResource_AlreadyAtCapacity_ReturnsZero()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
-            _ledger.AddTradeResource(TradeResourceType.Wood, 100f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
+            _ledger.AddTradeResource(TradeResourceType.Wood, 100);
             
-            var added = _ledger.AddTradeResource(TradeResourceType.Wood, 50f);
+            var added = _ledger.AddTradeResource(TradeResourceType.Wood, 50);
 
-            Assert.AreEqual(0f, added);
-            Assert.AreEqual(100f, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
+            Assert.AreEqual(0, added);
+            Assert.AreEqual(100, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
         }
 
         [Test]
         public void SpendTradeResource_DecreasesAndReturnsTrue()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
-            _ledger.AddTradeResource(TradeResourceType.Wood, 100f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
+            _ledger.AddTradeResource(TradeResourceType.Wood, 100);
 
-            bool result = _ledger.SpendTradeResource(TradeResourceType.Wood, 40f);
+            bool result = _ledger.SpendTradeResource(TradeResourceType.Wood, 40);
 
             Assert.IsTrue(result);
-            Assert.AreEqual(60f, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
+            Assert.AreEqual(60, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
         }
 
         [Test]
         public void SpendTradeResource_ReturnsFalse_WhenInsufficient()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
-            _ledger.AddTradeResource(TradeResourceType.Wood, 30f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
+            _ledger.AddTradeResource(TradeResourceType.Wood, 30);
 
-            bool result = _ledger.SpendTradeResource(TradeResourceType.Wood, 40f);
+            bool result = _ledger.SpendTradeResource(TradeResourceType.Wood, 40);
 
             Assert.IsFalse(result);
-            Assert.AreEqual(30f, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
+            Assert.AreEqual(30, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
         }
 
         [Test]
@@ -235,54 +235,74 @@ namespace KingdomRuler.Tests.EditMode.Systems
                     receivedEvent = e;
             });
 
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
-            _ledger.AddTradeResource(TradeResourceType.Wood, 50f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
+            _ledger.AddTradeResource(TradeResourceType.Wood, 50);
 
             Assert.IsNotNull(receivedEvent);
             Assert.AreEqual(TradeResourceType.Wood, receivedEvent.Value.ResourceType);
-            Assert.AreEqual(50f, receivedEvent.Value.NewAmount);
-            Assert.AreEqual(50f, receivedEvent.Value.Delta);
+            Assert.AreEqual(50, receivedEvent.Value.NewAmount);
+            Assert.AreEqual(50, receivedEvent.Value.Delta);
         }
 
         [Test]
         public void HasTradeResource_ReturnsTrue_WhenSufficient()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
-            _ledger.AddTradeResource(TradeResourceType.Wood, 50f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
+            _ledger.AddTradeResource(TradeResourceType.Wood, 50);
 
-            Assert.IsTrue(_ledger.HasTradeResource(TradeResourceType.Wood, 30f));
-            Assert.IsTrue(_ledger.HasTradeResource(TradeResourceType.Wood, 50f));
+            Assert.IsTrue(_ledger.HasTradeResource(TradeResourceType.Wood, 30));
+            Assert.IsTrue(_ledger.HasTradeResource(TradeResourceType.Wood, 50));
         }
 
         [Test]
         public void HasTradeResource_ReturnsFalse_WhenInsufficient()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
-            _ledger.AddTradeResource(TradeResourceType.Wood, 50f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
+            _ledger.AddTradeResource(TradeResourceType.Wood, 50);
 
-            Assert.IsFalse(_ledger.HasTradeResource(TradeResourceType.Wood, 60f));
+            Assert.IsFalse(_ledger.HasTradeResource(TradeResourceType.Wood, 60));
         }
 
         [Test]
-        public void SetWarehouseCapacity_ChangesCapacityAndRegenRate()
+        public void SetWarehouseCapacity_ChangesCapacityAndTheFillTime()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 200f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 200);
 
             var state = _ledger.GetTradeResource(TradeResourceType.Wood);
-            Assert.AreEqual(200f, state.Capacity);
-            Assert.AreEqual(200f / 86400f, state.RegenRatePerSecond);
+            Assert.AreEqual(200, state.Capacity);
+            Assert.AreEqual(TimeSpan.FromDays(1).Ticks / 200, state.TimePerUnit.Ticks,
+                "An empty warehouse refills in one day whatever its size (GDD §7).");
+        }
+
+        [Test]
+        public void SetWarehouseCapacity_AboveTheCeiling_IsClampedAndLogged()
+        {
+            LogAssert.Expect(LogType.Error, new Regex("ceiling"));
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, KingdomLedger.MaxWarehouseCapacity + 1);
+
+            Assert.AreEqual(KingdomLedger.MaxWarehouseCapacity, _ledger.GetTradeResource(TradeResourceType.Wood).Capacity);
+        }
+
+        [Test]
+        public void AddTradeResource_FillingToCapacity_LandsExactlyOnCapacity()
+        {
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
+            _ledger.AddTradeResource(TradeResourceType.Wood, 87);
+
+            Assert.AreEqual(13, _ledger.AddTradeResource(TradeResourceType.Wood, 30));
+            Assert.AreEqual(100, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
         }
 
         [Test]
         public void AddTradeResource_WithNegative_ThrowsArgumentException()
         {
-            Assert.Throws<ArgumentException>(() => _ledger.AddTradeResource(TradeResourceType.Wood, -10f));
+            Assert.Throws<ArgumentException>(() => _ledger.AddTradeResource(TradeResourceType.Wood, -10));
         }
 
         [Test]
         public void SpendTradeResource_WithNegative_ThrowsArgumentException()
         {
-            Assert.Throws<ArgumentException>(() => _ledger.SpendTradeResource(TradeResourceType.Wood, -10f));
+            Assert.Throws<ArgumentException>(() => _ledger.SpendTradeResource(TradeResourceType.Wood, -10));
         }
 
         #endregion
@@ -477,35 +497,12 @@ namespace KingdomRuler.Tests.EditMode.Systems
 
         #endregion
 
-        #region Non-finite Guard Tests
-
-        // A NaN or ±Infinity trade amount would poison the economy and the save; each is refused.
-
-        [Test]
-        public void TradeResourceMutations_NonFinite_AreRefused()
-        {
-            _ledger.AddTradeResource(TradeResourceType.Wood, 10f);
-
-            LogAssert.Expect(LogType.Error, new Regex("non-finite"));
-            Assert.AreEqual(0f, _ledger.AddTradeResource(TradeResourceType.Wood, float.NaN));
-            LogAssert.Expect(LogType.Error, new Regex("non-finite"));
-            Assert.IsFalse(_ledger.SpendTradeResource(TradeResourceType.Wood, float.NaN));
-            LogAssert.Expect(LogType.Error, new Regex("non-finite"));
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, float.PositiveInfinity);
-
-            var wood = _ledger.GetTradeResource(TradeResourceType.Wood);
-            Assert.AreEqual(10f, wood.Amount);
-            Assert.AreEqual(100f, wood.Capacity);
-        }
-
-        #endregion
-
         #region Offline Accrual Tests
 
         [Test]
         public void AccruePassiveResourceRegen_AddsResourcesBasedOnElapsedTime()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 86400f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 86400);
             
             var now = DateTime.UtcNow;
             _ledger.ResetRegenBaseline(now.AddSeconds(-10));
@@ -514,33 +511,33 @@ namespace KingdomRuler.Tests.EditMode.Systems
 
             // Regen rate is Capacity / 86400 = 1/sec
             // 10 seconds elapsed = 10 resources
-            Assert.AreEqual(10f, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
+            Assert.AreEqual(10, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
         }
 
         [Test]
         public void AccruePassiveResourceRegen_CapsAtCapacity()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
             
             var now = DateTime.UtcNow;
             _ledger.ResetRegenBaseline(now.AddDays(-2));
 
             _ledger.AccruePassiveResourceRegen(now);
 
-            Assert.AreEqual(100f, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
+            Assert.AreEqual(100, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
         }
 
         [Test]
         public void AccruePassiveResourceRegen_WithNoElapsedTime_AddsNothing()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
             
             var now = DateTime.UtcNow;
             _ledger.ResetRegenBaseline(now);
 
             _ledger.AccruePassiveResourceRegen(now);
 
-            Assert.AreEqual(0f, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
+            Assert.AreEqual(0, _ledger.GetTradeResource(TradeResourceType.Wood).Amount);
         }
 
         #endregion
@@ -562,13 +559,13 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void TakeSnapshot_ReturnsCorrectTradeResourceAmounts()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
-            _ledger.AddTradeResource(TradeResourceType.Wood, 45f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
+            _ledger.AddTradeResource(TradeResourceType.Wood, 45);
 
             var snapshot = _ledger.TakeSnapshot();
 
             Assert.IsTrue(snapshot.TradeResourceAmounts.ContainsKey(TradeResourceType.Wood));
-            Assert.AreEqual(45f, snapshot.TradeResourceAmounts[TradeResourceType.Wood]);
+            Assert.AreEqual(45, snapshot.TradeResourceAmounts[TradeResourceType.Wood]);
         }
 
         [Test]
@@ -585,16 +582,16 @@ namespace KingdomRuler.Tests.EditMode.Systems
         [Test]
         public void Snapshot_IsImmutable_MutatingLedgerAfterSnapshotDoesNotChangeSnapshot()
         {
-            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100f);
-            _ledger.AddTradeResource(TradeResourceType.Wood, 40f);
+            _ledger.SetWarehouseCapacity(TradeResourceType.Wood, 100);
+            _ledger.AddTradeResource(TradeResourceType.Wood, 40);
             _ledger.AddGold(100);
 
             var snapshot = _ledger.TakeSnapshot();
 
-            _ledger.AddTradeResource(TradeResourceType.Wood, 10f);
+            _ledger.AddTradeResource(TradeResourceType.Wood, 10);
             _ledger.AddGold(50);
 
-            Assert.AreEqual(40f, snapshot.TradeResourceAmounts[TradeResourceType.Wood]);
+            Assert.AreEqual(40, snapshot.TradeResourceAmounts[TradeResourceType.Wood]);
             Assert.AreEqual(100, snapshot.Gold);
         }
 

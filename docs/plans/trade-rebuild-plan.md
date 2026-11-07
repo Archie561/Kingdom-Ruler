@@ -1,47 +1,51 @@
 # Plan: rebuild the Trade module
 
-> Written from `docs/plans/trade-rebuild-brief.md`. Nothing in the project has been changed except
-> this file. Baseline confirmed via Unity MCP before writing: **392/392 EditMode tests pass**.
+> Written from `docs/plans/trade-rebuild-brief.md`. Baseline before any change: **392/392 EditMode
+> tests pass** (confirmed via Unity MCP).
 >
-> **Revision 2 — the user's answers are applied:**
-> - offer sizing approved (§4);
-> - **trade amounts become integers everywhere**, including the Ledger, which supersedes brief decision 4 (§2.4);
-> - warehouse level capped at **20** by design;
-> - offer rows carry no affordability hints;
-> - 1-based displayed levels; gauges show stock only;
+> **Revision 2** applied the user's first answers:
+> - offer sizing approved;
+> - **trade amounts become integers everywhere**, including the Ledger (supersedes brief decision 4);
+> - warehouse level capped at **20**;
+> - no hints on offer rows; 1-based levels;
 > - "Refresh now" always tappable;
-> - a Trade-local "Not enough crystals" string;
-> - the 🔴 list (§6.1) and the quarantine approach (§11, step 1) approved.
+> - a Trade-local "Not enough crystals";
+> - the 🔴 list and the quarantine approach approved.
 >
-> Assumptions taken while applying these are listed in §12. Everything else is decided.
+> **Revision 3** applies the layout change:
+> - six always-visible **resource tiles** (icon, name, level, amount / capacity + bar);
+> - a **per-resource warehouse popup** opened by tapping a tile (upgrades + regen progress), replacing the one all-warehouses popup;
+> - **no collect button** — regen stays automatic (user's choice);
+> - the offer list fills the rest of the screen, with the countdown and refresh button in its header;
+> - the screen title is dropped (the Laws screen has none either).
+>
+> **GDD §7 is already updated to match** (done with revision 3).
+>
+> **Progress:** all steps (0–10) done (§11). The module's reference is now `docs/modules/Trade.md`.
 
 ---
 
 ## 0. Corrections to the brief's audit
 
-The audit is accurate. Checked against the code, with these additions:
-
 | # | Finding | Where |
 |---|---|---|
-| A1 | **The overflow warning shows the wrong number.** `ui.warning_overflow` reads "Your {0} warehouse only has room for {1}", and the Presenter passes the *room left*. GDD §7 asks for "how much will not fit". `TradeUIText.WarningOverflow`'s own doc comment says "{1} = units that will not fit". | `TradePresenter.DescribeIssue` |
+| A1 | **The overflow warning shows the wrong number.** It shows the room left, while GDD §7 asks for how much will not fit. `TradeUIText.WarningOverflow`'s doc comment says "{1} = units that will not fit". | `TradePresenter.DescribeIssue` |
 | A2 | **Two sounds in one frame in two places:** the crystal upgrade (`CrystalSpend` + `WarehouseUpgrade`) and the instant refresh (`CrystalSpend` + `OffersRefreshed`). | `TradePresenter` |
-| A3 | **Seven `TradeUITable` keys are unused.** The prefab's `LocalizeStringEvent`s use only `ui.trade_title`, `ui.no_offers`, `ui.confirm`, `ui.cancel`. Unused: `ui.warehouses`, `ui.offers`, `ui.you_give`, `ui.you_get`, `ui.refresh_now`, `ui.upgrade`, `ui.next_refresh`. Most come back into use in the new prefabs (§7). | `TradeScreen.prefab` |
-| A4 | **Offer amounts are `float`** everywhere (model and DTO), although they always hold whole values. | `TradeOffer`, `TradeOfferDto` |
-| A5 | Under the current cap of 50, capacity exceeds `int` from level 42. **Resolved by the user's decision:** the cap becomes 20, where capacity is 332,530, so everything fits `int32`. The Ledger gains a hard capacity ceiling as a backstop (§2.4). | `TradeConfig` |
-| A6 | `schemaVersion` is never read on load. **Not an issue yet** (user): the game runs only in the Editor until the first build. The plan still bumps it on a shape change, as `ARCHITECTURE.md` §5 requires. | `LocalJsonSaveService` |
-| A7 | The Trade asmdef lacks a `UniTask` reference, which the popups need. The package is already in the project (Laws uses it), so this is not a new dependency. | `KingdomRuler.Modules.Trade.asmdef` |
+| A3 | **Unused `TradeUITable` keys.** The prefab uses only `ui.trade_title`, `ui.no_offers`, `ui.confirm`, `ui.cancel`. Unused: `ui.warehouses`, `ui.offers`, `ui.you_give`, `ui.you_get`, `ui.refresh_now`, `ui.upgrade`, `ui.next_refresh`. | `TradeScreen.prefab` |
+| A4 | **Offer amounts are `float`** in the model and the DTO, though always whole. | `TradeOffer`, `TradeOfferDto` |
+| A5 | Capacity exceeds `int` from level 42 under the old cap of 50. **Resolved:** the cap is level 20 as shown, stored 19 (capacity 221,680), and the Ledger gets a hard capacity ceiling (§2.4). | `TradeConfig` |
+| A6 | `schemaVersion` is never read on load. **Not an issue until the first build** (user). The plan still bumps it on a shape change. | `LocalJsonSaveService` |
+| A7 | The Trade asmdef lacked `UniTask`. **Fixed in step 2.** | asmdef |
 | A8 | `ScriptableObjects/Data/` is an empty folder holding a `.gitkeep`. | Trade module |
-| A9 | `Popups.md` §1 says no caller uses `Show` + `WaitForChoice` yet; `LawsPresenter.OpenCharacteristics` does. Stale doc, fixed in the doc pass (§10). | `docs/modules/Popups.md` |
-
-Everything else in the audit checks out exactly.
+| A9 | `Popups.md` §1 says no caller uses `Show` + `WaitForChoice` yet; `LawsPresenter.OpenCharacteristics` does. | `docs/modules/Popups.md` |
 
 ---
 
 ## 1. Summary
 
-**Goal.** Rebuild `Modules/Trade` from scratch in the Laws shape (`Data/` · `Model/` · `UI/`). Keep every behaviour in the brief's "keep" list, fix every listed defect and A1–A2, and deliver:
+**Goal.** Rebuild `Modules/Trade` in the Laws shape (`Data/` · `Model/` · `UI/`). Keep every behaviour in the brief's "keep" list, fix every listed defect and A1–A2, and deliver:
 - offers sized by warehouse capacity (§4);
-- a warehouses popup modeled on the characteristics popup;
+- six always-visible resource tiles, each opening its own warehouse popup;
 - a confirmation for every purchase;
 - whole numbers everywhere (§2.4);
 - a receipt of what was received and what was lost after each accept.
@@ -49,19 +53,21 @@ Everything else in the audit checks out exactly.
 **In scope:**
 - all Trade scripts, `TradeConfig` (script moved, asset GUID kept), `TradeScreen.prefab` contents, new component and popup prefabs, `TradeUITable` entries, Trade tests;
 - `GameBootstrapper` registration and `PopupRegistry.asset` entries;
-- **the Ledger's trade-resource API, its regen, `TradeResourceChangedEvent` and `LedgerSnapshot` becoming integer (🟡, decided by the user)**;
-- **`TradeResourceStateDto` and `TradeOfferDto` becoming integer, with `schemaVersion` 7 → 8**;
-- the Ledger and save tests these touch;
-- `docs/modules/Trade.md` and the GDD/ARCHITECTURE/Popups text that describes all of this.
+- the Ledger's trade-resource API and regen becoming integer, plus two regen read-outs for the popup (🟡, decided by the user);
+- `TradeResourceStateDto` and `TradeOfferDto` becoming integer, with `schemaVersion` 7 → 8;
+- one formatting helper in `Shared/Text/TimeFormat` (h:mm:ss);
+- the Ledger, save and `TimeFormat` tests these touch;
+- `docs/modules/Trade.md` and the ARCHITECTURE/Popups text describing them.
 
 **Out of scope:**
-- characteristics, gold and crystals (already integer);
+- characteristics, gold and crystals;
 - `IPurchasingService`;
-- art, final audio and real haptics (stubbed, as in Laws);
+- art, final audio and real haptics (stubbed);
 - a currency header and a profitability badge;
 - a shared toast system;
-- Laws' own "Not enough crystals" key;
-- any change to the Laws module.
+- **manual resource collection** (decided against: regen stays automatic, GDD §7);
+- Laws' "Not enough crystals" key;
+- any Laws change.
 
 ---
 
@@ -69,81 +75,80 @@ Everything else in the audit checks out exactly.
 
 ```
 Modules/Trade/
-  Scripts/                                    assembly KingdomRuler.Modules.Trade (+ UniTask reference)
+  Scripts/                                    assembly KingdomRuler.Modules.Trade (references UniTask)
     Data/                                     namespace KingdomRuler.Modules.Trade
-      TradeConfig.cs                          MOVED (GUID kept). Values only + OnValidate.
+      TradeConfig.cs                          values only + OnValidate   (moved — step 2 ✔)
     Model/                                    namespace KingdomRuler.Modules.Trade
       TradeManager.cs                         entry point: lifecycle, clock, every Ledger transaction, every price
       TradeOffer.cs                           one offer: id, give/receive amounts, profitability (immutable)
-      TradeAmount.cs                          (resource, units) — one line of an offer or a result
+      TradeAmount.cs                          (resource, units)
       TradeProfitability.cs                   Profitable / Neutral / Unprofitable
       TradeOfferGenerator.cs                  a batch: band mix, resource types, amounts
       TradeOfferSizing.cs                     the size formula (§4) — static, pure
       TradeOfferAllocator.cs                  whole-number apportionment (stochastic + largest remainder)
       OfferRefreshTimer.cs                    the 20-minute deadline
-      WarehouseCurve.cs                       capacity(L), crystalCost(L) — formulas out of TradeConfig
+      WarehouseCurve.cs                       capacity(L), crystalCost(L)
       TradeResourcePair.cs                    Stone↔Wood, Metal↔Minerals, Leather↔Clay
-      TradeIssue.cs                           (kind, resource, units)
-      TradeIssueKind.cs                       InsufficientResource / WouldOverflowWarehouse / OfferUnavailable
+      TradeIssue.cs / TradeIssueKind.cs       (kind, resource, units)
       TradeOfferEvaluation.cs                 every issue for one offer + CanAccept — mutates nothing
       TradeAcceptResult.cs                    Accepted, Issues, Received, Forfeited
     UI/                                       namespace KingdomRuler.Modules.Trade.UI
       TradePresenter.cs                       model ↔ view; popups; feel hooks
       TradeScreenView.cs                      screen root: widgets, polling, forwarding taps
       TradeUIText.cs                          String Table keys for text built in code + AllKeys
+      ResourceTile/
+        ResourceTileView.cs                   one tile (×6): icon, name, level, amount / capacity + bar; a tap target
+        ResourceTileViewData.cs
       ResourceAmount/
         ResourceAmountView.cs                 icon + "12 Stone" — repeats in rows and the offer popup
         ResourceAmountViewData.cs
       OfferRow/
         OfferRowView.cs                       one offer in the list: 3+3 amount slots, tap
         OfferRowViewData.cs
-      WarehouseGauge/
-        WarehouseGaugeView.cs                 one compact warehouse on the screen (×6): icon, stock/capacity, bar
-        WarehouseGaugeViewData.cs
+      OfferList/
+        OfferListView.cs                      the scrolling list: one pooled row per offer id, arrival/removal animation
       TradeOfferPopup/
         TradeOfferPopup.cs                    Popup<TradeOfferPopupData, TradeOfferPopupChoice>
         TradeOfferPopupData.cs                give/receive lines + blockers + warnings + CanAccept (IEquatable)
         TradeOfferPopupChoice.cs              Accept / Cancel
-      WarehousesPopup/
-        WarehousesPopup.cs                    Popup<WarehousesPopupData, WarehouseUpgradeChoice>
-        WarehousesPopupData.cs                one row per resource (IEquatable)
-        WarehouseRowView.cs                   one row: level, stock/capacity + bar, two upgrade buttons
-        WarehouseRowViewData.cs               (IEquatable)
-        WarehouseUpgradeChoice.cs             (resource, payment) — the pressed button
-        WarehousePayment.cs                   Crystals / PairedResource
+      WarehousePopup/
+        WarehousePopup.cs                     Popup<WarehousePopupData, WarehousePayment> — one resource
+        WarehousePopupData.cs                 level, stock, regen, both prices (IEquatable)
+        WarehousePayment.cs                   Crystals / PairedResource — the pressed upgrade button
       Receipt/
         TradeReceiptView.cs                   the post-accept strip: "+13 Wood", "17 Wood lost"
         TradeReceiptViewData.cs
+        TradeReceiptLineViewData.cs
   ScriptableObjects/Config/TradeConfig.asset  KEPT (GUID 73e2f9f5a7e53384bb49ec0859a65de1)
-  Prefabs/      TradeScreen (kept root), OfferRow, ResourceAmount, WarehouseGauge,
-                TradeOfferPopup, WarehousesPopup, WarehouseRow
+  Prefabs/      TradeScreen (kept root), ResourceTile, ResourceAmount, OfferRow,
+                TradeOfferPopup, WarehousePopup
   Localization/ TradeUITable (kept collection, entries edited)
 ```
 
-The new prefab names differ from the old ones (`OfferRow` rather than `TradeOfferRow`, `WarehouseGauge` rather than `WarehouseTile`), because the old prefabs keep their file names until they are deleted at the end. They also follow Laws' pairing: a compact gauge on the screen (like `CharacteristicDial`) and a large row in the popup (like `CharacteristicRow`).
+`ResourceTile` and `OfferRow` are deliberately not named `WarehouseTile`/`TradeOfferRow`: the old prefabs keep those file names until step 9.
 
-**Dependencies:** `UI → Model → Data`, and everything may use `Systems/`. The Presenter needs no `EventBus` (§3, "Polled, not pushed").
+**Dependencies:** `UI → Model → Data`, and everything may use `Systems/` and `Shared/`. The Presenter needs no `EventBus` (§3, "Polled, not pushed").
 
 ```
  UI      TradeScreenView ──► TradePresenter ──► TradeManager, KingdomLedger (reads), TradeResourceRegistry,
-         ├─ WarehouseGaugeView ×6                PopupSystem, IAudioService, IHapticService, ILocalizationService
+         ├─ ResourceTileView ×6                  PopupSystem, IAudioService, IHapticService, ILocalizationService
          ├─ OfferRowView ×N ─► ResourceAmountView ×6
          ├─ TradeReceiptView
          ├─ TradeOfferPopup (via PopupSystem) ─► ResourceAmountView ×6
-         └─ WarehousesPopup (via PopupSystem) ─► WarehouseRowView ×6
+         └─ WarehousePopup  (via PopupSystem)
  Model   TradeManager ──► TradeOfferGenerator ──► TradeOfferSizing, TradeOfferAllocator
             ├──► OfferRefreshTimer, WarehouseCurve, TradeResourcePair
             └──► KingdomLedger (writes), IClock
  Data    TradeConfig
 ```
 
-**Registration** stays three lines: `RegisterInstance(TradeConfig)`, `Register<TradeManager>`, `Register<TradePresenter>`. The factory lambda goes, and `TradeManager`'s production constructor is marked `[Inject]`.
+**Registration:** `RegisterInstance(TradeConfig)`, `Register<TradeManager>`, `Register<TradePresenter>`. The factory lambda goes, and the production constructor is `[Inject]`.
 
 ### 2.1 Data
 
 | Class | Responsibility |
 |---|---|
-| `TradeConfig` | `OfferCount` (10), `OfferRefreshTimeSeconds` (1200), `InstantRefreshCrystalCost` (3), **`OfferCapacityShare` (0.20, new)**, **`MaxWarehouseLevel` (20, new — a design cap, tunable)**, `CapacityBase/Growth/RoundTo` (100/1.5/10), `CrystalCostBase/Growth` (5/1.5). `OnValidate` clamps: `OfferCapacityShare` to `[0.01, 0.40]` (§4.3), `MaxWarehouseLevel` to ≥ 1. **No formulas.** The legacy members (`OfferBaseAmount`, the `MaxWarehouseLevel` const, `WarehouseCapacityAt`, `WarehouseUpgradeCrystalCost`, `Grow`) live only while the legacy code exists. The const is renamed out of the way in step 2 so it cannot collide with the new field (§11). |
+| `TradeConfig` | `OfferCount` (10), `OfferRefreshTimeSeconds` (1200), `InstantRefreshCrystalCost` (3), `OfferCapacityShare` (0.20, clamped to `[MinOfferCapacityShare, MaxOfferCapacityShare]` = `[0.01, 0.40]`), `MaxWarehouseLevel` (20, ≥ 1), `CapacityBase/Growth/RoundTo` (100/1.5/10), `CrystalCostBase/Growth` (5/1.5). **No formulas.** The legacy members (`OfferBaseAmount`, `LegacyMaxWarehouseLevel`, `WarehouseCapacityAt`, `WarehouseUpgradeCrystalCost`, `Grow`) stay only while `Scripts/Legacy/` exists (removed in step 9). *Status: new fields added in step 2.* |
 
 ### 2.2 Model
 
@@ -169,39 +174,45 @@ public sealed class TradeManager
     int  InstantRefreshCost;   bool CanAffordInstantRefresh;   bool TryInstantRefresh();
 
     // Warehouses
-    int  WarehouseLevel(TradeResourceType t);   bool CanUpgradeFurther(TradeResourceType t);
-    int  CapacityAfterUpgrade(TradeResourceType t);                      // "it will hold N" in the confirmation
-    int  CrystalUpgradeCost(TradeResourceType t);  bool CanAffordCrystalUpgrade(TradeResourceType t);
-    bool TryUpgradeWithCrystals(TradeResourceType t);
-    int  PairedUpgradeCost(TradeResourceType t);   bool CanAffordPairedUpgrade(TradeResourceType t);
-    bool TryUpgradeWithPairedResource(TradeResourceType t);
+    int   WarehouseLevel(TradeResourceType t);   bool CanUpgradeFurther(TradeResourceType t);
+    int   CapacityAfterUpgrade(TradeResourceType t);                    // "it will hold N" in the confirmation
+    int   CrystalUpgradeCost(TradeResourceType t);  bool CanAffordCrystalUpgrade(TradeResourceType t);
+    bool  TryUpgradeWithCrystals(TradeResourceType t);
+    int   PairedUpgradeCost(TradeResourceType t);   bool CanAffordPairedUpgrade(TradeResourceType t);
+    bool  TryUpgradeWithPairedResource(TradeResourceType t);
     const float PairedUpgradeShare = 0.8f;      // GDD §7, settled
+
+    // Regen read-outs for the warehouse popup — the Ledger's numbers at the clock's now
+    float NextUnitProgress(TradeResourceType t);    // 0..1 toward the next unit; 0 when full
+    float SecondsPerUnit(TradeResourceType t);
+    float SecondsUntilFull(TradeResourceType t);    // 0 when full
+    int   UnitsPerHour(TradeResourceType t);        // capacity / 24, rounded down
 }
 ```
 
 Rules the Manager carries:
 - **It is the only class touching the Ledger or the clock.** Each price sits beside its check and its charge.
-- **Every `Try…` settles regen first** (`AccruePassiveResourceRegen`, never `AdvanceTo`, so no refresh lands mid-transaction), then re-reads its price. `CanAfford…` are display reads and do not settle; at most they are one 4 Hz tick stale, and the charge re-validates.
-- **All integer.** Stock, capacity, offer amounts and both prices are `int`, read straight from the Ledger. A warehouse's room is `capacity − stock`. An overflow issue carries `excess = amount − room`. On accept, `received` is the Ledger's return value from `AddTradeResource` and `forfeited = amount − received`. The warning and the receipt use the same arithmetic, so the excess the player is warned about is exactly what is forfeited (unless stock changed in between, e.g. a regen unit), and `received + forfeited == offered` holds per line.
-- **Paired price** = `ceil(capacity(paired) × 0.8)`, computed exactly as `(capacity × 4 + 4) / 5`: never below 80 %, and whole for any `CapacityRoundTo`.
-- **The level is the stored fact.** Capacity is `WarehouseCurve.Capacity(config, level)` pushed into the Ledger. A loaded level is clamped to `0..MaxWarehouseLevel`; at the cap, `CanUpgradeFurther` is false.
-- **`OffersChanged` fires once per change:** a refresh, an instant refresh or an accept. Upgrades do not raise it, because capacities are polled (§3).
+- **Every `Try…` settles regen first** (`AccruePassiveResourceRegen`, never `AdvanceTo`), then re-reads its price. `CanAfford…` are display reads; the charge re-validates.
+- **All integer.** A warehouse's room is `capacity − stock`. An overflow issue carries `excess = amount − room`. On accept, `received` is `AddTradeResource`'s return value and `forfeited = amount − received`. So `received + forfeited == offered` per line, and the warned excess is exactly the forfeit unless stock changed in between.
+- **Paired price** = `ceil(capacity(paired) × 0.8)`, computed as `(capacity × 4 + 4) / 5`.
+- **The level is the stored fact.** Capacity is `WarehouseCurve.Capacity(config, level)` pushed into the Ledger. A loaded level is clamped to `0..WarehouseCurve.TopLevel` (= `MaxWarehouseLevel − 1`, since `MaxWarehouseLevel` is the level as shown).
+- **`OffersChanged` fires once per change:** a refresh, an instant refresh or an accept. Upgrades do not raise it; tiles and popups poll.
 
 | Class | Responsibility | Pure? |
 |---|---|---|
-| `TradeOffer` | `Id`, `Give`/`Receive` as `IReadOnlyList<TradeAmount>` (generation order, so display and save are stable), `Profitability`, `TotalGive`/`TotalReceive`. Immutable; copies its inputs. | yes |
+| `TradeOffer` | `Id`, `Give`/`Receive` as `IReadOnlyList<TradeAmount>` (generation order), `Profitability`, `TotalGive`/`TotalReceive`. Immutable. | yes |
 | `TradeAmount` | `readonly struct (TradeResourceType Resource, int Units)`. | yes |
-| `TradeOfferGenerator` | `List<TradeOffer> GenerateBatch(int count, float capacityShare, IReadOnlyDictionary<TradeResourceType,int> capacities)`. Band mix via `ApportionStochastic`, shuffled; types from one shuffled list (no overlap, 2–3 a side); total via `TradeOfferSizing`; multipliers 110–140 / 95–105 / 60–90 %. Takes a `System.Random`. | yes |
-| `TradeOfferSizing` | `int GiveTotal(float share, give capacities, receive capacities)` and `int[] Split(int total, capacities, Random)`. Constants `MinGiveTotal = 10`, `JitterMin = 0.75`, `JitterMax = 1.25`. The formula in §4. | yes |
-| `TradeOfferAllocator` | Ported unchanged in behaviour: `ApportionStochastic`, `ApportionLargestRemainder`. | yes |
-| `OfferRefreshTimer` | Ported unchanged: deadline, one refresh per settle, phase preserved, pulled in to one interval. | yes |
-| `WarehouseCurve` | `int Capacity(TradeConfig, int level)` and `int CrystalCost(TradeConfig, int level)`. The level is clamped to `0..config.MaxWarehouseLevel`; computed in `double`, then held to `[roundTo, KingdomLedger.MaxWarehouseCapacity]` and `[1, int.MaxValue]`, so no tuning can wrap. Keeps the banker's rounding that matches `CharacteristicLevelingCurve` (`100 × 1.5² → 220`). | yes |
-| `TradeResourcePair` | `TradeResourceType PairedWith(TradeResourceType)`. Stays in code (decision 5). | yes |
-| `TradeIssue` / `TradeIssueKind` | `(Kind, Resource, int Units)`, where Units is the shortfall or the excess. `BlocksAcceptance` is false only for `WouldOverflowWarehouse`. | yes |
-| `TradeOfferEvaluation` | `OfferExists`, `Issues`, `CanAccept` (no blocking issue), `HasOverflowWarning`. | yes |
-| `TradeAcceptResult` | `Accepted`, `Issues`, `Received`, `Forfeited` (`IReadOnlyList<TradeAmount>`; Forfeited lists only lines with a loss). | yes |
+| `TradeOfferGenerator` | `GenerateBatch(int count, float capacityShare, IReadOnlyDictionary<TradeResourceType,int> capacities)`. Band mix via `ApportionStochastic`, shuffled; types from one shuffled list (no overlap, 2–3 a side); total via `TradeOfferSizing`; multipliers 110–140 / 95–105 / 60–90 %. Takes a `System.Random`. | yes |
+| `TradeOfferSizing` | `GiveTotal(share, giveCaps, receiveCaps)`, `Split(total, caps, Random)`. Constants `MinGiveTotal = 10`, `JitterMin = 0.75`, `JitterMax = 1.25`. | yes |
+| `TradeOfferAllocator` | `ApportionStochastic`, `ApportionLargestRemainder` — ported behaviour. | yes |
+| `OfferRefreshTimer` | Deadline, one refresh per settle, phase preserved, pulled in to one interval — ported behaviour. | yes |
+| `WarehouseCurve` | `Capacity(config, level)` and `CrystalCost(config, level)`. `TopLevel(config)` = `MaxWarehouseLevel − 1`, the highest stored level. The level is clamped to `0..TopLevel`, computed in `double`, then held to `[roundTo, KingdomLedger.MaxWarehouseCapacity]` and `[1, int.MaxValue]`. Banker's rounding as in `CharacteristicLevelingCurve` (`100 × 1.5² → 220`). | yes |
+| `TradeResourcePair` | `PairedWith(type)`. Stays in code. | yes |
+| `TradeIssue` / `TradeIssueKind` | `(Kind, Resource, int Units)` — the shortfall or the excess. `BlocksAcceptance` is false only for `WouldOverflowWarehouse`. | yes |
+| `TradeOfferEvaluation` | `OfferExists`, `Issues`, `CanAccept`. | yes |
+| `TradeAcceptResult` | `Accepted`, `Issues`, `Received`, `Forfeited` (only lines with a loss). | yes |
 
-Offer DTO mapping stays as private statics in `TradeManager`, as in `LawsManager`, tested through `LoadFromDto`/`ToDto`.
+The offer DTO mapping stays as private statics in `TradeManager`, tested through `LoadFromDto`/`ToDto`.
 
 ### 2.3 UI
 
@@ -211,45 +222,44 @@ public sealed class TradePresenter : IDisposable
     TradePresenter(TradeManager, KingdomLedger, IAudioService, IHapticService,
                    ILocalizationService, TradeResourceRegistry, PopupSystem);
 
-    event Action StateChanged;                          // re-render the list and static labels
+    event Action StateChanged;                          // offers list or locale changed — re-render
     event Action OffersArrived;                         // a new batch is on screen — rows animate in
     event Action<TradeReceiptViewData> TradeCompleted;  // show the receipt; the accepted row collapses
-    event Action<TradeResourceType> WarehouseUpgraded;  // that gauge celebrates
+    event Action<TradeResourceType> WarehouseUpgraded;  // that tile celebrates
 
-    // Polled by the view every frame — no strings, no allocation
-    WarehouseGaugeViewData GetGauge(TradeResourceType t);
-    float                  SecondsUntilRefresh;
-    // Read on StateChanged
-    OfferRowViewData[] GetOffers();   int InstantRefreshCost;   bool HasOffers;
-    string RefreshCountdownText(int seconds);           // once per whole second, via TimeFormat
+    // Polled by the view every frame — numbers only, no strings, no allocation
+    ResourceTileViewData GetTile(TradeResourceType t);  float SecondsUntilRefresh;
+    // Text, read on StateChanged or when the displayed number changes
+    string ResourceName(TradeResourceType t);   string LevelText(int displayedLevel);
+    string RefreshCountdownText(int seconds);   // via TimeFormat.MinutesSeconds
+    OfferRowViewData[] GetOffers();   int InstantRefreshCost;
 
-    // Popup data — read by popups at 4 Hz
-    TradeOfferPopupData GetOfferPopup(string offerId);  WarehousesPopupData GetWarehouses();
+    // Popup data — read by the popups at 4 Hz
+    TradeOfferPopupData GetOfferPopup(string offerId);   WarehousePopupData GetWarehouse(TradeResourceType t);
 
     // Actions
-    UniTaskVoid OpenOffer(string offerId);   UniTaskVoid RequestInstantRefresh();
-    UniTaskVoid OpenWarehouses();            void SetScreenVisible(bool visible);
+    UniTaskVoid OpenOffer(string offerId);   UniTaskVoid OpenWarehouse(TradeResourceType t);
+    UniTaskVoid RequestInstantRefresh();     void SetScreenVisible(bool visible);
 }
 ```
 
 | Class | Responsibility |
 |---|---|
-| `TradePresenter` | Builds localized view data, runs the popup flows, owns sound and haptics, gates passive sound on visibility, and re-renders on `OffersChanged` and `LocaleChanged`. No Unity UI types. Holds the `PopupSystem` MonoBehaviour, as `LawsPresenter` does. |
-| `TradeScreenView` | Root of `TradeScreen.prefab`, replacing `TradeView` on the same GameObject. Wires the panel button, the refresh button and the rows to the Presenter. In `Update`, it rewrites the countdown only on a whole-second change and renders the six gauges, each dirty-checking. Logs an error and disables itself when not injected. Checks that every resource has exactly one gauge. Never advances anything. |
-| `WarehouseGaugeView` | `Type` (serialized), `Render(data)` with dirty-check, `PlayUpgrade()` (punch). Shows stock / capacity and the bar, **no level**. It is not a tap target: the whole `WarehousePanel` is one Button (Laws §6.11). |
-| `OfferRowView` | Fixed 3 give + 3 receive `ResourceAmountView` slots, unused ones hidden. `Render(data)`, `PlayArrival(delay)`, `PlayRemoval()`. Raises `Pressed(id)`. **No affordability or overflow marking** — that lives only in the confirmation popup. A hidden row is inert (its id is cleared). |
-| `ResourceAmountView` | Icon (hidden when null, since an empty `Image` draws a white box) plus the "12 Stone" text. |
-| `TradeOfferPopup` | Two columns of 3 `ResourceAmountView`s, a **blockers** label, a **warnings** label, and Accept (interactive iff `CanAccept`) + Cancel. Fixed text (title, column headings, captions) is `LocalizeStringEvent`. |
-| `WarehousesPopup` | Six `WarehouseRowView`s matched by type, with a start-up check for exactly one per resource. Choice is `WarehouseUpgradeChoice`. No close button. |
-| `WarehouseRowView` | Icon, name, "Level N" (stored level + 1), `stock / capacity` + Filled-Horizontal bar, the crystal button ("38 crystals") and the paired button ("608 Wood"). At the cap it shows "Fully upgraded" with both buttons inactive. Below the cap both buttons are always tappable; affordability shows in the confirmation. Punches its level label on a level-up. |
-| `TradeReceiptView` | Up to 6 lines (3 received + up to 3 lost) for ~2.5 s on unscaled time, then fades. A new receipt replaces the current one. No raycast targets. |
-| View-data structs | What each view draws, already localized. The only `UnityEngine.Object` on them is a `Sprite`. The popup data structs and `WarehouseRowViewData` are `IEquatable`, comparing arrays element by element (the `CharacteristicsPopupData` pattern). |
+| `TradePresenter` | Builds localized view data, runs the popup flows, owns sound and haptics, gates passive sound on visibility, re-renders on `OffersChanged` and `LocaleChanged`. No Unity UI types. Holds the `PopupSystem` MonoBehaviour, as `LawsPresenter` does. |
+| `TradeScreenView` | Root of `TradeScreen.prefab`, replacing `TradeView` on the same GameObject. Wires the six tiles, the rows and the refresh button to the Presenter. In `Update`: the countdown (only on a whole-second change) and the six tiles (each dirty-checks). Logs an error and disables itself when not injected. Checks there is exactly one tile per resource. Never advances anything. |
+| `ResourceTileView` | `Type` (serialized). A Button covering the whole tile raises `Pressed(type)`. `Render(data)` dirty-checks stock, capacity and level. It asks for text (`ResourceName`, `LevelText`) only on first render, on a level change and on `StateChanged` (locale), so steady-state polling allocates nothing. `PlayUpgrade()` punches the level label. An icon with no sprite is hidden. |
+| `ResourceAmountView` | Icon (hidden when null) + "12 Stone". |
+| `OfferRowView` | Fixed 3 give + 3 receive `ResourceAmountView` slots, unused ones hidden. `Render`, `PlayArrival(delay)`, `PlayRemoval()`, `Pressed(id)`. **No affordability or overflow marking.** A hidden row is inert. |
+| `TradeOfferPopup` | Two columns of 3 `ResourceAmountView`s, a blockers label, a warnings label, Accept (interactive iff `CanAccept`) + Cancel. Fixed text by `LocalizeStringEvent`. |
+| `WarehousePopup` | One resource. Title ("Stone warehouse"); icon; "Level 7"; `stock / capacity` + Filled-Horizontal fill bar; a **regen block** — a next-unit progress bar, "+31 per hour", "Full in 5:12:03" (or "Full"); and two upgrade buttons, each a caption ("Upgrade") over its price ("38 crystals" / "608 Wood"). At the cap: "Fully upgraded" and both buttons inactive. Below the cap both are always tappable; affordability shows in the confirmation. The next-unit bar is hidden while the warehouse is full or a unit takes under a second, because it would only flicker. Choice: `WarehousePayment`. No close button. |
+| `TradeReceiptView` | Up to 6 lines (3 received + up to 3 lost) for ~2.5 s on unscaled time, then fades; a new receipt replaces the current one; no raycast targets. |
+| View-data structs | What each view draws. The only `UnityEngine.Object` on them is a `Sprite`. `TradeOfferPopupData` and `WarehousePopupData` are `IEquatable` (arrays compared element by element, as `CharacteristicsPopupData` does). `WarehousePopupData` compares the next-unit progress quantized to 1/100, so the popup redraws on a visible change rather than every read. |
 
 ### 2.4 Ledger: trade amounts become integers (🟡 — decided by the user; implemented in step 5)
 
-**Why integers beat a separate whole-number view of a decimal.** Today two numbers exist per resource: the stored decimal and what the player sees. Every reader then needs a floor, the floor has to be agreed across Trade and Cities, a filled warehouse can land one float-ulp under capacity (99/100), and every mutator needs a NaN/∞ guard. With integers there is one number, and it is the one on screen.
+**Why integers.** Every reader of a decimal stock needs a floor, which Trade and Cities would have to agree on. A filled warehouse can land one float-ulp under capacity (99/100), and every mutator needs a NaN guard. Integers give one number per resource, and it is the one on screen.
 
-The only reason amounts were decimal is regen, and regen does not need a fraction. It needs to remember *how far into the next unit it is*. That fits in the timestamp the state already has, which is how this project already does timers: a deadline that advances in whole intervals, so partial progress is never lost (`ReplenishmentTimer`, `OfferRefreshTimer`, ARCHITECTURE §4.5).
+Regen does not need a fraction. It needs to remember how far into the next unit it is, and the timestamp the state already holds can carry that. This is the deadline idea already used by `ReplenishmentTimer` and `OfferRefreshTimer` (ARCHITECTURE §4.5).
 
 **Regen, in whole units:**
 ```
@@ -266,29 +276,31 @@ AccruePassiveRegen(now):
   Amount = min(Amount + units, Capacity)
   Last   = Amount == Capacity ? now : Last + units × TicksPerDay / Capacity
 ```
-- **The arithmetic is exact in `long`** while `elapsed < 1 day` and `capacity ≤ 10,675,199` (`TicksPerDay × capacity < long.MaxValue`). The Ledger gets `public const int MaxWarehouseCapacity = 10_000_000`. `SetWarehouseCapacity` and `LoadFromDto` clamp to it (logged), and Trade's curve saturates at it. At level 20 capacity is 332,530, 30× below.
-- Advancing `Last` by the floored tick count can only move it *earlier*, by under one tick (100 ns) per credit, so the player can never lose progress.
-- **Many small ticks give exactly the same result as one long absence**, which is tested.
-- **The save needs nothing new:** `amount` and `lastUpdatedUtc` already carry the whole state. The existing rule "a pair saved a fraction of a second stale is covered exactly by the next accrual" still holds.
-- Upgrades still settle regen first, so the old rate is honoured up to the moment of the upgrade. The partial unit carries over into the new rate as elapsed time.
-- **Still publishes no event.** At level 20 the six warehouses gain ~4 units a second each, so publishing would put up to ~24 bus messages a second on the bus. Gauges and popups poll (ARCHITECTURE §4.5 unchanged in spirit).
+- **The arithmetic is exact in `long`** while `capacity ≤ 10,675,199`. The Ledger gets `public const int MaxWarehouseCapacity = 10_000_000`; `SetWarehouseCapacity` and `LoadFromDto` clamp to it (logged), and Trade's curve saturates at it. At the top level (stored 19, shown 20) capacity is 221,680.
+- Advancing `Last` by the floored tick count can only move it earlier (by < 100 ns per credit), so progress is never lost.
+- Many small ticks give exactly the same result as one long absence (tested).
+- **The save needs nothing new:** `amount` + `lastUpdatedUtc` carry the whole state.
+- Upgrades settle regen first; a partial unit carries over into the new rate as elapsed time.
+- **Still publishes no event.** At the level cap that would be up to ~24 bus messages a second, so tiles and popups poll.
 
 **API after the change:**
-
 ```csharp
 // TradeResourceState (setters stay internal)
 int Amount;   int Capacity;   DateTime LastUpdatedUtc;          // RegenRatePerSecond removed (derived)
+TimeSpan TimePerUnit;                                           // TicksPerDay / Capacity
+float    NextUnitProgress(DateTime now);                        // 0..1; 0 when full
+TimeSpan TimeUntilFull(DateTime now);                           // zero when full
 // KingdomLedger
 public const int MaxWarehouseCapacity = 10_000_000;
 int  AddTradeResource(TradeResourceType, int amount);           // returns the units that fit
 bool SpendTradeResource(TradeResourceType, int amount);
 bool HasTradeResource(TradeResourceType, int amount);
 void SetWarehouseCapacity(TradeResourceType, int capacity);     // > 0, clamped to MaxWarehouseCapacity
-// TradeResourceChangedEvent(type, int newAmount, int delta)
-// LedgerSnapshot.TradeResourceAmounts : IReadOnlyDictionary<TradeResourceType, int>
+// TradeResourceChangedEvent(type, int newAmount, int delta);  LedgerSnapshot amounts : int
 ```
-
-Negative amounts still throw `ArgumentException`, as today. The non-finite guard (`IsRejectedAsNonFinite`) goes, because an `int` cannot be NaN. Corrupt numbers in a file are handled by `WholeNumberJsonConverter` on load (§5). `RegenRatePerSecond` is removed: nothing outside the Ledger and tests reads it, and with integer regen it would be a second copy of "capacity per day". Nothing outside Trade and the Ledger's own tests uses any of this API (checked: Laws does not).
+- The three read-outs are pure reads over the state, taking `now` because the Ledger holds no clock. They live on the state because they are regen's rules, which are Ledger-owned (ARCHITECTURE §4.3); the popup is their first caller.
+- Negative amounts still throw. The non-finite guard goes: corrupt numbers in a file are handled by `WholeNumberJsonConverter` (§5).
+- Nothing outside Trade and the Ledger's own tests uses this API (checked).
 
 ---
 
@@ -299,7 +311,7 @@ Negative amounts still throw `ArgumentException`, as today. The non-finite guard
 GameStateCoordinator.LoadOrInitialize()
   ├─ save → KingdomLedger.LoadFromDto(ledger)       (whole amounts, capacity clamped, timestamps)
   │         TradeManager.LoadFromDto(trade)
-  │           1. levels → clamp 0..MaxWarehouseLevel → SetWarehouseCapacity(WarehouseCurve.Capacity)
+  │           1. levels → clamp 0..TopLevel → SetWarehouseCapacity(WarehouseCurve.Capacity)
   │           2. offers → skip damaged entries (< 1, unknown name; an empty side drops the offer)
   │           3. OfferRefreshTimer.Restore(deadline)       (missing → a fresh interval; > 1 interval → pulled in)
   │           4. no offers left → generate a batch         (capacities are final from step 1)
@@ -318,12 +330,12 @@ GameClock.Ticked(now)
   └─ KingdomLedger.AccruePassiveResourceRegen(now) → whole units credited, no event
 TradeScreenView.Update (only while the tab is active)
   ├─ countdown: whole second changed → RefreshCountdownText
-  └─ 6 × GetGauge → each gauge redraws only when stock or capacity changed
+  └─ 6 × GetTile → each tile redraws only when stock, capacity or level changed
 ```
 
-The Presenter tells a refresh from an accept by the deadline: every refresh moves `NextRefreshDueUtc`, and an accept never does. The state is derived rather than stored, like Laws' `_hadActiveCard`.
+The Presenter tells a refresh from an accept by the deadline: a refresh always moves it, an accept never does.
 
-**Polled, not pushed.** The Presenter does not subscribe to `TradeResourceChangedEvent`. Gauges and open popups poll, so a change from another mechanic shows within a frame, and one accept causes exactly one re-render.
+**Polled, not pushed.** The Presenter does not subscribe to `TradeResourceChangedEvent`. Tiles and open popups poll, so changes from any mechanic show within a frame and one accept causes exactly one re-render.
 
 ### Opening and accepting an offer
 ```
@@ -336,47 +348,44 @@ OfferRowView tap → Presenter.OpenOffer(id)                       — every tap
         Accept → TradeManager.AcceptOffer(id)       settles regen, re-evaluates, refuses or applies
           ├─ refused (give side became short within one refresh) → refused sound, no haptic
           └─ accepted → OffersChanged (one re-render) → accept sound + ONE haptic
-                → TradeCompleted(receipt): row collapses, gauges tween, receipt strip:
+                → TradeCompleted(receipt): row collapses, tiles tween, receipt strip:
                      "+13 Wood"  "+30 Clay"  "17 Wood lost — the warehouse is full"
         backdrop / Cancel / offer refreshed away → nothing happens
 ```
 
-**Why the result is a receipt strip on the screen, not in the confirmation or a result popup:**
-- `Ask` closes the confirmation on the tap, so showing a result inside it would turn a question into a panel with a second "OK".
-- A result popup costs a tap on every trade, against "cozy" (GDD §2).
-- The strip names every amount, with the loss on its own line, with no extra tap, on the screen where the warehouses visibly change. It is one Trade component, not a new system; if Economy later wants "+500 gold", that is the trigger to promote it to `Shared/UI`.
-- The loss is also announced *before* the choice, in the warning, so the receipt confirms rather than reveals.
+**Why a receipt strip rather than a result popup:**
+- `Ask` closes the confirmation on the tap, so a result inside it would turn a question into a panel with a second "OK".
+- A result popup costs a tap per trade, against "cozy" (GDD §2).
+- The strip names every amount, with the loss on its own line, with no extra tap, right above the tiles that visibly change. It is one Trade component; the first other module that wants "+500 gold" is the trigger to promote it to `Shared/UI`.
 
 ### Instant refresh
 ```
-"Refresh now" (always tappable) → Presenter.RequestInstantRefresh()
+Refresh button in the offer list's header (always tappable) → Presenter.RequestInstantRefresh()
   └─ ConfirmPopup.Ask(() => (title, "Spend 3 crystals to replace every offer now? Otherwise new offers
                                      arrive in 12:41." [+ "Not enough crystals."], canConfirm: CanAfford),
                       closeWhen: () => NextRefreshDueUtc != dueWhenOpened)   // the free refresh landed
-       Confirm → TryInstantRefresh()   price re-read, crystals spent, batch from current capacities,
-                                       timer restarted → OffersChanged → refreshed sound + ONE haptic,
-                                       rows animate in
+       Confirm → TryInstantRefresh() → OffersChanged → refreshed sound + ONE haptic, rows animate in
 ```
 
-### Warehouses popup and both upgrades
+### A warehouse popup and its upgrades
 ```
-Tap anywhere on WarehousePanel → Presenter.OpenWarehouses()
-  └─ WarehousesPopup.Show(GetWarehouses)                      stays open, re-reads at 4 Hz
-       loop: WaitForChoice → (resource, payment)
+Tap anywhere on the Stone tile → Presenter.OpenWarehouse(Stone)
+  └─ WarehousePopup.Show(() => GetWarehouse(Stone))                stays open, re-reads at 4 Hz
+       shows: "Stone warehouse", Level 6, 412 / 760 + bar, next-unit bar, "+31 per hour",
+              "Full in 8:30:12", [Upgrade · 38 crystals]  [Upgrade · 608 Wood]
+       loop: WaitForChoice → payment
          Crystals → ConfirmPopup.Ask(() => ("Upgrade the warehouse?",
                        "Spend 38 crystals to raise the Stone warehouse to level 7? It will hold 1,140."
-                       [+ "Not enough crystals."], canConfirm: CanAffordCrystalUpgrade(r)))
-                    Confirm → TryUpgradeWithCrystals(r)        settle regen, re-read the price, charge, level++
+                       [+ "Not enough crystals."], canConfirm: CanAffordCrystalUpgrade(Stone)))
+                    Confirm → TryUpgradeWithCrystals(Stone)        settle regen, re-read the price, charge, level++
          Paired   → ConfirmPopup.Ask(() => ("Upgrade the warehouse?",
                        "Spend 608 Wood to raise the Stone warehouse to level 7? It will hold 1,140."
-                       [+ "Not enough Wood: you have 412."], canConfirm: CanAffordPairedUpgrade(r)))
-                    Confirm → TryUpgradeWithPairedResource(r)  settle regen, re-read the price, spend paired stock
-         success → upgrade sound + ONE haptic → WarehouseUpgraded(r): row level punches, gauge punches;
-                   the popup redraws itself on its next read
-       tap outside → closes the top popup only: the confirmation first, then the warehouses popup
+                       [+ "Not enough Wood: you have 412."], canConfirm: CanAffordPairedUpgrade(Stone)))
+                    Confirm → TryUpgradeWithPairedResource(Stone)  settle regen, re-read the price, spend Wood
+         success → upgrade sound + ONE haptic → WarehouseUpgraded(Stone): the tile's level punches;
+                   the popup redraws at the new level on its next read
+       tap outside → closes the top popup only: the confirmation first, then the warehouse popup
 ```
-
-(The "level 7" in these examples is the displayed level: stored 5 → shown 6 → upgrades to 7.)
 
 ---
 
@@ -398,16 +407,14 @@ Each side is split across its resources in proportion to  capacity × jitter,  j
 - **Capacity, not fill:** an offer does not shrink right after the player trades stock away.
 - **The smaller side's capacity** bounds every amount by its own warehouse in both directions (§4.3).
 - **Split in proportion to capacity:** every upgrade makes the offers touching that warehouse bigger.
-- **30/45/25 keeps its meaning.** Units are still valued 1:1, profitability is still `receiveTotal / giveTotal`, and the band mix stays the stochastic split.
-- **Minimum 10 units given** keeps the bands distinct at any capacity: profitable ≥ 11 > 10, unprofitable ≤ 9 < 10, neutral 10–11. It is a correctness floor, so it is a constant with a test. At default tuning it never binds.
-- **Jitter narrowed** from today's `0.01–1.01` to `0.75–1.25`, so a single offer is less lopsided than today. This is a deliberate behaviour change.
-- **Rounding is half away from zero**, explicit, as Laws prices are.
+- **30/45/25 keeps its meaning:** 1:1 valuation, profitability = `receiveTotal / giveTotal`, the stochastic band mix.
+- **Minimum 10 given** keeps the bands distinct at any capacity (profitable ≥ 11 > 10, unprofitable ≤ 9 < 10). It is a correctness floor, a tested constant, and never binds at default tuning.
+- **Jitter narrowed** from `0.01–1.01` to `0.75–1.25`, so a single offer is less lopsided than today. Deliberate.
+- **Rounding is half away from zero**, explicit.
 
 ### 4.2 Worked numbers (share 0.20, base 100, growth 1.5, roundTo 10)
 
-Capacity: L0 100 · L1 150 · L2 220 · L3 340 · L4 510 · L5 760 · L6 1,140 · L7 1,710 · L8 2,560 · L9 3,840 · L10 5,770 · L15 43,790 · L20 (cap) 332,530.
-
-**All warehouses at the same level** (2v2 means 2 resources given, 2 received):
+Capacity: L0 100 · L1 150 · L2 220 · L3 340 · L4 510 · L5 760 · L6 1,140 · L7 1,710 · L8 2,560 · L9 3,840 · L10 5,770 · L15 43,790 · L19 (cap, shown as 20) 221,680. Stored levels; the screen shows level + 1.
 
 | Level (cap) | 2v2 / 3v2 / 2v3 give | 3v3 give | Profitable receives | Neutral receives | Unprofitable receives |
 |---|---|---|---|---|---|
@@ -416,48 +423,25 @@ Capacity: L0 100 · L1 150 · L2 220 · L3 340 · L4 510 · L5 760 · L6 1,140 �
 | L3 (340) | 136 | 204 | 150–190 / 224–286 | 129–143 / 194–214 | 82–122 / 122–184 |
 | L5 (760) | 304 | 456 | 334–426 / 502–638 | 289–319 / 433–479 | 182–274 / 274–410 |
 | L10 (5,770) | 2,308 | 3,462 | 2,539–3,231 / 3,808–4,847 | 2,193–2,423 / 3,289–3,635 | 1,385–2,077 / 2,077–3,116 |
-| L20 (332,530) | 133,012 | 199,518 | — | — | — |
+| L19, the cap (221,680) | 88,672 | 133,008 | — | — | — |
 
-Today every offer gives a flat 50. At L0 the new offers give 40–60, so early trading feels the same.
-
-**Uneven warehouses** (Stone and Wood at L5 = 760, the rest at L0 = 100):
-
-| Offer | min(Σgive, Σreceive) | Give total | Split |
+| Offer (Stone, Wood at L5 = 760; the rest at L0 = 100) | min(Σgive, Σreceive) | Give total | Split |
 |---|---|---|---|
-| Stone + Wood → Metal + Clay | min(1520, 200) = 200 | 40 | ~20 Stone, ~20 Wood → ~20 Metal, ~20 Clay (neutral) |
-| Metal + Clay → Stone + Wood | min(200, 1520) = 200 | 40 | ~20 Metal, ~20 Clay → ~20 Stone, ~20 Wood |
-| Stone + Clay → Wood + Metal | min(860, 860) = 860 | 172 | ~152 Stone, ~20 Clay → ~152 Wood, ~20 Metal |
+| Stone + Wood → Metal + Clay | 200 | 40 | ~20 Stone, ~20 Wood → ~20 Metal, ~20 Clay (neutral) |
+| Metal + Clay → Stone + Wood | 200 | 40 | ~20 Metal, ~20 Clay → ~20 Stone, ~20 Wood |
+| Stone + Clay → Wood + Metal | 860 | 172 | ~152 Stone, ~20 Clay → ~152 Wood, ~20 Metal |
 
-### 4.3 Bounds, and how it interacts with the overflow warning
+### 4.3 Bounds and the overflow warning
 
-- Each give amount ≤ `share × 1.25/0.75` ≈ **33 %** of its own warehouse.
-- Each receive amount ≤ `share × 1.40 × 1.25/0.75` ≈ **47 %** of its own warehouse (±1 for rounding).
+- Each give amount ≤ ≈ **33 %** of its own warehouse; each receive amount ≤ ≈ **47 %** (±1 for rounding).
+- So no offer ever asks for more than its warehouse holds, and an offer overflows only a warehouse more than about half full, at every level.
+- `OfferCapacityShare ≤ 0.40` keeps every amount within its own warehouse; a test pins it at the maximum.
+- The largest possible offer at the cap is ~560k units, far inside `int`.
+- **Balance note:** a once-a-day player often has full warehouses and sees overflow warnings on most offers. That is true today; sizing keeps it consistent across levels.
+- **Offers already listed are not resized by an upgrade.**
+- Where the numbers live: `OfferCapacityShare` in `TradeConfig`; `MinGiveTotal` and the jitter bounds as constants in `TradeOfferSizing`; the multipliers in `TradeOfferGenerator`.
 
-So:
-- **no offer ever asks for more than its warehouse holds**;
-- **an offer overflows only a warehouse that is more than about half full**, the same fraction at every level (today's flat 50 made overflow vanish as warehouses grew);
-- `OfferCapacityShare ≤ 0.40` keeps "no amount exceeds its own warehouse" true (0.40 × 1.4 × 1.667 ≈ 0.93), and a test pins it at that maximum;
-- the largest possible offer at the cap is ~0.40 × 3 × 332,530 × 1.4 ≈ 560k units, far inside `int`.
-
-**Balance note, not solved here:** regen fills a warehouse in 24 h, so a once-a-day player often has full warehouses and sees overflow warnings on most offers. That is true today too; sizing by capacity only keeps it consistent across levels.
-
-**Existing offers are not resized by an upgrade.** Offers are fixed, saved terms, and the next batch picks up the new capacity.
-
-**Where the numbers live:** `OfferCapacityShare` in `TradeConfig`; `MinGiveTotal` and the jitter bounds as constants in `TradeOfferSizing`; the band multipliers in `TradeOfferGenerator`.
-
-### 4.4 GDD §7 text to add (after "Offer generation ratio")
-
-> - **Offer size scales with warehouse capacity** **[ASSUMED — CONFIRM share = 20%]**. An offer
->   moves a share of the warehouses it trades with, measured on the smaller side:
->   `give total = max(10, round(0.20 × min(Σ give-side capacities, Σ receive-side capacities)))`, and
->   the receive total is the give total times the offer's profitability multiplier (110–140%,
->   95–105%, 60–90%). Each side is split across its resources in proportion to their capacities, with
->   ±25% variation, every amount a whole number of at least 1. Capacity rather than stock, so an
->   offer does not shrink right after the player trades stock away; the smaller side, so no amount
->   ever exceeds about half of its own warehouse — an offer never asks for more than a warehouse
->   holds, and only overflows a warehouse that is already about half full. Upgrading a warehouse
->   makes every later offer that touches it bigger; offers already on the list keep their terms.
->   The share is `TradeConfig.OfferCapacityShare`.
+The GDD §7 text for all of this is already in place.
 
 ---
 
@@ -471,17 +455,15 @@ So:
 | `TradeResourceStateDto.capacity` | `float` | `int` + the same converter (still a fallback; Trade re-derives capacity from the level) |
 | `TradeResourceStateDto.lastUpdatedUtc` | ISO string | unchanged; it now means "when the unit in progress started" |
 | `TradeOfferDto.give` / `.receive` | `Dictionary<string, float>` | `Dictionary<string, int>` + `[JsonProperty(..., ItemConverterType = typeof(WholeNumberJsonConverter))]` |
-| `TradeStateDto.*`, `GameStateDto.*` | — | unchanged except `CurrentSchemaVersion = 8` |
+| `GameStateDto.CurrentSchemaVersion` | 7 | 8 |
 
-**An existing save stays readable.** `WholeNumberJsonConverter` reads `87.34` as 87, `25.0` as 25, and NaN as 0 (then rejected as a non-positive capacity, or clamped as an amount). Plain Newtonsoft would reject a decimal for an `int` field and move the whole save to `.corrupt`, which is why every changed field carries the converter. A test loads a verbatim schema-7 JSON file.
+**An existing save stays readable.** The converter reads `87.34` as 87, `25.0` as 25, and NaN as 0. Plain Newtonsoft would reject a decimal for an `int` and move the whole save to `.corrupt`, which is why every changed field carries it. A test loads a verbatim schema-7 file.
 
-An old decimal stock rounds half away from zero, so a player gains or loses at most half a unit once. Its partial regen progress restarts from the saved timestamp, which is correct. Saved offers keep their flat-50 terms until the next refresh.
+An old decimal stock rounds half away from zero (at most ½ unit, once). Saved offers keep their flat-50 terms until the next refresh.
 
-**Load rules in `TradeManager`:** an offer amount < 1 is skipped; a side left empty drops the offer; an unknown resource or profitability name is skipped or falls back to Neutral (as today). A saved level above `MaxWarehouseLevel` is clamped to it.
+**Load rules in `TradeManager`:** an offer amount < 1 is skipped; an empty side drops the offer; unknown names are skipped or fall back to Neutral; a level above `TopLevel` (`MaxWarehouseLevel − 1`) is clamped to it.
 
-**IL2CPP:** no new DTO *types*, and the converter is already `[Preserve]`d. The device round trip remains an outstanding known gap (not a concern while testing is Editor-only).
-
-Per ARCHITECTURE §5, the no-migration rule still applies before the first external build. The schema bump is recorded in the summary at the end of the implementation, not as history in `GameStateDto`.
+**IL2CPP:** no new DTO types, and the converter is `[Preserve]`d. The device round trip remains an outstanding known gap.
 
 ---
 
@@ -491,87 +473,103 @@ Per ARCHITECTURE §5, the no-migration rule still applies before the first exter
 
 | Asset | GUID | Action |
 |---|---|---|
-| `Scripts/TradeConfig.cs` | `73a9a621ab2aab944a432a3011ac5a71` | **move** → `Scripts/Data/` via `AssetDatabase.MoveAsset` (GUID kept, so the asset's `m_Script` resolves). Namespace unchanged. |
-| `ScriptableObjects/Config/TradeConfig.asset` | `73e2f9f5a7e53384bb49ec0859a65de1` | **keep**. Referenced by `GameBootstrapper` in `Bootstrap.unity`. Gains `OfferCapacityShare: 0.2`, `MaxWarehouseLevel: 20`; re-serialized after step 9 to drop `OfferBaseAmount`. |
+| `Scripts/Data/TradeConfig.cs` | `73a9a621ab2aab944a432a3011ac5a71` | **moved** in step 2 (GUID kept) ✔ |
+| `ScriptableObjects/Config/TradeConfig.asset` | `73e2f9f5a7e53384bb49ec0859a65de1` | **keep**. New fields set in step 2 ✔; re-serialized after step 9 to drop `OfferBaseAmount`. |
 | `Prefabs/TradeScreen.prefab` | `896cee4109d1556448e017356c09690f` | **keep asset + root GameObject** (fileID `88228022552384697`); **rebuild contents** (§6.2) |
 | `Prefabs/TradeOfferRow.prefab` | `36400c5f9971ad7428578de991d3de70` | **delete** ✅ approved |
-| `Prefabs/WarehouseTile.prefab` | `bc4b6f6127e3c2a4ba774386fb03ad87` | **delete** ✅ approved |
-| `Localization/TradeUITable*` | — | **keep**; entries edited through the Localization editor API (§7) |
-| Old scripts: `Domain/*.cs` (8), `Presenters/*.cs` (2), `Views/*.cs` (4), `TradeManager.cs`, `TradeUIText.cs` | — | quarantined in step 1, **deleted** in step 9 ✅ approved |
-| Old tests `Tests/EditMode/Modules/Trade/*.cs` (6) | — | quarantined in step 1, **deleted in step 5** (superseded there, §11) ✅ approved |
-| Empty `Domain/`, `Presenters/`, `Views/`, `ScriptableObjects/Data/` folders + `.gitkeep`s | — | **delete** ✅ approved |
-| `Systems/Ledger/Scripts/KingdomLedger.cs`, `TradeResources/TradeResourceState.cs`, `TradeResources/TradeResourceChangedEvent.cs`, `LedgerSnapshot.cs` | — | **edit** (§2.4) |
-| `Systems/Save/Scripts/Dto/TradeResourceStateDto.cs`, `TradeOfferDto.cs`, `GameStateDto.cs` | — | **edit** (§5) |
-| New prefabs: `OfferRow`, `ResourceAmount`, `WarehouseGauge`, `WarehouseRow`, `WarehousesPopup`, `TradeOfferPopup` | new | **create** |
+| `Prefabs/WarehouseTile.prefab` | `bc4b6f6127e3c2a4ba774386fb03ad87` | **delete** ✅ approved (replaced by `ResourceTile.prefab` + `WarehousePopup.prefab`) |
+| `Localization/TradeUITable*` | — | **keep**; entries edited (§7) |
+| `Scripts/Legacy/**` (16 scripts) | — | quarantined in step 1 ✔, **deleted** in step 9 ✅ |
+| `Tests/EditMode/Modules/TradeLegacy/*` (6) | — | quarantined in step 1 ✔, **deleted in step 5** ✅ |
+| Empty `Domain/`, `Presenters/`, `Views/`, `ScriptableObjects/Data/` folders + `.gitkeep`s | — | **delete** ✅ |
+| Ledger: `KingdomLedger.cs`, `TradeResourceState.cs`, `TradeResourceChangedEvent.cs`, `LedgerSnapshot.cs` | — | **edit** (§2.4) |
+| Save: `TradeResourceStateDto.cs`, `TradeOfferDto.cs`, `GameStateDto.cs` | — | **edit** (§5) |
+| `Shared/Text/TimeFormat.cs` | — | **edit**: add `HoursMinutesSeconds` |
+| New prefabs: `ResourceTile`, `ResourceAmount`, `OfferRow`, `TradeOfferPopup`, `WarehousePopup` | new | **create** |
 | `Systems/Popups/ScriptableObjects/PopupRegistry.asset` | — | **edit** (additive): append the two Trade popups |
-| `Scenes/Main.unity` | — | **edit**: *Remove Unused Overrides* on the `TradeScreen` instance after the rebuild. Its overrides are TMP style-hash and RectTransform values on child objects that will no longer exist; none target the `TradeView` component. ✅ approved |
-| `Core/Bootstrap/Scripts/GameBootstrapper.cs`, `GameStateCoordinator.cs` | — | **edit** (usings, registration) |
+| `Scenes/Main.unity` | — | **edit**: *Remove Unused Overrides* on the `TradeScreen` instance after the rebuild ✅ |
+| `Core/Bootstrap/Scripts/GameBootstrapper.cs`, `GameStateCoordinator.cs` | — | edited in step 1 (legacy aliases ✔); **edit** again at cutover |
 
-**Approved 🔴 items (your answer to Q9):**
-1. delete `TradeOfferRow.prefab` and `WarehouseTile.prefab`;
-2. remove the six tile instances, `ConfirmPanelCanvas` and the `TradeView` component from `TradeScreen.prefab`;
+**Approved 🔴 items:**
+1. delete the two old prefabs;
+2. remove the six tile instances, `ConfirmPanelCanvas`, `TitleLabel` and the `TradeView` component from `TradeScreen.prefab` (`TitleLabel` is new in revision 3, since the title is dropped);
 3. delete the old scripts and tests;
 4. delete the empty folders;
-5. remove 7 `TradeUITable` entries;
+5. remove unused `TradeUITable` entries — **now 9** (revision 3 adds `ui.trade_title`, `ui.offers`, `ui.warehouses`, and keeps `ui.upgrade`, which comes back into use, §7);
 6. re-serialize `TradeConfig.asset`;
-7. remove the unused overrides in `Main` (only after confirming nobody else has `Main` open).
+7. remove the unused overrides in `Main`.
 
 ### 6.2 How the prefabs are built (through MCP; no hand-edited YAML)
 
-- **Copy the Laws prefabs for a consistent greybox look.** `AssetDatabase.CopyAsset` `CharacteristicsPopup.prefab` → `WarehousesPopup.prefab`, and `CharacteristicRow.prefab` → `WarehouseRow.prefab` (new GUIDs). Swap the scripts, add the second button and the stock label, and wire the fields with `manage_prefabs modify_contents component_properties`. Nested rows override only `_type`. The title's `LocalizeStringEvent` → `TradeUITable/ui.warehouses`.
-- **`TradeOfferPopup.prefab`:**
-  - full-screen root + `TradeOfferPopup`, with a `Panel` child that scales in (no backdrop — `PopupSystem` owns it);
+- **`WarehousePopup.prefab`:** start from a copy of `ConfirmPopup.prefab` (`AssetDatabase.CopyAsset`, new GUID) for the same panel frame and styling. Swap `ConfirmPopup` for `WarehousePopup` and build the content inside `Panel`:
+  - title;
+  - icon + level row;
+  - stock label + fill bar (`Image` Filled, Horizontal);
+  - regen block (next-unit bar, rate label, time-to-full label);
+  - two upgrade buttons, each a `LocalizeStringEvent` caption (`TradeUITable/ui.upgrade`) + a price label;
+  - a "Fully upgraded" label.
+
+  Wire with `manage_prefabs modify_contents component_properties`.
+- **`TradeOfferPopup.prefab`:** also from a copy of `ConfirmPopup.prefab`. Content:
   - title (`ui.offer.title`);
   - two headed columns (`ui.you_give`, `ui.you_get`) of 3 nested `ResourceAmount`s;
   - a blockers label and a warnings label;
-  - Accept/Cancel captions → `SharedTable/ui.confirm`, `ui.cancel`, as `ConfirmPopup` does.
-
-  It is built by one `execute_code` script (C# 6, `UnityEngine.Object` spelled out) that creates the hierarchy and calls `PrefabUtility.SaveAsPrefabAsset`, then wired with `modify_contents`.
-- **`ResourceAmount`, `OfferRow`, `WarehouseGauge`** are built the same way. `OfferRow` has a raycast-target background Button and 3+3 nested `ResourceAmount`s.
-- **Register both popups** in `PopupRegistry.asset` via `execute_code` (`SerializedObject`, append, apply, save).
-- **`TradeScreen.prefab` rebuild** (`open_prefab_stage` → edit → `save_prefab_stage`). Keep `Background`, `SafeArea` (`SafeAreaFitter` padding 160), `TitleLabel`, `RefreshRow`, and `OfferListPanel`/`Viewport`/`Content`/`NoOffersLabel`; their fileIDs keep the scene's overrides on them valid. Then:
-  - root: remove `TradeView`, add and wire `TradeScreenView`;
-  - `WarehousePanel`: delete the 6 tile instances; add 6 `WarehouseGauge`s (`_type` each) in a 3×2 `GridLayoutGroup`, plus a raycast-target background `Image` + `Button` on the panel;
-  - `RefreshNowButton` gains a caption (`ui.refresh_now`) beside its cost;
-  - add an `Offers` heading (`ui.offers`);
+  - Accept/Cancel keep their `SharedTable/ui.confirm`, `ui.cancel` captions.
+- **`ResourceTile.prefab`:** root `Image` (raycast target) + `Button` + `ResourceTileView`; children: icon, name, level, a bar (background + Filled-Horizontal fill) with the "412 / 760" label over it.
+- **`ResourceAmount.prefab`**, **`OfferRow.prefab`:** built by one `execute_code` script each (C# 6, `UnityEngine.Object` spelled out, `PrefabUtility.SaveAsPrefabAsset`), then wired. `OfferRow` has a raycast-target background Button and 3+3 nested `ResourceAmount`s.
+- **Register both popups** in `PopupRegistry.asset` (`SerializedObject` append, apply, save).
+- **`TradeScreen.prefab` rebuild** (`open_prefab_stage` → edit → `save_prefab_stage`). Keep `Background`, `SafeArea` (`SafeAreaFitter`, padding.bottom 160), and `OfferListPanel`/`Viewport`/`Content`/`NoOffersLabel` (their fileIDs keep the scene's overrides valid). Then:
+  - root: remove `TradeView`, add and wire `TradeScreenView`; remove `TitleLabel`;
+  - `WarehousePanel` → renamed `ResourceGrid`: delete the 6 old tiles; add 6 `ResourceTile`s (`_type` each) in a `GridLayoutGroup`, 3 columns × 2 rows, with the columns as pairs (Stone/Wood, Metal/Minerals, Leather/Clay); top-anchored, fixed height;
+  - `RefreshRow` → becomes `OffersHeader`, the top strip of the offers area: the countdown label + `RefreshNowButton` (caption `ui.refresh_now` + cost);
+  - `OfferListPanel` stretches from below the header to the safe-area floor;
   - delete `ConfirmPanelCanvas`;
-  - add `ReceiptCanvas` (nested Canvas, `overrideSorting` 10, `GraphicRaycaster`, every graphic `raycastTarget = false`) with `TradeReceiptView`.
+  - add `ReceiptCanvas`.
 
 ```
-TradeScreen (Canvas, TradeScreenView)           static chrome
-├── Background                                   full-bleed
-└── SafeArea (padding.bottom 160)
-    ├── TitleLabel                               "Trade"
-    ├── WarehousePanel (Canvas+Raycaster, Button) 6 gauges — numbers and fills change with regen
-    ├── RefreshRow (Canvas+Raycaster)            countdown (once a second) + Refresh now [3]
-    ├── OffersHeading                            "Offers"
-    ├── OfferListPanel (Canvas+Raycaster, ScrollRect)  rows re-lay out while dragging
-    └── ReceiptCanvas (Canvas, overrideSorting 10)     animates over the list, never intercepts taps
+TradeScreen (Canvas, TradeScreenView)               static chrome
+├── Background                                       full-bleed
+└── SafeArea (SafeAreaFitter, padding.bottom 160)
+    ├── ResourceGrid (Canvas + Raycaster)            top-anchored, fixed height — 6 tiles, numbers and bars move
+    │     [Stone ] [Metal   ] [Leather]
+    │     [Wood  ] [Minerals] [Clay   ]              columns = upgrade pairs
+    ├── OffersHeader (Canvas + Raycaster)            fixed height, directly below the grid:
+    │     "Refresh in 12:41"            [Refresh now · 3]     countdown rewrites once a second
+    ├── OfferListPanel (Canvas + Raycaster, ScrollRect)       stretches from the header to the safe-area floor
+    │     └── Viewport / Content (VerticalLayoutGroup + ContentSizeFitter) / NoOffersLabel
+    └── ReceiptCanvas (Canvas, overrideSorting 10, Raycaster, no raycast targets)
+                                                     over the top of the list, under the grid
 ```
+
+**Why 3×2, not 2×3.**
+- At 1080 reference width, three columns give ~340-unit tiles, enough for "221,680 / 221,680" on one line.
+- Two rows cost ~2 × 210 units of height instead of three rows' ~3 × 180, which leaves the offer list ~120 units more. That is one more visible row at the 3:4 aspect.
+- Making the columns the upgrade pairs shows each tile's paired resource directly beneath or above it.
+
+The layout is checked at `KR 3:4`, `KR 9:16`, `KR 9:20` (§9.4). The grid and the header are fixed heights, top-anchored, and all spare height goes to the list, the same approach as Laws §6.12.
+
+**Five canvases, by what changes:** the root (static); `ResourceGrid` (bars dirty vertices whenever a unit lands); `OffersHeader` (the countdown, once a second); `OfferListPanel` (re-lays out while scrolling); `ReceiptCanvas` (animates). Every nested canvas gets its own `GraphicRaycaster`.
 
 **GUIDs and references that must survive:**
-- `TradeConfig.cs` `73a9a621…` (the asset's `m_Script`);
-- `TradeConfig.asset` `73e2f9f5…` (`GameBootstrapper._tradeConfig`);
-- `TradeScreen.prefab` `896cee41…` with root fileID `88228022552384697`. `Main.unity` references that root from the nav bar's Trade tab (`NavTabButton._screen` → `479876981`) and from `BottomNavBarView._screens[1].Root`. The root is never replaced, and the cutover check confirms the Trade tab still switches.
+- `TradeConfig.cs` `73a9a621…` and `TradeConfig.asset` `73e2f9f5…` (both verified in step 2);
+- `TradeScreen.prefab` `896cee41…` with root fileID `88228022552384697`, referenced from `Main.unity` by the nav bar's Trade tab (`NavTabButton._screen` → `479876981`) and by `BottomNavBarView._screens[1].Root`. The root is never replaced; the cutover check confirms the tab still switches.
 
 ---
 
 ## 7. Localization
 
-Plain `{0}` formats, `en` + `uk`, edited via `LocalizationEditorSettings.GetStringTableCollection("TradeUITable")` in `execute_code`. *Code* means on `TradeUIText.AllKeys` and checked by `TradeTextTests`. *Chrome* means a `LocalizeStringEvent`, unchecked.
+Plain `{0}` formats, `en` + `uk`, edited via `LocalizationEditorSettings.GetStringTableCollection("TradeUITable")` in `execute_code`. *Code* means on `TradeUIText.AllKeys` and checked by `TradeTextTests`; *chrome* means a `LocalizeStringEvent`, unchecked.
 
 **Kept**
 
 | Key | Kind | en (uk unchanged) |
 |---|---|---|
-| `ui.trade_title` | chrome | Trade |
 | `ui.no_offers` | chrome | The caravans are still on the road |
-| `ui.warehouses` | chrome — warehouses popup title | Warehouses |
-| `ui.offers` | chrome — list heading | Offers |
 | `ui.you_give`, `ui.you_get` | chrome — offer popup columns | You give / You get |
-| `ui.refresh_now` | chrome — refresh button | Refresh now |
+| `ui.refresh_now` | chrome — offers header button | Refresh now |
+| `ui.upgrade` | chrome — warehouse popup button captions | Upgrade |
 | `ui.blocker_insufficient` | code | You need {0} more {1} |
-| `ui.warehouse_level` | code — {0} = stored level + 1 | Level {0} |
+| `ui.warehouse_level` | code — tile and popup; {0} = stored level + 1 | Level {0} |
 | `ui.upgrade_cost_crystals` | code | {0} crystals |
 | `ui.upgrade_cost_paired` | code | {0} {1} |
 | `ui.upgrade_maxed` | code | Fully upgraded |
@@ -583,6 +581,10 @@ Plain `{0}` formats, `en` + `uk`, edited via `LocalizationEditorSettings.GetStri
 |---|---|---|---|
 | `ui.offer.title` | chrome | Trade offer | Торгова пропозиція |
 | `ui.offer.overflow` | code — {0} excess, {1} resource | {0} {1} will not fit and will be lost | {0} од. «{1}» не вміститься на складі й пропаде |
+| `ui.warehouse.title` | code — {0} resource | {0} warehouse | Склад «{0}» |
+| `ui.warehouse.rate` | code — {0} units | +{0} per hour | +{0} за годину |
+| `ui.warehouse.full_in` | code — {0} = `TimeFormat.HoursMinutesSeconds` | Full in {0} | Заповниться через {0} |
+| `ui.warehouse.full` | code | Full | Заповнено |
 | `ui.refresh.title` | code | Refresh the offers? | Оновити пропозиції? |
 | `ui.refresh.body` | code — {0} cost, {1} time | Spend {0} crystals to replace every offer now? Otherwise new offers arrive in {1}. | Витратити {0} кристалів, щоб замінити всі пропозиції зараз? Інакше нові з'являться через {1}. |
 | `ui.not_enough_crystals` | code (a Trade copy, by decision) | Not enough crystals. | Недостатньо кристалів. |
@@ -593,14 +595,17 @@ Plain `{0}` formats, `en` + `uk`, edited via `LocalizationEditorSettings.GetStri
 | `ui.receipt.received` | code | +{0} {1} | +{0} {1} |
 | `ui.receipt.forfeited` | code | {0} {1} lost — the warehouse is full | {0} од. «{1}» втрачено — склад повний |
 
-**Removed (approved):**
-- `ui.warning_overflow` — its meaning changes (A1); a new key forces both locales to be rewritten;
-- `ui.blocker_unavailable` — a vanished offer closes its popup via `closeWhen`;
-- `ui.warehouse_amount` — "a / b" is a number format drawn by the view, as in Laws;
+**Removed (9):**
+- `ui.warning_overflow` — its meaning changes (A1);
+- `ui.blocker_unavailable` — a vanished offer closes its popup;
+- `ui.warehouse_amount` — a number format, drawn by the view;
 - `ui.confirm`, `ui.cancel` — the popups use `SharedTable`'s;
-- `ui.upgrade`, `ui.next_refresh` — never used.
+- `ui.next_refresh` — never used;
+- `ui.trade_title` — the title is dropped;
+- `ui.offers` — the header holds the countdown and button instead;
+- `ui.warehouses` — there is no all-warehouses popup.
 
-Resource names come from `SharedTable` via `TradeResourceRegistry.NameKeyFor`. The Presenter re-renders on `LocaleChanged`. Large numbers use `N0`; whether the group separator should follow the selected locale rather than the device culture goes on the known-gaps list.
+Resource names come from `SharedTable` via `TradeResourceRegistry.NameKeyFor`. The Presenter re-renders on `LocaleChanged`. Large numbers use `N0`; whether the separator should follow the selected locale is a known gap.
 
 ---
 
@@ -610,16 +615,16 @@ Resource names come from `SharedTable` via `TradeResourceRegistry.NameKeyFor`. T
 
 | Action | Sound | Animation | Haptic |
 |---|---|---|---|
-| Tap an offer row | popup open (`PopupSystem`) | Button press tint; popup scales in | — |
-| Accept confirmed | `sfx_trade_offer_accept` | row collapses out; gauges tween; numbers tick; receipt slides in, holds ~2.5 s, fades | **1** |
+| Tap a resource tile | popup open (`PopupSystem`) | tile press scale; popup scales in | — |
+| Tap an offer row | popup open | press tint; popup scales in | — |
+| Accept confirmed | `sfx_trade_offer_accept` | row collapses out; tiles tween; numbers tick; receipt slides in, holds ~2.5 s, fades | **1** |
 | Accept refused at confirm (rare race) | `sfx_trade_offer_refused` | — | — |
-| Cancel / tap outside | popup close (`PopupSystem`) | popup shrinks out | — |
+| Cancel / tap outside | popup close | popup shrinks out | — |
 | Instant refresh confirmed | `sfx_trade_offers_refreshed` (one sound, A2) | rows stagger in (fade + scale, ~40 ms apart) | **1** |
 | Auto refresh, screen visible | `sfx_trade_offers_refreshed` | rows stagger in | — (passive) |
-| Auto refresh, screen hidden | silent | list updated; nothing animates off-screen | — |
-| Open the warehouses popup | popup open | popup scales in | — |
-| Crystal or paired upgrade confirmed | `sfx_trade_warehouse_upgrade` (one sound, both paths) | row level punch + bar re-scale; the screen gauge punches | **1** |
-| Regen | — | the gauge bar tweens when a whole unit lands | — |
+| Auto refresh, screen hidden | silent | list updated | — |
+| Upgrade confirmed (either path) | `sfx_trade_warehouse_upgrade` (one sound) | popup level + capacity punch; the tile's level punches | **1** |
+| Regen | — | the tile bar tweens when a unit lands; the popup's next-unit bar fills | — |
 | Countdown | — | label changes once a second | — |
 
 An upgrade makes the bar *drop* (the same stock in a bigger warehouse), so the punch goes on the level and capacity numbers, which rise. Tweens run on unscaled time and are killed in `OnDisable`/`OnDestroy`.
@@ -635,35 +640,32 @@ An upgrade makes the bar *drop* (the same stock in a bigger warehouse), so the p
 | `OfferRefreshTimerTests` (13) | `OfferRefreshTimerTests` (same names) | unchanged |
 | `WarehouseUpgradeCurveTests.Capacity_*` (6) | `WarehouseCurveTests.Capacity_*` | `IsFiniteAtAnAbsurdLevel` → `AnAbsurdLevel_IsClampedToTheConfiguredCap` |
 | `…CrystalCost_MatchesTheOldHandAuthoredTable_AtTheFirstLevels` | `WarehouseCurveTests.CrystalCost_FirstLevelsAre_5_8_11_17_25` | |
-| `…CrystalCost_IsStrictlyIncreasing / IsAlwaysAtLeastOne / StaysPositiveAtAnAbsurdLevel` | same names | evaluated over `0..MaxWarehouseLevel` |
-| `TradeOfferGeneratorTests.LargestRemainder_*`, `Stochastic_*` (3) | `TradeOfferAllocatorTests` (same names) | |
-| `TradeOfferGeneratorTests` batch / ratio / shape / profitability / ids / immutability | `TradeOfferGeneratorTests` (same names) | generated with random capacities; `EveryAmount_IsAWholeNumber` dropped (the type is `int`) |
+| `…CrystalCost_IsStrictlyIncreasing / IsAlwaysAtLeastOne / StaysPositiveAtAnAbsurdLevel` | same names | over `0..TopLevel` |
+| `TradeOfferGeneratorTests.LargestRemainder_*`, `Stochastic_*` (3) | `TradeOfferAllocatorTests` | |
+| `TradeOfferGeneratorTests` batch / ratio / shape / profitability / ids / immutability | `TradeOfferGeneratorTests` (same names) | random capacities; `EveryAmount_IsAWholeNumber` dropped (`int`) |
 | `TradeDomainTests.GetPairedResource_MatchesTheGddPairing`, `Pairing_IsSymmetric` | `TradeResourcePairTests` | |
-| `TradeDomainTests` construction / refresh / regen / instant refresh / evaluate / overflow / accept / upgrades / save-load | `TradeManagerTests`, same scenarios | renames: `…RaisesTradeStateChanged…` → `…RaisesOffersChanged…`; `InstantRefresh_*` → `TryInstantRefresh_*`; `UpgradeWithCrystals_*` → `TryUpgradeWithCrystals_*`; `UpgradePaired_*` → `TryUpgradeWithPairedResource_*`; `LoadFromDto_V4SaveWithNoOffers…` → `LoadFromDto_WithNoOffers_GeneratesOneFreshBatch`; `…SetsBaseCapacityAndTheDerivedRegenRate` / `AfterAnyUpgrade_RegenRateStaysCapacityOver24Hours` → assert behaviour ("an empty warehouse fills in exactly 24 h") since the rate property is gone; `UpgradesStopAtTheSupportedCeiling` → `UpgradesStopAtMaxWarehouseLevel` |
+| `TradeDomainTests` (construction, refresh, regen, instant refresh, evaluate, overflow, accept, upgrades, save/load) | `TradeManagerTests`, same scenarios | renames as in revision 2; rate-property tests become behaviour tests (an empty warehouse fills in exactly 24 h); `UpgradesStopAtTheSupportedCeiling` → `UpgradesStopAtMaxWarehouseLevel` |
 | `TradePresenterTests.Constructor_RejectsNullDependencies` | same | |
 | `GetOfferDisplays_ReturnsOneRowPerOffer`, `OfferLines_CarryLocalizedNamesFromTheSharedRegistry` | `GetOffers_ReturnsOneRowPerOffer`, same | |
-| `WarehouseDisplay_FillFractionIsClampedToOne` | `Gauge_FillIsClampedToOne` | |
-| `WarehouseDisplay_NamesThePairedResource`, `…AtTheCeiling_ReportsMaxedRatherThanAPrice` | `WarehouseRow_PairedPriceNamesThePairedResource`, `WarehouseRow_AtTheCap_ShowsFullyUpgraded` | |
-| `AnUnaffordableOffer_StillProducesAConfirmationPanel`, `ABlockerMessage_NamesTheResourceAtFault`, `AnOverflowingOfferIsStillAcceptable_AndWarnsInsteadOfBlocking` | `OfferPopup_WhenShort_DisablesAcceptAndNamesTheResource`, `…_NamesTheShortfall`, `OfferPopup_WhenAWarehouseOverflows_ListsEveryLossAndKeepsAcceptEnabled` | asserts the **excess**, not the room (A1) |
+| `WarehouseDisplay_FillFractionIsClampedToOne` | `Tile_FillIsClampedToOne` | |
+| `WarehouseDisplay_NamesThePairedResource`, `…AtTheCeiling_ReportsMaxedRatherThanAPrice` | `WarehousePopup_PairedPriceNamesThePairedResource`, `WarehousePopup_AtTheCap_ShowsFullyUpgraded` | |
+| `AnUnaffordableOffer_StillProducesAConfirmationPanel`, `ABlockerMessage_NamesTheResourceAtFault`, `AnOverflowingOfferIsStillAcceptable_AndWarnsInsteadOfBlocking` | `OfferPopup_WhenShort_DisablesAcceptAndNamesTheResource`, `…_NamesTheShortfall`, `OfferPopup_WhenAWarehouseOverflows_ListsEveryLossAndKeepsAcceptEnabled` | asserts the excess (A1) |
 | `SetScreenVisible_ReRendersOnShowOnly`, `ALocaleChange_TriggersAReRender`, `RefreshCountdown_IsResolvedThroughTheKeysType` | same | |
 | `AManagerStateChange_TriggersAReRender`, `Dispose_UnsubscribesFromAllThreeSources` | `OffersChanged_TriggersAReRender`, `Dispose_StopsListening` | |
 | `TradeTextTests` | `TradeTextTests` against `Trade.UI.TradeUIText` | |
-| Ledger: `SetWarehouseCapacity_ChangesCapacityAndRegenRate` | `SetWarehouseCapacity_ChangesCapacityAndTheFillTime` | |
-| Ledger: `RoundTrip_PreservesWarehouseCapacityAmountAndRegenRate` | `RoundTrip_PreservesCapacityAmountAndRegenProgress` | |
-| Ledger: `Load_NonFiniteValues_FallBackToDefaults` | same name; the trade part now goes through the converter (NaN → 0 → defaults) | |
-| Ledger: the other trade tests (`AddTradeResource_*`, `SpendTradeResource_*`, `HasTradeResource_*`, `Accrue…`, `TakeSnapshot_*`, the save clamps) | same names, `int` literals | |
+| Ledger trade tests (`AddTradeResource_*`, `SpendTradeResource_*`, `HasTradeResource_*`, `Accrue…`, `TakeSnapshot_*`, the save clamps) | same names, `int` | `SetWarehouseCapacity_ChangesCapacityAndRegenRate` → `…AndTheFillTime`; `RoundTrip_PreservesWarehouseCapacityAmountAndRegenRate` → `…AmountAndRegenProgress`; `Load_NonFiniteValues_FallBackToDefaults` goes through the converter |
 
 ### 9.2 Dropped, and why
 
 | Old | Why |
 |---|---|
-| `TradePresenterTests.*Cost_IsTheCostCharged` (×3) | Prices live on the Manager; "quoted == charged" moves to `TradeManagerTests` across every level (§9.3). |
-| `AcceptingAnOffer_PlaysASoundAndAHaptic`, `ARefusedOffer_MakesANoiseButDoesNotBuzz`, `UpgradingAWarehouse_RaisesOnWarehouseUpgraded`, `AFailedUpgrade_RaisesNothingAndIsSilent` | These actions now run only after a popup confirmation, which EditMode cannot answer (the same constraint as Laws' buy-up). Verified in Play mode (§9.4). |
-| `ACrossModuleResourceChange_TriggersAReRender` | The Presenter no longer listens to the bus; replaced by `Gauge_ReflectsAnExternalLedgerChangeWithoutAnyEvent`. |
-| `OfferRow_MarksOverflowWithoutMarkingItUnacceptable` | Rows carry no hints (decision 5). |
+| `TradePresenterTests.*Cost_IsTheCostCharged` (×3) | Prices live on the Manager; "quoted == charged" moves to `TradeManagerTests`, across every level. |
+| `AcceptingAnOffer_PlaysASoundAndAHaptic`, `ARefusedOffer_MakesANoiseButDoesNotBuzz`, `UpgradingAWarehouse_RaisesOnWarehouseUpgraded`, `AFailedUpgrade_RaisesNothingAndIsSilent` | These actions run only after a popup confirmation, which EditMode cannot answer (as with Laws' buy-up). Verified in Play mode. |
+| `ACrossModuleResourceChange_TriggersAReRender` | The Presenter no longer listens to the bus; replaced by `Tile_ReflectsAnExternalLedgerChangeWithoutAnyEvent`. |
+| `OfferRow_MarksOverflowWithoutMarkingItUnacceptable` | Rows carry no hints. |
 | `TryGetConfirmation_ForAnUnknownId_ReturnsFalse` | Replaced by `OfferPopup_ForAMissingOffer_CannotBeAccepted`. |
 | `TradeOfferGeneratorTests.EveryAmount_IsAWholeNumber` | Guaranteed by `int`. |
-| Ledger `TradeResourceMutations_NonFinite_AreRefused` | An `int` cannot be non-finite; the file-level case is covered by the converter test. |
+| Ledger `TradeResourceMutations_NonFinite_AreRefused` | An `int` cannot be non-finite; file-level corruption is covered by the converter test. |
 
 ### 9.3 New
 
@@ -676,7 +678,7 @@ An upgrade makes the bar *drop* (the same stock in a bigger warehouse), so the p
   - `Split_SumsExactlyAndGivesEveryResourceAtLeastOne`
   - `AtTheMinimum_TheBandsStayDistinct`
 - **`TradeOfferGeneratorTests` (added):**
-  - `EveryAmount_FitsWithinItsOwnWarehouse_AtTheMaximumShare` (2,000 batches, random levels 0–20, share 0.40)
+  - `EveryAmount_FitsWithinItsOwnWarehouse_AtTheMaximumShare`
   - `OffersGrowWithCapacity`
   - `TheRatioHolds_AtUnevenCapacities`
 - **`TradeConfigContentTests`** (the real asset):
@@ -684,113 +686,116 @@ An upgrade makes the bar *drop* (the same stock in a bigger warehouse), so the p
   - `CurvesIncreaseStrictlyUpToTheCap`
   - `TheLargestPossibleOffer_FitsAnInt`
 - **`TradeManagerTests` (added):**
-  - `CrystalUpgrade_QuotedEqualsCharged_AtEveryLevel` (0 → cap)
+  - `CrystalUpgrade_QuotedEqualsCharged_AtEveryLevel`
   - `PairedUpgrade_QuotedEqualsCharged_AtEveryLevel`
   - `PairedUpgradeCost_RoundsUp`
   - `CanAfford…_MatchesWhetherTheChargeSucceeds` (×3)
-  - `Accept_IntoANearlyFullWarehouse_ReportsReceivedAndForfeited` (87/100, offer 30 → +13, 17 lost, stock exactly 100)
+  - `Accept_IntoANearlyFullWarehouse_ReportsReceivedAndForfeited` (87/100, offer 30 → +13, 17 lost)
   - `Accept_ForfeitedEqualsTheWarnedExcess`
   - `Refresh_SizesOffersFromCurrentCapacities`
   - `AnUpgrade_DoesNotResizeOffersAlreadyListed`
   - `LoadFromDto_ClampsALevelAboveTheCap`
   - `LoadFromDto_GeneratesFromRestoredCapacities`
   - `OffersChanged_FiresOncePerAccept`
+  - `RegenReadouts_AreTheLedgersAtTheClocksNow`
+  - `UnitsPerHour_IsCapacityOver24RoundedDown`
 - **`TradePresenterTests` (added):**
   - `AutoRefresh_OnAVisibleScreen_PlaysTheSoundWithoutAHaptic`
   - `AutoRefresh_OnAHiddenScreen_IsSilent`
   - `OffersArrived_OnRefreshButNotOnAccept`
-  - `OpeningAnOffer/TheRefresh/TheWarehouses_SpendsNothing` (each expects the "No popup registry" exception, as Laws' tests do)
-  - `WarehousesData_UnchangedState_ComparesEqual`
+  - `OpeningAnOffer/AWarehouse/TheRefresh_SpendsNothing` (each expects the "No popup registry" exception, as Laws' tests do)
+  - `WarehousePopupData_UnchangedState_ComparesEqual`
   - `OfferPopupData_UnchangedState_ComparesEqual`
-  - `WarehouseRow_ShowsLevelPlusOne`
+  - `WarehousePopup_ShowsLevelPlusOne`
+  - `WarehousePopup_ShowsRateAndTimeUntilFull`
+  - `WarehousePopup_WhenFull_ShowsFullAndHidesTheNextUnitBar`
+  - `Tile_CarriesNoStrings` (shape test, so steady-state polling stays allocation-free)
   - `RefreshPrice_IsTheManagersPrice`
 - **Ledger (added):**
   - `Regen_CreditsWholeUnitsOnly`
   - `Regen_ManySmallTicksEqualOneLongAbsence`
-  - `Regen_EmptyWarehouseFillsInExactly24Hours_AtEveryCapacity` (100 … 332,530)
+  - `Regen_EmptyWarehouseFillsInExactly24Hours_AtEveryCapacity`
   - `Regen_FullWarehouseBanksNothing`
   - `Regen_PartialProgressSurvivesSaveAndLoad`
   - `Regen_AfterAnUpgrade_KeepsTheProgressMade`
+  - `NextUnitProgress_RisesFromZeroToOneAcrossOneUnit`
+  - `TimeUntilFull_IsExactAndZeroWhenFull`
   - `SetWarehouseCapacity_AboveTheCeiling_IsClampedAndLogged`
   - `AddTradeResource_FillingToCapacity_LandsExactlyOnCapacity`
-- **Save (added):**
-  - `Load_ASchema7FileWithDecimalAmounts_RoundsToWholeNumbers` — a verbatim old JSON, ledger and offers;
-  - `RoundTrip_WritesIntegers`.
+- **Save (added):** `Load_ASchema7FileWithDecimalAmounts_RoundsToWholeNumbers` (a verbatim old JSON), `RoundTrip_WritesIntegers`.
+- **`Tests/EditMode/Shared/Text/TimeFormatTests`** (new folder mirroring `_Game/Shared/`): `HoursMinutesSeconds_FormatsAndClampsNegative`, plus the existing `MinutesSeconds` behaviour.
 
 ### 9.4 Verified in Play mode (always from `Bootstrap`)
 
-Back up `%USERPROFILE%\AppData\LocalLow\DefaultCompany\Kingdom Ruler\kingdom_ruler_save.json` first. Run `Application.runInBackground = true;` in the first `execute_code`. Clicks go through real `EventSystem` raycasts.
+Back up the save first; `Application.runInBackground = true;` in the first `execute_code`; clicks through real `EventSystem` raycasts.
 
-1. The existing (schema 7) save loads with no `.corrupt` file. Amounts are rounded whole, offer ids and terms are equal to the file, the deadline is unchanged, levels and capacities are correct, and the Trade tab is live.
-2. Gauges show `stock / capacity` and change one whole unit at a time. A Ledger add via `execute_code` shows within a frame with no event. `TradeScreenView.Update` allocates nothing in steady state (heap growth with the GC count held constant).
-3. Taps *between* gauges open the warehouses popup. Every row's level (1-based), stock, capacity and both prices are right.
-4. Crystal upgrade: the confirmation shows the price; Confirm charges exactly that and closes only the confirmation; the row redraws at the new level and the gauge punches. When short: the notice shows, Confirm is inactive, nothing is charged. The same for the paired path, charged from the paired stock.
-5. At the cap (level 20, via an edited save): "Fully upgraded" shows and both buttons are inactive.
-6. Outside taps close the confirmation, then the popup. Nothing is charged on open or on dismiss.
-7. **Every offer tap opens the confirmation.** With the give side short: a blocker per short resource and Accept disabled. Nothing is spent.
-8. With a full receive warehouse: a warning per resource that will lose units, naming the exact amount; Accept enabled. Accepting shows the receipt with `+received` and `N lost`, `received + lost = offered` per line, and the gauge reads exactly full.
+1. The existing (schema 7) save loads with no `.corrupt` file: amounts rounded whole, offers identical, the deadline unchanged, levels and capacities correct, the Trade tab live.
+2. All six tiles show icon, name, "Level N", `stock / capacity` and the bar; numbers change one unit at a time. A Ledger add via `execute_code` shows within a frame. `TradeScreenView.Update` allocates nothing in steady state.
+3. A tap anywhere on a tile opens *that* resource's popup. Its level, stock, capacity, rate, time-to-full and both prices are right, and the next-unit bar moves.
+4. Crystal upgrade from the popup: the confirmation shows the price; Confirm charges exactly that, closes only the confirmation, and the popup and tile redraw at the new level. When short: the notice shows, Confirm is inactive, nothing is charged. The same for the paired path, charged from the paired stock.
+5. At the cap (stored 19, shown as level 20, via an edited save): "Fully upgraded", both buttons inactive.
+6. Outside taps close the confirmation, then the popup; nothing is charged on open or dismiss.
+7. Every offer tap opens the confirmation. A short give side shows a blocker per resource with Accept disabled; nothing is spent.
+8. A full receive warehouse: a warning per losing resource with the exact amount; Accept enabled; accepting shows the receipt (`received + lost = offered`), and the tile reads exactly full.
 9. A normal accept: the row collapses, the receipt shows, the list re-renders once.
-10. Instant refresh: the live price and countdown show; Confirm charges exactly the price, replaces the list and restarts the timer. When short: the notice shows and Confirm is inactive. An auto refresh landing while it is open closes it with nothing spent.
+10. Instant refresh from the offers header: live price and countdown; Confirm charges exactly the price, replaces the list and restarts the timer; the short-funds notice works; an auto refresh while it is open closes it.
 11. Auto refresh on a hidden tab: silent, and the list is updated on return.
-12. Regen across a long absence (move `lastUpdatedUtc` back in the save): the stock is exactly what the formula gives.
-13. Both locales: every popup string, the receipt, and the numbers.
-14. Layout at `KR 3:4`, `KR 9:16`, `KR 9:20`: nothing under the nav bar; the receipt never blocks a row tap; every nested canvas's buttons respond to a real raycast.
+12. A long absence (move `lastUpdatedUtc` back in the save): the stock is exactly what the formula gives.
+13. Both locales.
+14. Layout at `KR 3:4`, `KR 9:16`, `KR 9:20`:
+    - the six tiles are fully visible;
+    - the header sits directly below them;
+    - the list fills to the nav bar and scrolls;
+    - the receipt never blocks a tap;
+    - every nested canvas's buttons respond to a real raycast.
 15. Restore the save byte for byte.
 
-**Not observable yet:** the sound ids and the haptic count on the confirmed paths, because the audio and haptic services are no-op stubs. These are checked by code reading and listed as a known gap, as for Laws.
+**Not observable yet:** sound ids and haptic counts on the confirmed paths (stub services). Checked by code reading; listed as a known gap.
 
 ---
 
 ## 10. Docs
 
+**`GDD.md`:** **done in revision 3.** §7 rewritten (tiles and grid, warehouse popup with regen read-outs and no collection, whole numbers, the cap of 20, 1-based levels, every purchase confirmed, band multipliers, offer sizing, the confirmation's blocker/warning behaviour, the receipt), and the §5 glossary row now says whole units. Re-check §7 against the build in step 10.
+
 **New `docs/modules/Trade.md`**, the `Laws.md` outline, present tense only:
-1. The mechanic in one paragraph.
+1. The mechanic.
 2. Structure.
-3. Classes + API sketches.
-4. The offer model: sizing formula and bounds; integers end to end.
+3. Classes + APIs.
+4. The offer model: sizing and bounds; integers end to end.
 5. Data flows.
 6. Rules that must hold:
    - only the Manager touches Ledger/clock;
    - overflow warns, never blocks;
-   - prices beside the charge, quoted == charged;
+   - quoted == charged;
    - the deadline timer;
-   - levels are authoritative and capped at `MaxWarehouseLevel`;
-   - offers are persisted, never rerolled, never resized;
+   - levels authoritative and capped;
+   - offers persisted, never rerolled, never resized;
    - 30/45/25 is a long-run average;
    - polled, not pushed;
    - accept by id;
    - five canvases;
-   - gauges/rows matched by type;
+   - tiles matched by type, columns = pairs;
    - one haptic per action;
    - localization;
-   - the warehouses popup;
+   - the warehouse popup and why it has no collect button;
    - the receipt and why it is not a popup.
 7. How to extend.
 8. Tests + Play-mode verification.
-9. Known gaps: icons, greybox, stub SFX/haptics, `link.xml` on device, no PlayMode tests, Ukrainian plurals, the number separator, the daily-player overflow observation.
-
-**`GDD.md`:**
-- §5 glossary: trade resources stored as whole units.
-- §7:
-  - "Warehouse levels for all 6 resources at the top" → "warehouse stock for all 6 resources at the top; tapping that panel opens the **warehouses popup**: every warehouse as a large row with its level, stock / capacity and both upgrade options with their prices";
-  - regen: "regenerate passively **one whole unit at a time**, at a rate that fills an *empty* warehouse in 24 hours";
-  - replace "capped at a high ceiling purely as a save-integrity guard … not a design cap" with "Upgrade levels are capped at **[ASSUMED — CONFIRM] 20** (`TradeConfig.MaxWarehouseLevel`), shown as *Fully upgraded*; a saved level above the cap is clamped to it on load";
-  - add "**Every purchase is confirmed** — accepting an offer, the instant refresh and both upgrades; when the player cannot pay, the confirmation says so and its button stays inactive; confirming an upgrade closes only the confirmation";
-  - add "**Whole numbers throughout** — stock, capacity, offer amounts and prices";
-  - add the §4.4 sizing bullet;
-  - the offer-panel paragraph: "Tapping an offer always opens its confirmation. A side the player cannot pay disables Accept and names each short resource; a received resource that will not fit is listed with how many units will be lost, and Accept stays enabled";
-  - replace "What was actually received is reported back" with "After an accept, a short receipt on the Trade screen lists what was received and, separately, what was lost to a full warehouse";
-  - note the band multipliers.
+9. Known gaps.
 
 **`ARCHITECTURE.md`:**
-- §3 tree: the Trade comment becomes the Laws-shape lines.
-- §4.3: replace "Non-finite trade amounts are refused. Trade resources stay decimal…" with the integer rule. Trade amounts are whole; regen credits whole units and carries the partial unit in `LastUpdatedUtc`; `MaxWarehouseCapacity` keeps that arithmetic exact. "`TradeConfig`'s warehouse curves" → "Trade's `WarehouseCurve`".
+- §3 tree: the Trade comment becomes the Laws-shape lines; `Shared/Text` tests mirror.
+- §4.3:
+  - the integer rule replaces "Non-finite trade amounts are refused. Trade resources stay decimal…";
+  - `MaxWarehouseCapacity`;
+  - the regen read-outs;
+  - "`TradeConfig`'s warehouse curves" → "Trade's `WarehouseCurve`".
 - §4.5:
-  - the method names in "whoever decides from a trade amount…";
-  - "warehouse bars read the amount each frame" → "gauges poll and redraw when a whole unit lands";
-  - "continuous drift" → "regen ticks in whole units but still publishes no event — at the level cap that would be up to ~24 messages a second";
-  - the "save on focus loss" paragraph stays true.
-- §5: schema 8 is current.
+  - method names;
+  - "warehouse bars read the amount each frame" → "tiles poll and redraw when a unit lands";
+  - regen ticks in whole units and still publishes no event.
+- §5: schema 8.
 
 **`docs/modules/Popups.md`:**
 - §1: real `Show` + `WaitForChoice` callers (A9);
@@ -803,91 +808,128 @@ Back up `%USERPROFILE%\AppData\LocalLow\DefaultCompany\Kingdom Ruler\kingdom_rul
 
 ## 11. Ordered implementation steps
 
-Each step ends with a checkpoint. **Compile** means the console is read via MCP with no new errors or warnings (known noise: test-expected warnings, the MCP WebSocket warning, the TMP fallback-font warning). **Tests** means the EditMode suite is run via MCP and all pass. Multi-line edits are done by Python scripts in the scratchpad run with `python -I`; moves and renames go through the AssetDatabase.
+**Compile** = console read via MCP, no new errors/warnings (known noise: test-expected warnings, the MCP WebSocket notice, the TMP fallback-font warning). **Tests** = the EditMode suite run via MCP, all passing. Multi-line edits by Python scripts in the scratchpad (`python -I`); moves through the AssetDatabase.
 
-**Step 0 — Baseline.** Back up the save. Compile; 392 pass (confirmed while planning).
+**Step 0 — Baseline.** ✔ Save backed up (sha256 `e0ff6a90…`); 392 pass.
 
-**Step 1 — Quarantine the legacy code** (approved). Two `TradeManager`s cannot coexist, and C# name lookup prefers types in an enclosing namespace over `using` imports, so the old manager, presenter and views would bind to the *new* `TradeOffer` etc.
-- `MoveAsset` every old script except `TradeConfig.cs` into `Scripts/Legacy/{Domain,Presenters,Views}/`, keeping GUIDs so `TradeScreen.prefab` keeps its components.
-- Script-replace the namespaces `KingdomRuler.Modules.Trade[.X]` → `KingdomRuler.Modules.TradeLegacy[.X]`, importing `TradeConfig` by alias (`using TradeConfig = KingdomRuler.Modules.Trade.TradeConfig;`).
-- Move the old tests to `Tests/EditMode/Modules/TradeLegacy/` (namespace `…Modules.TradeLegacy`).
-- Update the usings in `GameBootstrapper` and `GameStateCoordinator`.
-- *Checkpoint:* compile; 392 pass; Play mode: the old Trade screen still works (one accept, one upgrade).
+**Step 1 — Quarantine the legacy code.** ✔
+- Old scripts are in `Scripts/Legacy/`, old tests in `Tests/EditMode/Modules/TradeLegacy/`, all GUIDs kept, namespaces `KingdomRuler.Modules.TradeLegacy[...]`.
+- Core uses aliases.
+- 392 pass; the old screen accepted and upgraded in Play mode; the save was restored byte for byte.
 
-**Step 2 — Data.**
-- `MoveAsset` `TradeConfig.cs` → `Scripts/Data/`.
-- Rename the legacy `const MaxWarehouseLevel` to `LegacyMaxWarehouseLevel` (legacy call sites updated), then add the `MaxWarehouseLevel` field (20) and `OfferCapacityShare` (0.20) with their `OnValidate` clamps, and set both on the asset.
-- Add the `UniTask` reference to the Trade asmdef.
-- *Checkpoint:* compile; 392 pass; the asset still resolves on Bootstrap's `GameBootstrapper`.
+**Step 2 — Data.** ✔
+- `TradeConfig.cs` is in `Data/` (GUID kept).
+- `OfferCapacityShare` 0.20 and `MaxWarehouseLevel` 20 are added and set on the asset; the old constant is `LegacyMaxWarehouseLevel`.
+- The asmdef references `UniTask`.
+- 392 pass.
 
-**Step 3 — Pure model + tests.**
-- Classes: `TradeAmount`, `TradeProfitability`, `TradeOffer`, `TradeOfferAllocator`, `TradeOfferSizing`, `TradeOfferGenerator`, `OfferRefreshTimer`, `WarehouseCurve`, `TradeResourcePair`, `TradeIssue(Kind)`, `TradeOfferEvaluation`, `TradeAcceptResult`. `WarehouseCurve` references `KingdomLedger.MaxWarehouseCapacity`, so add that one constant here (inert until step 5).
-- Tests: the matching test classes + `TradeConfigContentTests` + `FakeClock.cs`.
-- *Checkpoint:* compile; all pass.
+**Step 3 — Pure model + tests.** ✔
+- The 12 model classes are in `Model/`; `KingdomLedger.MaxWarehouseCapacity` added.
+- `TradeOffer` validates its own terms (`TryCreate` for saves).
+- 77 new tests in 8 classes.
+- 469 pass.
+- `FakeClock.cs` moves to step 5, its first user.
 
-**Step 4 — UI strings.**
-- Add the new `TradeUITable` entries (en + uk); keep the old ones until step 9.
-- *Checkpoint:* compile; all pass.
+**Step 4 — UI strings.** ✔
+- 15 new `TradeUITable` entries added in en + uk via the Localization editor API (20 → 35 keys).
+- Each value was reloaded from the saved assets and matched exactly; the old entries are untouched.
+- 469 pass.
 
-**Step 5 — Ledger to integers + the new `TradeManager`** (🟡 approved in principle; the largest step).
-- Ledger, events, snapshot and DTOs per §2.4/§5; `schemaVersion` 8; Ledger and save tests updated and added.
-- New `TradeManager` + `TradeManagerTests` (not registered yet).
-- Legacy runtime code: mechanical `int` casts at its ~6 Ledger call sites, so the old screen keeps working until the cutover.
-- **Legacy Trade tests are deleted in this step:** they assert decimal-stock behaviour that no longer exists, and `TradeManagerTests` supersedes them in the same step (approved deletion, moved earlier).
+**Step 5 — Ledger to integers + regen read-outs + the new `TradeManager`** ✔
+- Ledger, event, snapshot and DTOs are integer; schema 8.
+- 121 legacy tests deleted; 53 `TradeManagerTests` + 20 regen tests + 4 Ledger/save tests added; 424 pass.
+- Play mode: the real schema-7 save (decimal stock, Metal at level 16) loaded with no `.corrupt` and regenerated whole units as the formula predicts; the old screen accepted an offer; the save was restored byte for byte.
+- `PairedUpgradeShare` exists only as the exact `(capacity × 4 + 4) / 5`, not as a separate constant.
+
+As planned:
+- Ledger, events, snapshot and DTOs per §2.4/§5; `schemaVersion` 8; Ledger and save tests.
+- New `TradeManager` + `TradeManagerTests` + `FakeClock.cs` (not registered yet).
+- Legacy runtime: mechanical `int` casts at its ~6 Ledger call sites.
+- Legacy tests deleted here (superseded in this step).
 - *Checkpoint:* compile; all pass; Play mode: the existing save loads (no `.corrupt`), the old screen still accepts an offer.
 
-**Step 6 — UI code.**
-- `TradeUIText`, view-data structs, `TradePresenter`, all views and popups.
+**Step 6 — UI code.** ✔
+- `TimeFormat.HoursMinutesSeconds`; `TradeUIText` (20 code keys); the view-data structs, `TradePresenter`, and every view and both popups.
+- `OfferListView` (`UI/OfferList/`) added: it owns the keyed row pool and the arrival/removal animation, keeping `TradeScreenView` to wiring and polling.
+- `HasOffers`, `HasOverflowWarning` and `OfferRefreshTimer.IsRunning` removed (nothing used them).
+- 30 presenter + 1 text + 11 `TimeFormat` tests; the build is clean in `Editor.log`.
+
+As planned:
+- `TimeFormat.HoursMinutesSeconds` + `TimeFormatTests`.
+- `TradeUIText`, view-data structs, `TradePresenter`, all views and both popups.
 - `TradePresenterTests`, `TradeTextTests`.
 - *Checkpoint:* compile; all pass.
 
-**Step 7 — Prefabs.**
-- `ResourceAmount`, `OfferRow`, `WarehouseGauge`, `WarehouseRow`, `WarehousesPopup`, `TradeOfferPopup` (§6.2).
+**Step 7 — Prefabs.** ✔
+- `ResourceAmount`, `ResourceTile`, `OfferRow` built by an editor script.
+- `TradeOfferPopup` and `WarehousePopup` copied from `ConfirmPopup.prefab` (new GUIDs `ee5fa1f4…`, `d381d0a7…`; the template is unchanged), each with its component swapped and the base animation fields kept.
+- Both popups appended to `PopupRegistry.asset`.
+- Audit: 42 references, none null; no missing scripts; 12 nested `ResourceAmount` instances; every chrome label on its intended key.
+- 466 pass.
+
+As planned:
+- `ResourceAmount`, `ResourceTile`, `OfferRow`, `TradeOfferPopup`, `WarehousePopup` (§6.2).
 - Register both popups in `PopupRegistry.asset`.
-- *Checkpoint:* compile; all pass; each prefab has no missing references (MCP hierarchy + component reads).
+- *Checkpoint:* compile; all pass; no missing references in any new prefab.
 
-**Step 8 — Cutover.** One agent on `Main`.
-- `GameBootstrapper` registers the new types and drops the factory; `GameStateCoordinator` goes back to `KingdomRuler.Modules.Trade`.
-- Rebuild `TradeScreen.prefab` contents (§6.2).
-- Remove unused overrides in `Main` and save.
-- *Checkpoint:* compile; all pass; **the full Play-mode pass §9.4**, with the save backed up and restored byte for byte.
+**Step 8 — Cutover.** ✔
+- `GameBootstrapper` registers `TradeManager` (`[Inject]` constructor, no factory) and `TradePresenter`; `GameStateCoordinator` is back to its committed form.
+- `TradeScreen.prefab` rebuilt in place; GUID `896cee41…` and root fileID `88228022552384697` are unchanged. `TradeView`, `TitleLabel`, `ConfirmPanelCanvas` and the six old tiles were removed; `ResourceGrid` (3×2, filled column-first so columns are pairs), `OffersHeader`, the stretched `OfferListPanel` with `OfferListView`, and `ReceiptCanvas` were added.
+- `Main.unity`: 66 overrides on the deleted tiles removed (deletions only). The Trade tab's `NavTabButton._screen` still points at the screen. The `_screens` reference noted in §6 is a stale override on the nav bar instance for a field that no longer exists; it was left alone, as it is not Trade's.
+- Play mode (from Bootstrap, the real schema-7 save, every tap a real `EventSystem` raycast), all passing:
+  - tab switch; tiles, levels (1-based), `N0` numbers;
+  - the warehouse popup with correct rate, time-to-full and prices;
+  - crystal upgrade charged exactly 25 and the popup stayed open; paired upgrade charged exactly 272 Wood; the short-funds notice with an inactive Confirm charged nothing; outside taps closed the confirmation, then the popup;
+  - a blocked offer showed its shortfall with Accept inactive; an overflow offer listed every loss and accepted with the warehouses ending exactly full; the receipt showed the gain and loss lines and never blocked a tap;
+  - instant refresh charged exactly 3; short funds showed the notice; a free refresh landing while open closed the confirmation;
+  - the level cap shows "Fully upgraded" with inactive buttons and no next-unit bar;
+  - runtime switch to English;
+  - layout at 1080×1440, 1920 and 2400.
+- `StubAudioService`/`StubHapticService` log each call, so the feel hooks on the confirmed paths are verified too: one sound per action, one haptic per purchase, none on a passive refresh.
+- Found and fixed in Play mode: the fill images had no sprite, so `Filled` drew full bars. They now use `Images/BarFill.png` (a 4×4 white sprite, also replacing the soft `UISprite`), and the receipt background is opaque.
+- 466 pass; the save was restored byte for byte; `runInBackground` reset; no `ProjectSettings` diff.
+- **Open question for the user:** with the cap at 20 stored upgrades and levels shown from 1, the top displays as "Level 21".
 
-**Step 9 — Delete the legacy code** (approved).
-- Delete `Scripts/Legacy/`, `TradeOfferRow.prefab`, `WarehouseTile.prefab` and the empty folders.
-- Strip the legacy members from `TradeConfig` and re-serialize the asset.
-- Remove the 7 table entries.
-- *Checkpoint:* compile; all pass (count reported); Play-mode smoke (load, accept, upgrade, refresh).
+**Step 9 — Delete the legacy code.** ✔
+- Deleted through the AssetDatabase: `Scripts/Legacy/`, `TradeOfferRow.prefab`, `WarehouseTile.prefab`, and the empty `Scripts/Domain`, `Scripts/Presenters`, `Scripts/Views` and `ScriptableObjects/Data` folders. Nothing referenced them (checked by GUID). `Prefabs/.gitkeep` and `Config/.gitkeep` stay, as in Laws.
+- `TradeConfig`: `OfferBaseAmount`, `LegacyMaxWarehouseLevel`, `WarehouseCapacityAt`, `WarehouseUpgradeCrystalCost` and `Grow` removed; the asset re-serialized (only `OfferBaseAmount` dropped).
+- `TradeUITable`: the 9 entries removed from the shared data and both locales (26 keys left). The `ui.confirm`/`ui.cancel` references in the popup prefabs are to `SharedTable`, not this table.
+- **The user's decision on the cap:** `MaxWarehouseLevel` is the level as shown, so 20 means 19 upgrades. `WarehouseCurve.TopLevel` is the one place that converts it; the curve clamp, `TradeManager.CanUpgradeFurther`/`CapacityAfterUpgrade` and the load clamp use it. GDD §7 updated.
+- 467 pass (one new: `TopLevel_IsTheCapAsThePlayerSeesIt_LessOne`). Play-mode smoke: tiles and warehouse popup correct; a real crystal upgrade from shown 19 charged exactly 7,389 and ended at "Рівень 20", *Fully upgraded*, both buttons inactive; one sound and one haptic. Save restored byte for byte; `runInBackground` reset; no `ProjectSettings` diff.
 
-**Step 10 — Docs.**
-- Write `Trade.md`; apply §10.
-- Grep for stale names: `TradeView`, `TradeConfirmPanelView`, `OfferBaseAmount`, `TradeStateChanged`, `RegenRatePerSecond`, `IsRejectedAsNonFinite`, `Modules.Trade.Domain`, `TradeLegacy`.
-- *Checkpoint:* compile; all pass; a summary of what changed and why.
+**Step 10 — Docs.** ✔
+- `docs/modules/Trade.md` rewritten in the `Laws.md` outline (§10), present tense; facts checked against the code and the built prefab (canvases, grid, receipt).
+- `ARCHITECTURE.md`: §3 tree (Trade in Laws' shape; `Tests/EditMode/Shared/`), the localization table's `TradeUITable` row, §4.3 (the integer rule with whole-unit regen, `MaxWarehouseCapacity`, the read-outs; `WarehouseCurve`), §4.5 (whole-unit accrual, `OfferRefreshTimer.Advance`, tiles poll). §5 names no schema number, so it needed no change.
+- `Popups.md`: §1 names the real `Show` + `WaitForChoice` callers, §3 the module popups, §8 drops the confirm-panel gap.
+- GDD §7 re-checked against the build: it matches. Its three `[ASSUMED — CONFIRM]` markers (the pairing, the 45 % band, the 20 % share) are left for the user.
+- Stale-name grep over docs, `CLAUDE.md` and `Assets/`: none. 467 pass.
 
 ---
 
-## 12. Risks, and the assumptions taken in revision 2
+## 12. Risks and assumptions
 
 ### Risks
 
 | Risk | Mitigation |
 |---|---|
-| The quarantine touches 16 scripts and 6 tests mechanically. | AssetDatabase moves; a scripted namespace rewrite; a Play-mode check of the old screen. |
-| Step 5 changes the Ledger and the save together. | Old-save test with a verbatim schema-7 file; a Play-mode load of the real save; the save backed up first. |
-| Integer regen gets a boundary wrong (off by one unit, lost progress). | Exact `long` arithmetic; tests for small-ticks == one absence, exact 24 h fill at every capacity, progress across save/load and upgrades. |
+| Step 5 changes the Ledger and the save together. | A verbatim schema-7 test file; a Play-mode load of the real save; the save backed up first. |
+| Integer regen gets a boundary wrong. | Exact `long` arithmetic; tests for small ticks == one absence, an exact 24 h fill at every capacity, progress across save/load and upgrades. |
 | `TradeScreen` rebuild loses the root or a referenced child. | Edit inside the prefab stage; keep the root; verify the nav tab after the cutover. |
+| The six tiles + header leave too little list at 3:4. | Fixed-height tiles sized at the 3:4 check; the list scrolls; tile height is the one knob. |
 | `Main` scene conflict. | One agent on the scene; the only change is removing unused overrides. |
 | Sizing feels off in play. | One knob, `OfferCapacityShare`; the bounds test keeps any value ≤ 0.40 safe. |
-| Popup data rebuilt at 4 Hz while open. | Only while open; the same cost as the characteristics popup; redraws only on change. |
+| Popup data rebuilt at 4 Hz while open. | Only while open; the next-unit progress is quantized so redraws track visible change. |
 | A fast tap answers a popup still scaling in (Popups known gap). | Every charge re-validates. |
-| An unfocused Editor throttles Play mode. | `runInBackground = true` first. |
 
-### Assumptions taken while applying your answers (say if any is wrong)
+### Assumptions (say if any is wrong)
 
-1. **The level cap is a tunable `TradeConfig.MaxWarehouseLevel = 20`**, since "we might change this later". A content test proves the configured curve stays inside `int` and under the Ledger's ceiling at the cap.
-2. **The Ledger gets `MaxWarehouseCapacity = 10,000,000`** as a backstop, so no tuning can overflow the integer regen arithmetic. At level 20, capacity is 332,530.
-3. **`RegenRatePerSecond` is removed** from `TradeResourceState`, because with whole-unit regen it would duplicate "capacity per day". Its tests are rewritten to assert behaviour.
-4. **An old decimal stock rounds half away from zero on load** (≤ ½ unit, once), and its partial regen restarts from the saved timestamp.
-5. **The legacy Trade tests are deleted in step 5 instead of step 9,** because the Ledger switch invalidates their decimal assertions and their replacements land in the same step.
-6. The offer confirmation behaves exactly as your answer to Q4 describes. This was already the plan; it is now spelled out in §3 and §9.4 (7–8).
-
-No open questions remain that block step 1.
+1. `MaxWarehouseLevel` is a `TradeConfig` setting (20), not a code constant.
+2. The Ledger's `MaxWarehouseCapacity = 10,000,000` is a backstop only.
+3. `RegenRatePerSecond` is removed; the three regen read-outs replace what a reader would have used it for.
+4. An old decimal stock rounds half away from zero on load (≤ ½ unit, once).
+5. The legacy Trade tests are deleted in step 5.
+6. **Revision 3:**
+   - the grid is 3 columns × 2 rows with the pairs as columns;
+   - the screen title is dropped;
+   - the "+N per hour" rate is rounded down to a whole number;
+   - the next-unit bar hides when a unit takes under a second.

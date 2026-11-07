@@ -1,4 +1,3 @@
-using System;
 using UnityEngine;
 
 namespace KingdomRuler.Modules.Trade
@@ -9,15 +8,13 @@ namespace KingdomRuler.Modules.Trade
     /// </summary>
     /// <remarks>
     /// <para>Config only, no content — offers are generated at runtime from these numbers, not
-    /// authored one-asset-each, so <c>ScriptableObjects/Data/</c> stays empty for this module
+    /// authored one-asset-each, so this module has only <c>ScriptableObjects/Config/</c>
     /// (<c>ARCHITECTURE.md</c> §7).</para>
     ///
     /// <para><b>Curves are formulas, not per-level tables</b> — the same style as the
-    /// characteristic leveling curve (<c>GDD.md</c> §6–§7). This replaced a 6-entry capacity
-    /// array and a 5-entry cost array whose fallbacks past the last entry diverged — capacity
-    /// grew exponentially while cost grew linearly, so a level-50 warehouse was cheap. A formula
-    /// has no edge to fall off. See <see cref="WarehouseCapacityAt"/> and
-    /// <see cref="WarehouseUpgradeCrystalCost"/>.</para>
+    /// characteristic leveling curve (<c>GDD.md</c> §6–§7), so every level up to the cap is
+    /// defined and capacity and price cannot diverge past the end of a table. Only the
+    /// coefficients live here; <see cref="WarehouseCurve"/> evaluates them.</para>
     ///
     /// <para><b>Module-owned, not Ledger-owned.</b> Only Trade upgrades warehouses, so nothing
     /// else has to agree on these numbers (<c>ARCHITECTURE.md</c> §4.3): Trade computes a
@@ -42,18 +39,14 @@ namespace KingdomRuler.Modules.Trade
         [Min(1)]
         public int InstantRefreshCrystalCost = 3;
 
-        [Tooltip("Units the player gives in a typical offer, before the profitability multiplier.")]
-        [Min(1f)]
-        public float OfferBaseAmount = 50f;
-
         [Tooltip("Share of the smaller side's combined warehouse capacity that an offer gives (GDD §7). " +
                  "At most 0.40, which keeps every amount within its own warehouse.")]
         [Range(MinOfferCapacityShare, MaxOfferCapacityShare)]
         public float OfferCapacityShare = 0.20f;
 
         [Header("Warehouse upgrades")]
-        [Tooltip("Highest level a warehouse can be upgraded to (GDD §7). A saved level above it is " +
-                 "clamped to it on load.")]
+        [Tooltip("Highest warehouse level, as the player sees it: levels are shown from 1, so 20 allows " +
+                 "19 upgrades (GDD §7). A saved level above it is clamped to it on load.")]
         [Min(1)]
         public int MaxWarehouseLevel = 20;
 
@@ -70,59 +63,6 @@ namespace KingdomRuler.Modules.Trade
         public const float MinOfferCapacityShare = 0.01f;
         public const float MaxOfferCapacityShare = 0.40f;
 
-        /// <summary>
-        /// The level ceiling of the legacy Trade code in <c>Scripts/Legacy/</c>, which is deleted
-        /// once the rebuilt module replaces it. New code uses <see cref="MaxWarehouseLevel"/>.
-        /// </summary>
-        public const int LegacyMaxWarehouseLevel = 50;
-
-        /// <summary>
-        /// Capacity of a warehouse at <paramref name="level"/>, where 0 is unupgraded. Always
-        /// finite and positive: a zero capacity would mean a zero regen rate, stranding the
-        /// warehouse empty forever.
-        /// </summary>
-        public float WarehouseCapacityAt(int level) =>
-            Grow(CapacityBase, CapacityGrowth, CapacityRoundTo, level);
-
-        /// <summary>
-        /// Crystal price of the upgrade leaving <paramref name="currentLevel"/>. Whole crystals,
-        /// and always at least 1 — a free upgrade would be an infinite capacity loop.
-        /// </summary>
-        public int WarehouseUpgradeCrystalCost(int currentLevel)
-        {
-            float raw = Grow(CrystalCostBase, CrystalCostGrowth, 1f, currentLevel);
-
-            // 5 × 1.5^50 exceeds int.MaxValue even at the level cap; wrapping to a negative price
-            // would make the upgrade free, or pay the player, rather than merely mis-priced.
-            if (raw >= int.MaxValue) return int.MaxValue;
-            return Math.Max(1, (int)Math.Round(raw));
-        }
-
-        /// <summary><c>round(base × growth^level / roundTo) × roundTo</c>, held finite and positive.</summary>
-        /// <remarks>
-        /// <para>The level is clamped to <c>0..</c><see cref="LegacyMaxWarehouseLevel"/> rather than
-        /// rejected, so a corrupt save degrades to the biggest sane warehouse instead of refusing
-        /// to load. Each coefficient is held to a positive minimum and the result floored at
-        /// <c>roundTo</c>, so no asset value can produce zero.</para>
-        ///
-        /// <para><b>The rounding is deliberately <c>Math.Round</c>'s banker's rounding</b>,
-        /// exactly as in <c>CharacteristicLevelingCurve</c> — so <c>100 × 1.5² = 225</c> yields
-        /// <b>220</b>, not 230. Matching the sibling curve's expression matters more than the
-        /// one-unit difference; a test pins it so nobody "corrects" it later.</para>
-        /// </remarks>
-        private static float Grow(float baseValue, float growth, float roundTo, int level)
-        {
-            int clamped = Math.Clamp(level, 0, LegacyMaxWarehouseLevel);
-
-            baseValue = Math.Max(baseValue, 1f);
-            growth    = Math.Max(growth,    0.01f);
-            roundTo   = Math.Max(roundTo,   1f);
-
-            double raw     = baseValue * Math.Pow(growth, clamped);
-            double rounded = Math.Round(raw / roundTo) * roundTo;
-            return (float)Math.Max(rounded, roundTo);
-        }
-
         private void OnValidate()
         {
             // The curves defend themselves too, but catching it here tells the designer
@@ -132,7 +72,6 @@ namespace KingdomRuler.Modules.Trade
             if (OfferCount                < 1)     OfferCount                = 1;
             if (OfferRefreshTimeSeconds   < 1f)    OfferRefreshTimeSeconds   = 1f;
             if (InstantRefreshCrystalCost < 1)     InstantRefreshCrystalCost = 1;
-            if (OfferBaseAmount           < 1f)    OfferBaseAmount           = 1f;
             OfferCapacityShare = Mathf.Clamp(OfferCapacityShare, MinOfferCapacityShare, MaxOfferCapacityShare);
             if (MaxWarehouseLevel         < 1)     MaxWarehouseLevel         = 1;
 
