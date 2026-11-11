@@ -56,16 +56,16 @@ any waiting law cards → check trade offers, take good ones → see if a city/v
 affordable → buy it if so → close app, resources keep regenerating.
 
 **Meta loop (weeks):** Characteristics slowly rise (gated by law decisions), trade resources
-accumulate (gated by warehouse size and offer luck), gold accumulates (gated by business
-tier), all three gate city purchases. Buying every city/village in a region grants a
+accumulate (gated by warehouse size and offer luck), gold accumulates (gated by how many
+businesses the player owns), all three gate city purchases. Buying every city/village in a region grants a
 passive bonus, encouraging regional completion over random purchases.
 
 ## 5. Currencies & resources glossary
 
 | Resource | Type | Source | Sink |
 |---|---|---|---|
-| **Crystals** | Premium (real-money eventually, see §9) | Shop (mock IAP for now), ads, rare occurrence rewards | Law refill, instant trade refresh, warehouse capacity upgrade (alt path) |
-| **Gold** | Soft | Businesses (Economy screen) | Business purchases, city/village purchases, some occurrence choices |
+| **Crystals** | Premium (real-money eventually, see §9) | Shop (mock IAP for now), ads, rare occurrence rewards | Law refill, instant trade refresh, warehouse capacity upgrade (alt path), covering a gold shortfall when buying a business (§8) |
+| **Gold** | Soft | Businesses (Economy screen), collected by hand; a new game starts with the cheapest business's price; crystals covering a shortfall (§8) | Business purchases, city/village purchases, some occurrence choices |
 | **Characteristics (×6):** Medicine, Education, Army, Science, Infrastructure, Welfare | Soft, leveled stat | Law decisions, some occurrences | City/village purchase requirements (never spent down, only gate checks) |
 | **Trade resources (×6):** Stone, Wood, Metal, Minerals, Leather, Clay | Soft, stored in whole units up to a warehouse capacity | Passive regen, trade offers, some occurrences | Trade offers, warehouse upgrades (cross-resource cost), city/village purchases |
 
@@ -148,14 +148,15 @@ The rules:
   regenerating until something is spent.
 - **Warehouse upgrade**, two payment paths:
   1. Crystals (flat premium option, cost scales with upgrade tier).
-  2. Spend **80% of the current capacity** of a *paired* resource's warehouse, rounded up to a
-     whole unit.
+  2. Spend the *paired* resource: **80% of the current capacity of the warehouse being
+     upgraded**, rounded up to a whole unit, paid from the paired resource's **stored amount**.
      **[ASSUMED — CONFIRM pairing]:** Stone↔Wood, Metal↔Minerals, Leather↔Clay.
-     **Settled:** the cost is *computed from* the paired warehouse's **capacity** and
-     *deducted from* that resource's **stored amount**. Upgrading Wood therefore costs 80% of
-     Stone's limit, paid in Stone — so the player must be at least 80% full of the paired
-     resource, and a pair advances in step. (Pricing it off the stored amount instead would
-     make it cheapest exactly when the player has least, inverting that pressure.)
+     Upgrading a 2,000-unit Wood warehouse therefore costs 1,600 Stone. The price rises with the
+     warehouse it buys, and it keeps a pair in step: the Stone stock can never exceed the Stone
+     warehouse, so Stone must be at least 80% of Wood's size. With capacity growing ×1.5 a level,
+     a warehouse can be at most **one level ahead of its pair** on this path; crystals are the way
+     past that. (Pricing it off a stored amount instead would make it cheapest exactly when the
+     player has least.)
   - Each subsequent upgrade costs more than the last, as a **formula**, not a per-level table:
     `capacity(L) = round(base × growth^L / roundTo) × roundTo` and
     `crystalCost(L) = max(1, round(base × growth^L))`, coefficients on `TradeConfig`.
@@ -211,18 +212,62 @@ The rules:
 
 ## 8. Mechanic 3 — Economy
 
-**Screen:** Economy tab. Grid/list of business types (quarry, forge, sawmill, tavern, mine,
-market, etc. — content list to be expanded during production).
+**Screen:** Economy tab. The player's **total gold** at the top of the screen, and below it the
+list of business types. The total sits on this screen only until the always-visible currency
+header exists; then it moves there.
 
-- Player earns gold per minute passively per owned business, but **must manually collect**
-  — gold sits in a business's own storage, capped at **24 hours worth of production**, after
-  which it stops accumulating until collected.
-- Buying more of the same business type is **uncapped**; each additional unit costs more and
-  produces more per minute. **[ASSUMED — CONFIRM]** Cost curve:
-  `cost(n) = baseCost × 1.15^n` (n = number already owned), a common idle-game curve chosen
-  to keep early purchases cheap and late purchases meaningfully expensive.
-- Tapping a business type opens a detail panel: artwork, flavor text, count owned, current
-  storage fill (with a "Collect" action when nonzero), and a "Buy another" action.
+**Businesses** are gold-only and gold-themed (e.g. bakery, tavern, tailor, market, jeweller,
+bank — names and the content list grow during production). They produce gold and nothing else;
+trade resources come only from Trade (§7).
+
+The rules:
+
+- **Whole gold throughout.** Production, storage, prices and the balance are whole coins.
+- **Every business type is available from the start.** Nothing is locked; the expensive ones
+  are simply out of reach early on.
+- **Each type has a base rate and a fixed price per unit**, authored on the business. Every unit
+  of a type produces the same base rate, so *n* units produce *n* × the rate. **The price does
+  not grow with the number owned** — the 20th tavern costs what the first did. **[ASSUMED —
+  CONFIRM numbers]** for the rates and prices.
+- **One storage per business type.** Gold accumulates in the type's own storage, not in the
+  balance. Its capacity is **24 hours of that type's total production**, so 10 taverns earn ten
+  times as much per hour and store ten times as much as one. A full storage stops filling until
+  it is collected. Storages keep filling while the app is closed.
+- **Buying another unit** raises the type's rate and storage capacity at once; gold already
+  accumulating is kept, and the partial coin in progress carries over.
+- **Collecting** empties one type's storage into the player's gold balance. It is per business
+  type — there is no "collect all" — and it happens in the business panel.
+- **A new game starts with exactly the price of the cheapest business**, so the first purchase
+  is the player's first action here. (A tutorial can explain it later; ads and real-money gold
+  are later still.)
+- **The business panel.** Tapping a business opens its panel: artwork, flavor text, the number
+  owned, the production per hour, the storage fill with **Collect** (when it holds gold), and
+  **Buy ×1 / ×10 / Max**. Max buys as many as the player can afford. It stays open across
+  purchases and collections and redraws.
+- **Gold purchases are not confirmed.** Buying units is the core loop and frequent, so it
+  happens on the tap, with sound, animation and a haptic. Crystal purchases are always confirmed.
+- **Not enough gold → cover it with crystals.** If the player cannot afford the amount chosen
+  (with Max, a single unit), a popup offers to cover exactly the missing gold with crystals:
+  `ceil(missing ÷ gold per crystal)`, at least 1 crystal, at a rate set on `EconomyConfig`
+  **[ASSUMED — CONFIRM rate]**. Confirming spends the crystals, adds exactly the missing gold and
+  completes the purchase in one step. With too few crystals it says so and Confirm stays inactive,
+  like every crystal confirmation.
+- **Big numbers are abbreviated** for display (1.2K, 3.4M, …, localized), and every amount has a
+  hard ceiling far beyond play — the gold balance, units owned per type — so nothing can overflow.
+- **A storage filling up** plays the "business full" sound (§3) when the Economy screen is open.
+
+**Ideas kept for later, not v1:**
+- A price that grows with the number owned (e.g. ×1.15 per unit), and bonuses at ownership
+  milestones (e.g. ×2 output at 10, 25, 50).
+- "Collect all".
+- Unlocking businesses through progression (kingdom level, cities bought).
+- Random Occurrences that act on one business or its storage ("a fire empties the tavern"). In v1
+  occurrences touch only the overall gold balance (§10).
+- A badge on the Economy tab counting businesses ready to collect (`ARCHITECTURE.md` §4.6 names
+  this as the trigger for a Navigation presenter).
+- Production multipliers from region-completion bonuses (§9) and Shop boosters (§11). Those come
+  from other modules, so they will need a shared home outside Economy; keep Economy's rate
+  calculation in one place so one can be applied there.
 
 ## 9. Mechanic 4 — Village & City Purchasing (the spine of progression)
 
@@ -294,7 +339,8 @@ finish this timer"), and boosters (content TBD, e.g. temporary production multip
   loop. **Revisit this before real IAP ships** — a local save that can be edited to spawn
   crystals is a non-issue today and a real problem the day crystals cost money.
 - Crystal *sinks* already defined by the brief: law refill, instant law queue refill,
-  instant trade refresh, warehouse upgrade (alt path), level buy-up. Crystal *sources*
+  instant trade refresh, warehouse upgrade (alt path), level buy-up, covering a gold shortfall
+  when buying a business. Crystal *sources*
   today: Shop (mock), rewarded ads, occasional occurrence rewards. Keep sinks and sources
   roughly matched as content grows — this is a balance concern for playtesting, not
   something to solve up front.

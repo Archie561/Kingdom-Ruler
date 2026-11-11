@@ -253,12 +253,18 @@ namespace KingdomRuler.Modules.Trade
         }
 
         /// <summary>
-        /// The paired price: 80% of the paired warehouse's <b>capacity</b>, rounded up, paid out of
-        /// that resource's <b>stock</b> (GDD §7) — so a pair advances in step.
+        /// The paired price: 80% of the capacity of the warehouse <b>being upgraded</b>, rounded up,
+        /// paid out of the <b>paired</b> resource's stock (GDD §7).
         /// </summary>
+        /// <remarks>
+        /// The paired stock can never exceed the paired capacity, so this path needs the pair to be
+        /// at least 80% of this warehouse's size. With capacity growing ×1.5 a level, a warehouse can
+        /// run at most one level ahead of its pair this way — the pair advances in step. Crystals
+        /// are the way past that.
+        /// </remarks>
         public int PairedUpgradeCost(TradeResourceType type)
         {
-            long capacity = _ledger.GetTradeResource(TradeResourcePair.PairedWith(type)).Capacity;
+            long capacity = _ledger.GetTradeResource(type).Capacity;
             return (int)((capacity * 4 + 4) / 5);   // ceil(capacity × 4/5), exact
         }
 

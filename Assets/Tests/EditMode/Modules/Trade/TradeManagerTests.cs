@@ -478,16 +478,49 @@ namespace KingdomRuler.Tests.EditMode.Modules.Trade
         }
 
         [Test]
-        public void TryUpgradeWithPairedResource_Costs80PercentOfPairedCapacity_TakenFromPairedStock()
+        public void TryUpgradeWithPairedResource_Costs80PercentOfItsOwnCapacity_TakenFromPairedStock()
         {
             _manager.InitializeNewGame();
             _ledger.AddTradeResource(Wood, 95);
 
-            Assert.AreEqual(80, _manager.PairedUpgradeCost(Stone), "80% of Wood's capacity of 100.");
+            Assert.AreEqual(80, _manager.PairedUpgradeCost(Stone), "80% of Stone's capacity of 100, paid in Wood.");
             Assert.IsTrue(_manager.TryUpgradeWithPairedResource(Stone));
 
             Assert.AreEqual(15, Stock(Wood));
             Assert.AreEqual(1, _manager.WarehouseLevel(Stone));
+        }
+
+        [Test]
+        public void PairedUpgradeCost_RisesWithTheWarehouseBeingUpgraded_NotWithItsPair()
+        {
+            _manager.InitializeNewGame();
+            _ledger.AddCrystals(_manager.CrystalUpgradeCost(Stone));
+            _manager.TryUpgradeWithCrystals(Stone);   // Stone 150, Wood still 100
+
+            Assert.AreEqual(120, _manager.PairedUpgradeCost(Stone), "80% of Stone's new 150.");
+            Assert.AreEqual(80,  _manager.PairedUpgradeCost(Wood),  "Wood's price follows Wood, not Stone.");
+        }
+
+        [Test]
+        public void APairedUpgrade_CannotTakeAWarehouseMoreThanOneLevelAheadOfItsPair()
+        {
+            // The pair's stock is capped by its capacity: 80% of a warehouse 1.5× the pair's size
+            // is more than the pair can ever hold.
+            _manager.InitializeNewGame();
+            _ledger.AddTradeResource(Wood, 100);
+            Assert.IsTrue(_manager.TryUpgradeWithPairedResource(Stone), "Level for level: affordable.");
+
+            _ledger.AddTradeResource(Wood, 100);   // Wood full again
+            Assert.AreEqual(120, _manager.PairedUpgradeCost(Stone));
+            Assert.IsFalse(_manager.CanAffordPairedUpgrade(Stone), "120 Wood, from a warehouse of 100.");
+            Assert.IsFalse(_manager.TryUpgradeWithPairedResource(Stone));
+            Assert.AreEqual(1, _manager.WarehouseLevel(Stone));
+
+            // Wood catching up unblocks Stone again.
+            _ledger.AddTradeResource(Stone, _ledger.GetTradeResource(Stone).Capacity);
+            Assert.IsTrue(_manager.TryUpgradeWithPairedResource(Wood), "Wood catches up, paying 80 Stone.");
+            _ledger.AddTradeResource(Wood, _ledger.GetTradeResource(Wood).Capacity);
+            Assert.IsTrue(_manager.CanAffordPairedUpgrade(Stone), "120 Wood, from a warehouse now of 150.");
         }
 
         [Test]

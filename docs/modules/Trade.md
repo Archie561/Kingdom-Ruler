@@ -11,7 +11,7 @@
 Six resources sit in warehouses that refill one whole unit at a time, from empty to full in 24 hours
 whatever their size. Six tiles at the top of the screen show every warehouse at all times; tapping
 one opens that resource's warehouse popup, where it can be upgraded for crystals or for 80% of its
-paired warehouse's capacity, paid from that resource's stock. Below the tiles, ten offers each trade
+own capacity, paid from the paired resource's stock. Below the tiles, ten offers each trade
 2–3 resources for 2–3 others, sized to the warehouses they touch, and are replaced every 20 minutes
 or at once for crystals. Every offer opens a confirmation: a shortfall blocks it, a full warehouse
 only warns, and the receipt afterwards shows what was received and what was lost.
@@ -332,8 +332,14 @@ The row in the list carries no hint either way: affordability and overflow are t
 Every price and its affordability check sit on the manager beside the `Try…` that charges it; the
 presenter only reads them. A confirmation re-reads its price four times a second while open, and the
 `Try…` re-reads it again at the moment it charges. Tests assert **quoted == charged** at every level,
-for both upgrade paths. The paired price is `⌈capacity × 4/5⌉`, computed exactly in integers as
-`(capacity × 4 + 4) / 5`.
+for both upgrade paths. The paired price is `⌈capacity × 4/5⌉` of the warehouse **being upgraded**,
+computed exactly in integers as `(capacity × 4 + 4) / 5`, and paid from the **paired** stock.
+
+**The paired path keeps a pair in step.** The paired stock can never exceed the paired capacity, so
+an upgrade needs the pair to be at least 80% of the upgraded warehouse's size. Capacity grows ×1.5 a
+level and 1.5 × 0.8 > 1, so a warehouse can run at most one level ahead of its pair this way (tested);
+crystals are the way past it. Lowering the 80% or the growth would loosen that, so retune them
+together.
 
 ### 6.4 The refresh timer stores a deadline
 A wall-clock deadline needs nothing running to count it down. Whenever the timer is advanced it
@@ -557,7 +563,6 @@ raycast, verified:
 | Number grouping follows the device | `N0` uses the current culture, not the selected locale, so the separators can disagree with the language. |
 | Lopsided offers | When one warehouse is far larger than its side's others, the proportional split gives "322 Metal + 2 Clay + 2 Leather". Working as specified; a balance question. |
 | Overflow warnings are common for a once-a-day player | Warehouses are often full on return, so most offers warn. Consistent at every level; a balance question. |
-| Paired upgrades diverge | A pair whose levels drift apart prices one side very high (80 % of a much bigger warehouse). The GDD rule; a balance question. |
 | No currency header | The crystal balance is not on screen anywhere yet; it is planned as an always-visible header. |
 | Ukrainian plurals | "{0} кристалів" uses one form for every count; the entries are plain `{0}` formats, not Smart Strings. |
 | SFX ids are strings in `TradePresenter` | Blocked on the audio system; `StubAudioService` logs them. |
