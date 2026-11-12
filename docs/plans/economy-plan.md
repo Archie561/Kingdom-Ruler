@@ -1,6 +1,6 @@
 # Economy — implementation plan
 
-**Progress:** steps done: 1–6; next: step 7.
+**Progress:** all eight steps done (2026-11-12). The Economy mechanic is built; `docs/modules/Economy.md` is its reference.
 
 > Implements **GDD §8 — Economy**. The brief behind this plan is `docs/plans/economy-brief.md`.
 > Each step below is planned in detail and built in its own session, one step per prompt, and only
@@ -503,7 +503,60 @@ order, and it is why the ordering otherwise stands.
 - **Verify.** Compile clean; EditMode count +N, all passing. The crystal top-up waits on a popup
   answer, so it is verified in step 7's Play-mode pass.
 
-### Step 7 — Prefabs, the screen in `Main`, the nav tab, and a full Play-mode pass
+### Step 7 — Prefabs, the screen in `Main`, the nav tab, and a full Play-mode pass ✔
+
+> **Done 2026-11-12.** 683 EditMode tests pass (682 + 1), and a full Play-mode pass from Bootstrap
+> succeeded, with every tap a real `EventSystem.RaycastAll` + `ExecuteEvents`.
+>
+> **Built:**
+> - Views: `EconomyScreenView`, `BusinessRowView`, `BusinessPopup` (+ `BusinessPopupChoice`), and
+>   `GoldTotalView`, which is temporary.
+> - `EconomyPresenter.OpenBusiness`: the panel loop that awaits `Buy`.
+> - Prefabs: `EconomyScreen` (six nested `BusinessRow` instances, bound by id; its own canvases for
+>   the gold total and the scrolling list), `BusinessRow` and `BusinessPopup`.
+> - Five chrome keys in `EconomyUITable`: `ui.collect`, `ui.buy_one`, `ui.buy_ten`, `ui.full`,
+>   `ui.gold`.
+> - `Images/BarFill.png`, copied with its own GUID.
+> - `BusinessPopup` in `PopupRegistry.asset` (4 → 5).
+> - `Main.unity`: the screen instance and the Economy tab's `_screen`, 127 lines added and none
+>   removed. The stale `_screens` overrides on the nav bar were left alone.
+>
+> **Verified in Play mode** (Ukrainian, 9:16, then 3:4 and 9:20):
+> - The tab opens the screen.
+> - A row tap opens the panel.
+> - Buy ×1 charged on the tap, with one sound and one haptic.
+> - With 0 gold, Buy ×1 opened the top-up for 1 crystal. Confirm charged exactly that, bought the
+>   unit, closed only the confirmation and played one sound and one haptic.
+> - Short of crystals: the notice shows and Confirm is inactive (pressing it does nothing); a tap
+>   outside closed only the confirmation.
+> - Max bought as many as affordable, with no question.
+> - Collect in the panel settled to the moment and floated the amount: sound, no haptic.
+> - A tap outside closed the panel.
+> - The row's Collect collected without opening the panel.
+> - A storage filling played the full sound and showed the marker while visible, and was silent on
+>   the Trade tab.
+> - The language switched at runtime: chrome, code-built text and suffixes together.
+> - The layout fits at all three ratios.
+> - There were no errors or warnings, and the sound and haptic log matches §6.
+> - The save was restored byte-identical, `runInBackground` reset, and the Game view left on 9:16.
+>
+> **What turned out differently:**
+> - **A defect, fixed:** the Max caption showed its count in full ("Макс. ×144130"), which
+>   overflowed the button. Unit counts in `ui.buy_max` and `ui.topup.body` now go through
+>   `Amount()`, with a test.
+> - **The tick:** `EconomyManager.AdvanceTo` costs ~0.6 µs, measured directly with a 10,000-unit
+>   storage landing coins every call. Everything allocates nothing. `ARCHITECTURE.md` §4.5 is
+>   updated.
+> - **The gold total punches on a rise**, rather than counting up, which would format a string
+>   every frame of the count.
+> - **Seen, not changed** (for step 8's known gaps):
+>   - The decimal separator follows the device culture, so the English UI shows "14,4M" on a
+>     Ukrainian machine (risk 10).
+>   - A business with no units shows its storage as "0 / 0".
+>   - The disabled Collect tint in the panel is subtle.
+> - **A trap when testing:** a popup is not raycastable in the frame it opens. A tap sent in the
+>   same frame falls through to whatever is underneath, so taps must wait a frame.
+
 
 - **Goal.** Build the Views and prefabs: `EconomyScreenView`, `BusinessRowView`, `BusinessPopup`
   (started as a copy of `ConfirmPopup.prefab`) and `GoldTotalView`.
@@ -559,7 +612,34 @@ order, and it is why the ordering otherwise stands.
     - the full clock tick re-measured with Economy's subscriber, for time and allocation, so the
       `ARCHITECTURE.md` §4.5 figure can be updated.
 
-### Step 8 — Docs
+### Step 8 — Docs ✔
+
+> **Done 2026-11-12.** No code changed; 683 EditMode tests still pass.
+> - **`docs/modules/Economy.md`** follows `Trade.md`'s outline.
+> - **Its known gaps (§9) record the three points the user chose not to fix yet:**
+>   - the decimal separator following the device rather than the selected language;
+>   - "0 / 0" on an unowned business;
+>   - the subtle disabled Collect tint.
+>
+>   Each says what fixing it would take.
+> - **The consistency pass:**
+>   - `ARCHITECTURE.md` §2 (an Economy row in the table list), §3 (the module's tree line, and
+>     `Economy.md` in the docs list), and §4.3 (Economy's pricing and rate math are module-owned;
+>     the fill is shared).
+>   - GDD §8: the placeholders point to `Economy.md` §4, and the panel's Collect is "active when
+>     it holds gold".
+>   - The earlier steps had already updated the rest of §9's table.
+> - **Verify:** a script checked every code identifier named in `Economy.md` against the project,
+>   and all exist.
+> - **Not Economy's, done with the user's go-ahead:**
+>   - *Remove Unused Overrides* on the `BottomNavBar` instance in `Main.unity` dropped exactly the
+>     four stale `_screens.Array…` overrides.
+>   - It exposed a second problem: `BottomNavBar.prefab`'s `SafeArea` held stale anchors
+>     (0, 0.21)–(1.83, 4.98). The Edit-mode `SafeAreaFitter` re-created (0,0)–(1,1) overrides
+>     every time `Main` was opened. The prefab now holds (0,0)–(1,1) and the overrides are gone;
+>     a fresh open of `Main` stays clean.
+>   - The rule is now in `ARCHITECTURE.md` §4.6.
+
 
 - **Goal.** Write `docs/modules/Economy.md` in the `Laws.md`/`Trade.md` outline:
   1. the mechanic in one paragraph;

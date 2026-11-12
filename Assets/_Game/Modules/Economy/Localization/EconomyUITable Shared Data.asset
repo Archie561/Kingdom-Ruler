@@ -43,6 +43,26 @@ MonoBehaviour:
     m_Key: ui.not_enough_crystals
     m_Metadata:
       m_Items: []
+  - m_Id: 19350286270464
+    m_Key: ui.collect
+    m_Metadata:
+      m_Items: []
+  - m_Id: 19350382739456
+    m_Key: ui.buy_one
+    m_Metadata:
+      m_Items: []
+  - m_Id: 19350382739457
+    m_Key: ui.buy_ten
+    m_Metadata:
+      m_Items: []
+  - m_Id: 19350382739458
+    m_Key: ui.full
+    m_Metadata:
+      m_Items: []
+  - m_Id: 19350382739459
+    m_Key: ui.gold
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:

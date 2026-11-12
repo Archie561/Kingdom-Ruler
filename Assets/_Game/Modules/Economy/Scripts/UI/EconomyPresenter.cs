@@ -154,12 +154,49 @@ namespace KingdomRuler.Modules.Economy.UI
                 affordsMax: _manager.MaxAffordable(businessId) > 0,
                 onePrice: maxed ? null : Amount(_manager.PriceOf(businessId, 1)),
                 tenPrice: maxed ? null : Amount(_manager.PriceOf(businessId, 10)),
-                maxText:  maxed ? null : Resolve(EconomyUIText.BuyMax, maxCount),
+                maxText:  maxed ? null : Resolve(EconomyUIText.BuyMax, Amount(maxCount)),
                 maxPrice: maxed ? null : Amount(_manager.PriceOf(businessId, maxCount)),
                 maxedText: maxed ? Resolve(EconomyUIText.Maxed) : null);
         }
 
         // ── Player actions ────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Open a business's panel and keep it open until the player taps outside it. Collect and the buy
+        /// buttons act on the tap; a buy the gold does not cover asks the crystal top-up on top.
+        /// </summary>
+        public async UniTaskVoid OpenBusiness(string businessId)
+        {
+            var popup = _popups.Create<BusinessPopup>();
+
+            // The panel plays its own collect and purchase feedback; the numbers alone cannot tell a
+            // collect from a coin landing.
+            void PlayCollected(string id, long amount) { if (id == businessId) popup.PlayCollected("+" + Amount(amount)); }
+            void PlayBought(string id)                 { if (id == businessId) popup.PlayBought(); }
+
+            Collected      += PlayCollected;
+            BusinessBought += PlayBought;
+            try
+            {
+                popup.Show(() => GetBusiness(businessId));
+                while (popup.IsOpen)
+                {
+                    BusinessPopupChoice? choice = await popup.WaitForChoice();
+                    switch (choice)
+                    {
+                        case BusinessPopupChoice.Collect: Collect(businessId); break;
+                        case BusinessPopupChoice.BuyOne:  await Buy(businessId, BuyAmount.One); break;
+                        case BusinessPopupChoice.BuyTen:  await Buy(businessId, BuyAmount.Ten); break;
+                        case BusinessPopupChoice.BuyMax:  await Buy(businessId, BuyAmount.Max); break;
+                    }
+                }
+            }
+            finally
+            {
+                Collected      -= PlayCollected;
+                BusinessBought -= PlayBought;
+            }
+        }
 
         /// <summary>Empty one business's storage into the balance — from its row or from its panel, the same either way.</summary>
         public void Collect(string businessId)
@@ -233,7 +270,7 @@ namespace KingdomRuler.Modules.Economy.UI
         private string DescribeTopUp(string businessId, int count)
         {
             string body = Resolve(EconomyUIText.TopUpBody,
-                                  Amount(_manager.GoldShortfall(businessId, count)), count, BusinessName(businessId),
+                                  Amount(_manager.GoldShortfall(businessId, count)), Amount(count), BusinessName(businessId),
                                   Amount(_manager.CrystalTopUpCost(businessId, count)));
             return _manager.CanAffordCrystalTopUp(businessId, count)
                 ? body

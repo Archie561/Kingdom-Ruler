@@ -46,6 +46,26 @@ MonoBehaviour:
     m_Localized: Not enough crystals.
     m_Metadata:
       m_Items: []
+  - m_Id: 19350286270464
+    m_Localized: Collect
+    m_Metadata:
+      m_Items: []
+  - m_Id: 19350382739456
+    m_Localized: "Buy \xD71"
+    m_Metadata:
+      m_Items: []
+  - m_Id: 19350382739457
+    m_Localized: "Buy \xD710"
+    m_Metadata:
+      m_Items: []
+  - m_Id: 19350382739458
+    m_Localized: Full
+    m_Metadata:
+      m_Items: []
+  - m_Id: 19350382739459
+    m_Localized: Gold
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

@@ -61,8 +61,8 @@
   constructor-injected in Unity, so they get method injection via `[Inject]`, registered
   with `RegisterComponentInHierarchy`/`RegisterComponentInNewPrefab` as appropriate.
 - **Unity Localization** — every user-facing string goes through a String Table.
-  **Status: live for Laws and for the bottom nav bar** (locales `en` + `uk`); the other four
-  modules have no content or Views yet and adopt the same rules when they do.
+  **Status: live for Laws, Trade, Economy and the bottom nav bar** (locales `en` + `uk`); the
+  other modules have no content or Views yet and adopt the same rules when they do.
 
   ### How it works, in short
 
@@ -156,6 +156,7 @@
   | `Systems/Localization/Tables/SharedTable` | characteristic names, cross-cutting words, the big-number suffixes (`{0}K`, `{0} тис.`) | Cities and Random Occurrences need the identical strings; every screen that shows gold needs the suffixes |
   | `Modules/<X>/Localization/<X>UITable` | that screen's fixed chrome | small, stable, changes with the screen |
   | `Modules/Trade/Localization/TradeUITable` | Trade's chrome **and** its arg-taking messages | messages built from arguments are resolved from code, so it owns a `TradeUIText` keys type — see below (Laws' table has `LawsUIText` for the same reason) |
+  | `Modules/Economy/Localization/EconomyUITable`, `BusinessesTable` | Economy's chrome and code-built messages (`EconomyUIText`); business names and flavor, keyed by `BusinessId` | the same split as Laws: a UI table, and a content table that grows with the businesses |
   | `Modules/Navigation/Localization/NavigationUITable` | the bottom bar's tab labels | the middle row's pattern — Navigation is a module (§4.6). Nothing outside the nav bar draws the word "Laws", so these are chrome, not cross-cutting words. It is resolved only by `LocalizeStringEvent` components, so no code names it and no test checks it — the tabs are on screen from the first frame |
   | `Modules/<X>/Localization/<X>…Table` | that module's content, keyed by id | grows with authored content; what a translator is handed in bulk |
 
@@ -317,13 +318,10 @@ Assets/
       Trade/                # Laws' shape: Data/ (TradeConfig), Model/ (TradeManager + pure
                             # helpers), UI/ (one folder per component); Config/ only — offers
                             # are generated, not authored (docs/modules/Trade.md)
-      Economy/              # being built (GDD §8, docs/plans/economy-plan.md). Laws' shape: Data/
-                            # (BusinessDefinition, EconomyConfig), Model/ (EconomyManager +
-                            # BusinessHolding, BusinessProduction, BusinessPricing), UI/
-                            # (EconomyPresenter, EconomyUIText, BusinessRow/ and BusinessPopup/
-                            # view data);
-                            # ScriptableObjects/Config/ and Businesses/ (one asset per business);
-                            # Localization/ (BusinessesTable, EconomyUITable)
+      Economy/              # Laws' shape: Data/ (BusinessDefinition, EconomyConfig), Model/
+                            # (EconomyManager + BusinessHolding, BusinessProduction, BusinessPricing),
+                            # UI/ (one folder per component); ScriptableObjects/Config/ and
+                            # Businesses/ (one asset per business) (docs/modules/Economy.md)
       Cities/               # EMPTY until built (GDD §9). Each of these three is a folder name
                             # only. A module takes Laws' shape when it is built.
       RandomOccurrences/    # EMPTY until built — the mechanic in GDD §10
@@ -345,6 +343,7 @@ docs/
   modules/
     Laws.md              # per-module architecture — see note below
     Trade.md             # ditto, for the Trade mechanic
+    Economy.md           # ditto, for the Economy mechanic
     Popups.md            # the popup system
 CLAUDE.md
 ```
@@ -606,7 +605,10 @@ valuation). Almost none of them belong in `Systems/Ledger`. Ask one question:
 - **No → the module's own `Model/`.** The math produces a number *that module* then asks the Ledger
   to move. The Ledger neither knows nor cares how it was derived, and nothing else computes it.
   Trade's `WarehouseCurve` and Laws' buy-up pricing (`LawsManager.BuyUpCost`) are this kind
-  today; Economy's business cost and accrual math and Cities' affordability check will be too.
+  today, as are Economy's flat prices and production rate (`BusinessPricing`, `BusinessProduction`);
+  Cities' affordability check will be too. The storage *fill* is shared instead: business storages and
+  warehouses must fill identically, so the algorithm lives in `Shared/Accrual/WholeUnitAccrual`,
+  which the Ledger and Economy both call — while each keeps its own state (§4.5).
 
 Worked example: the leveling curve is Ledger-owned because two mechanics award characteristic points
 and a stat must level at one rate. Crystal buy-up pricing sits in `LawsManager` even though it is
@@ -763,9 +765,11 @@ throttles unfocused) changes no result.
 
 **What it costs: nothing measurable.** Every system is ticked whether or not its screen is open,
 because GDD §13 says no mechanic pauses on another tab; each tick is a timestamp comparison until
-something is due. Measured in Play mode without Economy's subscriber (it is measured in Economy's
-full Play-mode pass, `docs/plans/economy-plan.md` step 7): a full tick, all five subscribers, takes ~1.3 µs in the
-Editor's Mono runtime (≈5 µs per second, against a 16 ms frame) and **allocates nothing** — no
+something is due. Measured in Play mode: a full tick takes ~1.3 µs through `GameClock` in the
+Editor's Mono runtime with every subscriber but Economy's (≈5 µs per second, against a 16 ms frame).
+`EconomyManager.AdvanceTo` adds ~0.6 µs, measured by calling it directly with six storages, one of
+them 10,000 units landing coins on every call; the module subscribers together, called directly,
+take ~0.95 µs. **Nothing allocates** — no
 subscriber allocates in steady state, and `GameClock` keeps its subscribers in an array copied on
 subscribe rather than calling `GetInvocationList()` (~70 bytes) on every tick. While the app is in
 the background Unity runs no player loop, so there are no ticks at all; the first one after resume
@@ -895,6 +899,13 @@ screen and visible in the Inspector. Units matter here: the safe area is applied
 the padding scales with the CanvasScaler exactly as the bar's own height does. Expressing the
 padding in screen pixels instead would make the two drift apart on every device.
 
+**Author every `SafeArea` rect at anchors (0,0)–(1,1).** `SafeAreaFitter` is `[ExecuteAlways]`: it
+rewrites its rect's anchors in `OnEnable`, which in the Editor means whenever a scene or prefab
+holding it is opened, using the Editor's full-screen safe area — (0,0)–(1,1) for every fitter here.
+A prefab saved with any other anchors turns that write into an instance override in every scene
+using it, and opening the scene keeps re-creating it. At runtime the authored value never matters;
+the fitter replaces it on its first frame.
+
 **If the bar height changes, update `padding.bottom` on every screen.** That duplication is the
 accepted cost of keeping `SafeAreaFitter` a reusable UI atom rather than one that imports the
 navigation module.
@@ -917,8 +928,8 @@ the plain-C# layer owns feel hooks, the View owns only DOTween (§2, §4.4). It 
 behind the same early-out that gates the event, so "tapping the tab you are already on is
 silent" is covered by an EditMode test rather than by a guard each View could forget.
 
-`ScreenId` carries all five screens from `GDD.md` §13 while only Laws and Trade are built; the
-other three tabs simply have no screen assigned, which dims them and switches their Button off,
+`ScreenId` carries all five screens from `GDD.md` §13 while Laws, Trade and Economy are built; the
+other two tabs simply have no screen assigned, which dims them and switches their Button off,
 so the bar can never be asked for a screen that isn't there. **Active tab is
 not persisted** — no save DTO involvement, no `schemaVersion` bump. The launch screen is a const
 on `ScreenNavigator`, and should become `Kingdom` once that screen exists.

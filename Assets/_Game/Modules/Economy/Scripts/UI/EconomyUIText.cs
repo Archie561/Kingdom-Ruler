@@ -19,7 +19,7 @@ namespace KingdomRuler.Modules.Economy.UI
         /// <summary>{0} = gold per hour, abbreviated.</summary>
         public const string Rate = "ui.rate";
 
-        /// <summary>{0} = how many "Max" buys: as many as affordable, or 1 when none is.</summary>
+        /// <summary>{0} = how many "Max" buys, abbreviated: as many as affordable, or 1 when none is.</summary>
         public const string BuyMax = "ui.buy_max";
 
         /// <summary>Shown instead of the buy prices at the units ceiling.</summary>
@@ -29,7 +29,7 @@ namespace KingdomRuler.Modules.Economy.UI
 
         public const string TopUpTitle = "ui.topup.title";
 
-        /// <summary>{0} = gold short, {1} = units, {2} = business name, {3} = crystals.</summary>
+        /// <summary>{0} = gold short, {1} = units, {2} = business name, {3} = crystals — every number abbreviated.</summary>
         public const string TopUpBody = "ui.topup.body";
 
         /// <summary>Added to the top-up confirmation when the player cannot afford it; Confirm is inactive.</summary>

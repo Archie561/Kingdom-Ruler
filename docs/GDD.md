@@ -228,7 +228,8 @@ The rules:
 - **Each type has a base rate and a fixed price per unit**, authored on the business. Every unit
   of a type produces the same base rate, so *n* units produce *n* × the rate. **The price does
   not grow with the number owned** — the 20th tavern costs what the first did. **[ASSUMED —
-  CONFIRM numbers]** for the rates and prices.
+  CONFIRM numbers]** for the rates and prices — the six placeholders and their arithmetic are in
+  `docs/modules/Economy.md` §4.
 - **One storage per business type.** Gold accumulates in the type's own storage, not in the
   balance. Its capacity is **24 hours of that type's total production**, so 10 taverns earn ten
   times as much per hour and store ten times as much as one. A full storage stops filling until
@@ -236,12 +237,14 @@ The rules:
 - **Buying another unit** raises the type's rate and storage capacity at once; gold already
   accumulating is kept, and the partial coin in progress carries over.
 - **Collecting** empties one type's storage into the player's gold balance. It is per business
-  type — there is no "collect all" — and it happens in the business panel.
+  type — there is no "collect all" — and it is offered in two places: a **Collect** button on the
+  business's row, shown while its storage holds gold, so a quick session needs no panel; and the
+  same button in the business panel.
 - **A new game starts with exactly the price of the cheapest business**, so the first purchase
   is the player's first action here. (A tutorial can explain it later; ads and real-money gold
   are later still.)
 - **The business panel.** Tapping a business opens its panel: artwork, flavor text, the number
-  owned, the production per hour, the storage fill with **Collect** (when it holds gold), and
+  owned, the production per hour, the storage fill with **Collect** (active when it holds gold), and
   **Buy ×1 / ×10 / Max**. Max buys as many as the player can afford. It stays open across
   purchases and collections and redraws.
 - **Gold purchases are not confirmed.** Buying units is the core loop and frequent, so it
@@ -367,7 +370,7 @@ animates on selection. See `ARCHITECTURE.md` §4.6; re-adding a screen transitio
 isolated change if it turns out to be missed.
 
 **Build status.** The bar is built and all five tabs are drawn. Laws is the only complete screen;
-Trade is complete but greybox; Economy, Kingdom and Shop are rendered dimmed and are
+Trade and Economy are complete but greybox; Kingdom and Shop are rendered dimmed and are
 not tappable until their screens exist. The app currently launches on **Laws** rather than
 Kingdom, purely because Kingdom does not exist yet — see `ARCHITECTURE.md` §4.6.
 

@@ -146,7 +146,8 @@ something belongs in `Core/`.
 
 A module's own popups live in that module — a component folder under `Modules/<X>/Scripts/UI/`
 (`ARCHITECTURE.md` §3) and `Modules/<X>/Prefabs/` — and are added to the same shared registry. Today
-those are Laws' `CharacteristicsPopup` and Trade's `TradeOfferPopup` and `WarehousePopup`; an
+those are Laws' `CharacteristicsPopup`, Trade's `TradeOfferPopup` and `WarehousePopup`, and
+Economy's `BusinessPopup`; an
 occurrence letter will be the next. A serialized reference crosses assemblies freely, so this creates
 no asmdef cycle.
 

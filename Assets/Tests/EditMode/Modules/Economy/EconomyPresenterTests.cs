@@ -229,6 +229,18 @@ namespace KingdomRuler.Tests.EditMode.Modules.Economy
         }
 
         [Test]
+        public void GetBusiness_ALargeMaxCount_IsAbbreviated_LikeEveryNumber()
+        {
+            // A count written in full ("Max ×144130") overflows its button; it reads like every other number.
+            _ledger.AddGold(1_234_567);
+
+            var panel = _presenter.GetBusiness(Bakery);
+
+            Assert.AreEqual(Text(EconomyUIText.BuyMax) + "(12.3K)", panel.MaxText, "12,345 bakeries.");
+            Assert.AreEqual("1.23M", panel.MaxPrice);
+        }
+
+        [Test]
         public void GetBusiness_NearTheUnitsCeiling_OnlyTenIsInactive()
         {
             Buy(Bakery, EconomyConfig.MaxUnitsPerType - 5);

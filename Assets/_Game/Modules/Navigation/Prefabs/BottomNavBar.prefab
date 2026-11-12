@@ -1162,8 +1162,8 @@ RectTransform:
   - {fileID: 4890625915650886439}
   m_Father: {fileID: 2741284777873492596}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0.2125}
-  m_AnchorMax: {x: 1.828125, y: 4.98125}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
@@ -1181,6 +1181,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: KingdomRuler.Shared::KingdomRuler.Shared.UI.SafeAreaFitter
   _applyHorizontal: 0
   _applyVertical: 1
+  _padding:
+    m_Left: 0
+    m_Right: 0
+    m_Top: 0
+    m_Bottom: 0
 --- !u!1 &4931963582846859340
 GameObject:
   m_ObjectHideFlags: 0
