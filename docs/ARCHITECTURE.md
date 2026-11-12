@@ -315,9 +315,10 @@ Assets/
                             # helpers), UI/ (one folder per component); Config/ only — offers
                             # are generated, not authored (docs/modules/Trade.md)
       Economy/              # being built (GDD §8, docs/plans/economy-plan.md). Laws' shape: Data/
-                            # (BusinessDefinition, EconomyConfig); ScriptableObjects/Config/ and
-                            # Businesses/ (one asset per business); Localization/ (BusinessesTable,
-                            # EconomyUITable)
+                            # (BusinessDefinition, EconomyConfig), Model/ (EconomyManager +
+                            # BusinessHolding, BusinessProduction, BusinessPricing);
+                            # ScriptableObjects/Config/ and Businesses/ (one asset per business);
+                            # Localization/ (BusinessesTable, EconomyUITable)
       Cities/               # EMPTY until built (GDD §9). Each of these three is a folder name
                             # only. A module takes Laws' shape when it is built.
       RandomOccurrences/    # EMPTY until built — the mechanic in GDD §10
@@ -583,7 +584,9 @@ timestamp. The algorithm is `Shared/Accrual/WholeUnitAccrual` (§4.5), exact at 
 `LoadFromDto` clamp to it and log. Regen's read-outs — `TimePerUnit`, `NextUnitProgress(now)`,
 `TimeUntilFull(now)` — are on `TradeResourceState`, because they are regen's rules; they take `now`
 because the Ledger holds no clock. The save reads every whole-number field through
-`WholeNumberJsonConverter`, so a file holding `25.0` or `87.34` still loads.
+`WholeNumberJsonConverter` (`int`) or `WholeNumberLongJsonConverter` (`long`: gold), so a file
+holding `25.0` or `87.34` still loads; a number beyond `long` saturates and the field's own load
+clamps it.
 
 #### Where new math goes — the ownership test
 
@@ -652,7 +655,7 @@ never hold the registry themselves, for the same reason they never hold a conten
 
 ### 4.4 Per-module Managers, Presenters, Views (`Modules/*`)
 
-Each module's Manager — `LawsManager` and `TradeManager` today; Economy, Cities, Random
+Each module's Manager — `LawsManager`, `TradeManager` and `EconomyManager` today; Cities, Random
 Occurrences and Shop get theirs when they are built — owns the behavior specific to its mechanic — card
 queueing, offer generation, business accrual — and calls into `KingdomLedger` to actually
 move resources. Modules don't call each other directly; coordination happens through the
@@ -721,6 +724,7 @@ when that screen is open; the state change itself happens either way.
 |---|---|---|
 | `LawsManager.AdvanceTo` | its own constructor | the replenishment slots |
 | `TradeManager.AdvanceTo` | its own constructor | the offer refresh |
+| `EconomyManager.AdvanceTo` | its own constructor | every business storage; raises `StoragesFilled` at most once per tick |
 | `KingdomLedger.AccruePassiveResourceRegen` | `GameBootstrapper` — the Ledger deliberately holds no clock | warehouse regen |
 
 **Adding a time-driven module is one line in its own constructor**, `_clock.Ticked += AdvanceTo;`.
@@ -728,10 +732,12 @@ The clock knows none of its subscribers, so no central list can forget a module.
 
 **Order between subscribers does not matter, and that is a rule rather than luck.** No tick reads
 another system's result: the offer refresh does not read amounts, and neither does law
-replenishment. **Whoever decides from a trade amount, or changes a capacity, settles regen
-itself first** — `AcceptOffer`, both warehouse upgrades, and `TradeManager.LoadFromDto`, which is
-the first moment capacities are final at load. Correctness therefore never depends on whether a
-tick happened to land first.
+replenishment or a business storage. **Whoever decides from an accruing amount, or changes a rate,
+settles that accrual itself first** — `AcceptOffer`, both warehouse upgrades and
+`TradeManager.LoadFromDto` (the first moment capacities are final at load) for warehouse regen;
+buying units, the crystal top-up, collecting and `EconomyManager.LoadFromDto` for business storages,
+where `BusinessHolding` settles inside every mutation. Correctness therefore never depends on
+whether a tick happened to land first.
 
 **A failing subscriber does not stop the others.** `GameClock` calls each one separately and logs
 an exception rather than letting it skip everyone after it — verified in Play mode with a
@@ -752,7 +758,8 @@ throttles unfocused) changes no result.
 
 **What it costs: nothing measurable.** Every system is ticked whether or not its screen is open,
 because GDD §13 says no mechanic pauses on another tab; each tick is a timestamp comparison until
-something is due. Measured in Play mode: a full tick, all five subscribers, takes ~1.3 µs in the
+something is due. Measured in Play mode without Economy's subscriber (it is measured in Economy's
+full Play-mode pass, `docs/plans/economy-plan.md` step 7): a full tick, all five subscribers, takes ~1.3 µs in the
 Editor's Mono runtime (≈5 µs per second, against a 16 ms frame) and **allocates nothing** — no
 subscriber allocates in steady state, and `GameClock` keeps its subscribers in an array copied on
 subscribe rather than calling `GetInvocationList()` (~70 bytes) on every tick. While the app is in

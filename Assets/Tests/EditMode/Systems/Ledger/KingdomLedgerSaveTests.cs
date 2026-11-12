@@ -165,6 +165,16 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
         }
 
         [Test]
+        public void Load_GoldWrittenAsADecimal_StillLoads()
+        {
+            var ledger = NewLedger();
+            ledger.LoadFromDto(FromJson(@"{ ""gold"": 1000.0, ""crystals"": 7 }"));
+
+            Assert.AreEqual(1000, ledger.Gold);
+            Assert.AreEqual(7, ledger.Crystals, "The rest of the section still loads.");
+        }
+
+        [Test]
         public void LoadFromDto_GoldAboveTheCeiling_ClampsToIt()
         {
             var ledger = NewLedger();

@@ -15,6 +15,7 @@ using VContainer;
 using VContainer.Unity;
 using KingdomRuler.Modules.Trade;
 using KingdomRuler.Modules.Trade.UI;
+using KingdomRuler.Modules.Economy;
 
 namespace KingdomRuler.Core
 {
@@ -30,6 +31,7 @@ namespace KingdomRuler.Core
         [Header("Modules")]
         [SerializeField] private LawsConfig    _lawsConfig;
         [SerializeField] private TradeConfig   _tradeConfig;
+        [SerializeField] private EconomyConfig _economyConfig;
 
         protected override void Configure(IContainerBuilder builder)
         {
@@ -60,6 +62,10 @@ namespace KingdomRuler.Core
             builder.RegisterInstance(ResolveTradeConfig());
             builder.Register<TradeManager>(Lifetime.Singleton);
             builder.Register<TradePresenter>(Lifetime.Singleton);
+
+            // Economy module.
+            builder.RegisterInstance(ResolveEconomyConfig());
+            builder.Register<EconomyManager>(Lifetime.Singleton);
 
             // Services
             // Explicit factory: picks the persistentDataPath constructor over the test-only one.
@@ -102,6 +108,16 @@ namespace KingdomRuler.Core
                 "[GameBootstrapper] No TradeConfig assigned — falling back to defaults. " +
                 "Assign the asset on the Bootstrap scene's GameBootstrapper.", this);
             return ScriptableObject.CreateInstance<TradeConfig>();
+        }
+
+        private EconomyConfig ResolveEconomyConfig()
+        {
+            if (_economyConfig != null) return _economyConfig;
+
+            Debug.LogWarning(
+                "[GameBootstrapper] No EconomyConfig assigned — falling back to defaults, with no " +
+                "businesses. Assign the asset on the Bootstrap scene's GameBootstrapper.", this);
+            return ScriptableObject.CreateInstance<EconomyConfig>();
         }
 
         private TradeResourceRegistry ResolveTradeResourceRegistry()

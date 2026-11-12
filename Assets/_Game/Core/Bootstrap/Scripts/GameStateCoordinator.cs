@@ -4,6 +4,7 @@ using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Systems.Save;
 using KingdomRuler.Modules.Laws;
 using KingdomRuler.Modules.Trade;
+using KingdomRuler.Modules.Economy;
 
 namespace KingdomRuler.Core
 {
@@ -22,6 +23,7 @@ namespace KingdomRuler.Core
         private readonly KingdomLedger           _ledger;
         private readonly LawsManager             _laws;
         private readonly TradeManager            _trade;
+        private readonly EconomyManager          _economy;
 
         private bool _isHydrated;
 
@@ -29,12 +31,14 @@ namespace KingdomRuler.Core
             ISaveService            saveService,
             KingdomLedger           ledger,
             LawsManager             laws,
-            TradeManager            trade)
+            TradeManager            trade,
+            EconomyManager          economy)
         {
             _saveService = saveService ?? throw new ArgumentNullException(nameof(saveService));
             _ledger      = ledger      ?? throw new ArgumentNullException(nameof(ledger));
             _laws        = laws        ?? throw new ArgumentNullException(nameof(laws));
             _trade       = trade       ?? throw new ArgumentNullException(nameof(trade));
+            _economy     = economy     ?? throw new ArgumentNullException(nameof(economy));
 
             Application.focusChanged += OnFocusChanged;
             Application.quitting     += OnQuitting;
@@ -69,6 +73,11 @@ namespace KingdomRuler.Core
             else                                 _laws.InitializeNewGame();
             if (state.Trade             != null) _trade.LoadFromDto(state.Trade);
             else                                 _trade.InitializeNewGame();
+
+            // After the Ledger: a save from before Economy existed gets the starting gold added to
+            // the balance it already has.
+            if (state.Economy           != null) _economy.LoadFromDto(state.Economy);
+            else                                 _economy.InitializeNewGame();
         }
 
         /// <summary>Write current state to disk. Safe to call at any time.</summary>
@@ -86,7 +95,8 @@ namespace KingdomRuler.Core
                 SchemaVersion     = GameStateDto.CurrentSchemaVersion,
                 Ledger            = _ledger.ToDto(),
                 Laws              = _laws.ToDto(),
-                Trade             = _trade.ToDto()
+                Trade             = _trade.ToDto(),
+                Economy           = _economy.ToDto()
             });
         }
 
@@ -103,6 +113,8 @@ namespace KingdomRuler.Core
             _laws.InitializeNewGame();
             // Seeds base warehouse capacities, the first batch of offers, and the regen baseline.
             _trade.InitializeNewGame();
+            // Grants the starting gold: exactly the cheapest business's price (GDD §8).
+            _economy.InitializeNewGame();
         }
 
         private void OnFocusChanged(bool hasFocus)

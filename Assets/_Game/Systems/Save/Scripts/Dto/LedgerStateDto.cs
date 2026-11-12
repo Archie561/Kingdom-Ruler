@@ -14,7 +14,9 @@ namespace KingdomRuler.Systems.Save
     /// </remarks>
     public sealed class LedgerStateDto
     {
+        /// <summary>Read through <see cref="WholeNumberLongJsonConverter"/>, so <c>1000.0</c> loads as 1000.</summary>
         [JsonProperty("gold")]
+        [JsonConverter(typeof(WholeNumberLongJsonConverter))]
         public long Gold { get; set; }
 
         [JsonProperty("crystals")]

@@ -15,7 +15,7 @@ namespace KingdomRuler.Systems.Save
     /// </remarks>
     public sealed class GameStateDto
     {
-        public const int CurrentSchemaVersion = 8;
+        public const int CurrentSchemaVersion = 9;
 
         [JsonProperty("schemaVersion")]
         public int SchemaVersion { get; set; } = CurrentSchemaVersion;
@@ -28,5 +28,8 @@ namespace KingdomRuler.Systems.Save
 
         [JsonProperty("trade")]
         public TradeStateDto Trade { get; set; }
+
+        [JsonProperty("economy")]
+        public EconomyStateDto Economy { get; set; }
     }
 }

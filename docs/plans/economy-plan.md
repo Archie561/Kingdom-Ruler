@@ -1,6 +1,6 @@
 # Economy — implementation plan
 
-**Progress:** steps done: 1, 2, 3; next: step 4.
+**Progress:** steps done: 1, 2, 3, 4; next: step 5.
 
 > Implements **GDD §8 — Economy**. The brief behind this plan is `docs/plans/economy-brief.md`.
 > Each step below is planned in detail and built in its own session, one step per prompt, and only
@@ -301,7 +301,28 @@ order, and it is why the ordering otherwise stands.
   - missing artwork reported as one grouped warning, not a failure (`ARCHITECTURE.md` §8).
 - **Verify.** Compile clean; EditMode count +N, all passing.
 
-### Step 4 — Model, save and bootstrap wiring, with tests
+### Step 4 — Model, save and bootstrap wiring, with tests ✔
+
+> **Done 2026-11-12.** 604 EditMode tests pass (516 + 88 new), plus a Play-mode smoke from
+> Bootstrap. What turned out differently:
+> - **Every storage settles on every tick**, like warehouse regen, rather than only on load, buy
+>   and collect. It is simpler, it resynchronises a device clock moved back mid-session, and step 1's
+>   rounding bound (accepted) covers the drift.
+> - **`StoragesFilled` is a no-argument event raised at most once per tick.** The coalescing lives
+>   in the Manager, so the Presenter only plays the sound. The rows read "full" by polling.
+> - **The top-up skips the gold spend when the balance is already 0**, so it never publishes an
+>   empty gold change. A saved id that no longer exists logs a warning.
+> - **The converter is `WholeNumberLongJsonConverter`.** Beyond decimals it saturates numbers
+>   outside `long` (a `BigInteger` or `1e30`), and each field's load then clamps them.
+> - **`Bootstrap.unity` gained one line**: `GameBootstrapper._economyConfig`, assigned through
+>   MCP. The Bootstrap asmdef now references Economy. The Presenter is registered in step 6.
+> - **Play mode:**
+>   - Your schema-8 save loaded with no errors or warnings; Economy started on top of it with
+>     100 gold added and the crystals untouched.
+>   - On exit the file had `schemaVersion` 9 and an `economy` section for all six businesses.
+>   - A second boot from that save granted nothing more.
+>   - The save was then restored byte-identical, and `ProjectSettings/` is unchanged.
+
 
 - **Goal.** Build the mechanic in plain C#:
   - `BusinessProduction` (the seam);
@@ -484,7 +505,9 @@ order, and it is why the ordering otherwise stands.
     - every tap through `EventSystem.RaycastAll` and `ExecuteEvents`;
     - sound and haptic counts read from the stub services' `Editor.log` lines;
     - layout checked at `KR 3:4`, `KR 9:16` and `KR 9:20`, and left on 9:16;
-    - both locales, switched at runtime.
+    - both locales, switched at runtime;
+    - the full clock tick re-measured with Economy's subscriber, for time and allocation, so the
+      `ARCHITECTURE.md` §4.5 figure can be updated.
 
 ### Step 8 — Docs
 
