@@ -100,8 +100,8 @@
   `characteristic.{enumname}`. Content assets therefore carry *no* `TitleKey`-style fields —
   the id already is the key. Nothing to wire, nothing to mistype, nothing to drift. The cost
   is that a missing *table* entry only shows up at runtime, which is what the **content
-  tests** exist to catch (§8): `LedgerDataTests` for anything Ledger-owned, `LawsContentTests`
-  and `TradeTextTests` for each module's own keys.
+  tests** exist to catch (§8): `LedgerDataTests` for anything Ledger-owned, `LawsContentTests`,
+  `TradeTextTests` and `EconomyContentTests` for each module's own keys.
 
   **A table name and its key derivation are owned by the type whose text they address** —
   together, on the same type, and never re-declared by the code that reads them.
@@ -219,7 +219,7 @@ one place to go:
 
 **Dependencies run one way: `Core → Modules → Systems → Shared`.** One assembly per folder makes
 the compiler enforce it — `KingdomRuler.Shared` references nothing of ours, `KingdomRuler.Systems`
-references only packages, and each `KingdomRuler.Modules.<X>` references Systems and Shared but no
+references only Shared and packages, and each `KingdomRuler.Modules.<X>` references Systems and Shared but no
 other module. A Shared helper that reached for the Ledger, or a system that reached for a module,
 simply does not compile.
 
@@ -288,6 +288,8 @@ Assets/
         Scripts/            # SafeAreaFitter — notch/gesture-bar insets (§4.6)
         Prefabs/
       Text/                 # TimeFormat — static formatting helpers
+      Accrual/              # WholeUnitAccrual — the whole-unit fill shared by warehouse regen and
+                            # business storages (§4.5)
     Modules/
       Navigation/           # the bottom nav bar — see §4.6. 4 classes; it deals only in
         Scripts/            # ScreenId, and binds screens as plain GameObjects
@@ -312,9 +314,12 @@ Assets/
       Trade/                # Laws' shape: Data/ (TradeConfig), Model/ (TradeManager + pure
                             # helpers), UI/ (one folder per component); Config/ only — offers
                             # are generated, not authored (docs/modules/Trade.md)
-      Economy/              # EMPTY until built (GDD §8). Each of these four is a folder name
+      Economy/              # being built (GDD §8, docs/plans/economy-plan.md). Laws' shape: Data/
+                            # (BusinessDefinition, EconomyConfig); ScriptableObjects/Config/ and
+                            # Businesses/ (one asset per business); Localization/ (BusinessesTable,
+                            # EconomyUITable)
+      Cities/               # EMPTY until built (GDD §9). Each of these three is a folder name
                             # only. A module takes Laws' shape when it is built.
-      Cities/               # EMPTY until built (GDD §9)
       RandomOccurrences/    # EMPTY until built — the mechanic in GDD §10
       Shop/                 # EMPTY until built (GDD §11)
     Scenes/
@@ -326,7 +331,7 @@ Assets/
       Modules/               # mirrors Modules/ — one test folder per module
       Systems/               # mirrors Systems/ — Ledger/ plus the service tests and the
                              # shared test fakes (TestServiceFakes)
-      Shared/                # mirrors Shared/ — Text/ (TimeFormat)
+      Shared/                # mirrors Shared/ — Text/ (TimeFormat), Accrual/ (WholeUnitAccrual)
     PlayMode/                 # sparse — only for things that need the Unity runtime
 docs/
   GDD.md
@@ -513,7 +518,10 @@ cards are waiting.
 ### 4.3 The Ledger (`Systems/Ledger`)
 
 One class, `KingdomLedger`, owns:
-- Gold and Crystals (simple amounts)
+- Gold and Crystals (simple amounts). Gold is a `long` capped at `KingdomLedger.MaxGold`
+  (999,999,999,999,999 — far beyond play, and just under 10¹⁵ so a display needs no suffix past
+  "T"). `AddGold` stops at the ceiling and returns how much fitted, so whoever adds keeps what did
+  not — a collect leaves it in the storage. The load clamps to it, and `SetGold` refuses above it.
 - 6 `TradeResourceState` (whole-unit amount and capacity, and when the unit in progress started)
 - 6 `CharacteristicState` (level, points-into-current-level, permanent level floor)
 
@@ -569,8 +577,9 @@ API moves are whole units — one number per resource, the one on screen, with n
 mechanics to disagree on. Regeneration keeps no fraction either: a warehouse gains **one unit every
 `TicksPerDay / capacity`** (an empty one is full in exactly 24 h at any size), and
 `LastUpdatedUtc` is the moment the unit now in progress started, so the partial unit lives in the
-timestamp. That arithmetic is exact in `long` while capacity stays under ~10.6 million, so
-`KingdomLedger.MaxWarehouseCapacity` (10,000,000) is enforced: `SetWarehouseCapacity` and
+timestamp. The algorithm is `Shared/Accrual/WholeUnitAccrual` (§4.5), exact at any capacity;
+`TradeResourceState` only fixes its period at one day. `KingdomLedger.MaxWarehouseCapacity`
+(10,000,000) is a sanity ceiling on tuning, not an arithmetic limit: `SetWarehouseCapacity` and
 `LoadFromDto` clamp to it and log. Regen's read-outs — `TimePerUnit`, `NextUnitProgress(now)`,
 `TimeUntilFull(now)` — are on `TradeResourceState`, because they are regen's rules; they take `now`
 because the Ledger holds no clock. The save reads every whole-number field through
@@ -679,8 +688,14 @@ View tells it *what* to show, never *when* to animate.
 
 Every timer-driven system (law queue, trade offer refresh, resource regen, business
 storage) stores a `lastUpdatedUtc` timestamp (or a deadline) and a rate. A whole-unit accrual
-keeps its partial progress in that timestamp rather than in a fractional amount — warehouse regen
-does (§4.3). On app resume and on load, each
+keeps its partial progress in that timestamp rather than in a fractional amount, and every one uses
+the same implementation, `Shared/Accrual/WholeUnitAccrual`: a store that fills from empty to full
+over a fixed period, one whole unit at a time. It is pure — the caller owns the amount, capacity and
+timestamp — and exact at any capacity, because products that would leave `long` go through a
+128-bit multiply-divide (not `double`, which is inexact; not `BigInteger`, which allocates on every
+tick). Its start is floored to a whole tick, so rounding favours the player: a store settled often
+runs ahead of one settled once by under one tick of production per settle. Warehouse regen (§4.3)
+is its first user. On app resume and on load, each
 system computes `elapsed = now - lastUpdatedUtc` **once** and fast-forwards state
 accordingly (capped where a cap applies). This must not be simulated tick-by-tick — a
 player who was away 10 hours shouldn't cause 10 hours of simulated frames.
@@ -1009,8 +1024,9 @@ instead; `docs/modules/Popups.md` §7 is the worked example.
   runtime (a scene loads and wires up without null refs).
 - **Content tests check what is authored**, not data a test builds for itself:
   `LedgerDataTests` (the registries and the names in `SharedTable`), `LawsContentTests` (every
-  card's id and text, the refill messages) and `TradeTextTests` (every message in
-  `TradeUIText.AllKeys`). They load the project's real assets and String Tables, so they run
+  card's id and text, the refill messages), `TradeTextTests` (every message in
+  `TradeUIText.AllKeys`) and `EconomyContentTests` (every business's id, text, numbers against the
+  gold ceiling, and the price order). They load the project's real assets and String Tables, so they run
   with every test pass — there is no menu item to remember.
 
   **A wiring mistake fails; unfinished content warns.** A key the game asks for that exists in

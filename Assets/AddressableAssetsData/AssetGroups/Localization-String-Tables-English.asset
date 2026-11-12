@@ -27,6 +27,12 @@ MonoBehaviour:
     m_SerializedLabels:
     - Locale-en
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 45fd78896d29f2f449611492f7c8e532
+    m_Address: EconomyUITable_en
+    m_ReadOnly: 1
+    m_SerializedLabels:
+    - Locale-en
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 4f0b5434337d0bc46bcd81a7ce36faa0
     m_Address: LawsUITable_en
     m_ReadOnly: 1
@@ -35,6 +41,12 @@ MonoBehaviour:
     FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: d097d4bd0260c6b47bbdf2e8e94a11c9
     m_Address: TradeUITable_en
+    m_ReadOnly: 1
+    m_SerializedLabels:
+    - Locale-en
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: e6f856710eadb2f4eaedafcb779ed566
+    m_Address: BusinessesTable_en
     m_ReadOnly: 1
     m_SerializedLabels:
     - Locale-en

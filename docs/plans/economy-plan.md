@@ -1,6 +1,6 @@
 # Economy — implementation plan
 
-**Progress:** steps done: none; next: step 1.
+**Progress:** steps done: 1, 2, 3; next: step 4.
 
 > Implements **GDD §8 — Economy**. The brief behind this plan is `docs/plans/economy-brief.md`.
 > Each step below is planned in detail and built in its own session, one step per prompt, and only
@@ -178,7 +178,19 @@ step 1. Otherwise the docs would be wrong between steps (`CLAUDE.md` §5). Step 
 `docs/modules/Economy.md` and does the full pass. This is the one change to the brief's suggested
 order, and it is why the ordering otherwise stands.
 
-### Step 1 — The shared accrual helper, and the Ledger moving onto it
+### Step 1 — The shared accrual helper, and the Ledger moving onto it ✔
+
+> **Done 2026-11-12.** 498 EditMode tests pass (469 + 29 new). What turned out differently:
+> - **The arithmetic is a hand-written 128-bit multiply-divide**, not `decimal`. Every product
+>   that fits in `long` takes the plain path, so every warehouse computes exactly as before.
+> - **Rounding is exact to the tick, not to the unit.** Today's floored start lets each settle
+>   recount under one tick, in the player's favour. At warehouse sizes, where a unit spans 86,400+
+>   ticks, that rounds to nothing. Once a tick holds whole units (from ~10⁷ gold per second, near
+>   the ceiling only), a store settled at 4 Hz runs a few units ahead of one settled once: under one
+>   part in 2.5 million. The tests assert that bound there, not strict equality. Strict equality
+>   would need a stored sub-tick fraction, which is new save state for a scale far beyond play.
+> - **Capacity ≤ 0** produces nothing and counts as full. `TimePerUnit` is then `TimeSpan.MaxValue`.
+
 
 - **Goal.** Add `Shared/Accrual/WholeUnitAccrual`, the whole-unit algorithm now inside
   `TradeResourceState`:
@@ -221,7 +233,13 @@ order, and it is why the ordering otherwise stands.
   - No Play mode needed (no UI change). An optional smoke from Bootstrap would show the Trade tiles
     still filling.
 
-### Step 2 — The gold ceiling
+### Step 2 — The gold ceiling ✔
+
+> **Done 2026-11-12.** 508 EditMode tests pass (498 + 10 new). As planned, with one detail:
+> `AddGold` of nothing — zero, or at the ceiling — now publishes no `GoldChangedEvent`, as
+> `AddTradeResource` already did. No game code subscribed to the event, so nothing depended on the
+> empty message. `WholeUnitAccrualTests` now take their ceiling from `KingdomLedger.MaxGold`.
+
 
 - **Goal.** Add `KingdomLedger.MaxGold`, so the balance can never overflow and so Economy's storages
   have a known upper bound.
@@ -240,7 +258,22 @@ order, and it is why the ordering otherwise stands.
   - Existing gold tests are unchanged.
 - **Verify.** Compile clean; EditMode count +N, all passing.
 
-### Step 3 — Data types, content assets and String Tables
+### Step 3 — Data types, content assets and String Tables ✔
+
+> **Done 2026-11-12.** 516 EditMode tests pass (508 + 8 new). What turned out differently:
+> - **`MaxUnitsPerType` is a constant on `EconomyConfig`**, not on a model class. The content test
+>   needs it now, and it bounds the authored rates and `StorageHours` beside it, the way
+>   `TradeConfig` holds its share bounds. It is documented as a safety ceiling, not a tunable.
+> - **The Bootstrap asmdef reference waits for step 4**, the first step that uses the module from
+>   there. Only the EditMode test asmdef references Economy now.
+> - **One more content check:** every `BusinessDefinition` asset must be listed on the config,
+>   since an unlisted one never appears in the game.
+> - Rates and prices are `long`, clamped to ≥ 1 in `OnValidate`, because `[Min]` does not apply
+>   to `long`.
+> - **The ordering test was proven to fail.** A tavern saved at 50 gold failed it with a readable
+>   message; the asset was then restored byte-identical.
+> - `EconomyUITable` exists with no entries yet. Step 6 fills it.
+
 
 - **Goal.**
   - Create the Economy module skeleton: folders, the `KingdomRuler.Modules.Economy` asmdef, and the
@@ -281,8 +314,11 @@ order, and it is why the ordering otherwise stands.
 - **What the Manager owns.**
   - **Lifecycle.** `InitializeNewGame` grants exactly the cheapest business's price, read from the
     content; `LoadFromDto` and `ToDto` handle the save.
-  - **The clock.** Its constructor subscribes `AdvanceTo` to `Ticked`. Each tick settles every
-    storage and raises a plain `StorageFilled` event when a storage crosses to full.
+  - **The clock.** Its constructor subscribes `AdvanceTo` to `Ticked`, and raises a plain
+    `StorageFilled` event when a storage crosses to full. Prefer detecting that crossing from each
+    storage's time-until-full over settling every storage on every tick. Settling only on load, buy
+    and collect keeps step 1's rounding sliver per player action instead of per tick. Decide in
+    the step.
   - **Every transaction, each price beside its charge:**
     - buy *n* for gold;
     - Max, as many as affordable, clamped to the units ceiling;

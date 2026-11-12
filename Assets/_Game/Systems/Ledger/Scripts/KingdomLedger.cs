@@ -23,10 +23,17 @@ namespace KingdomRuler.Systems.Ledger
 
         /// <summary>
         /// The largest capacity a warehouse may have — far above play (Trade's top level holds
-        /// ~333 thousand). It keeps whole-unit regeneration exact in <c>long</c> ticks
-        /// (<see cref="TradeResourceState"/>), whatever a module's curve is tuned to.
+        /// ~333 thousand). A sanity ceiling on tuning: a curve that reaches it is a mistake, logged and
+        /// clamped, whatever a module's coefficients say. Regeneration itself is exact at any capacity.
         /// </summary>
         public const int MaxWarehouseCapacity = 10_000_000;
+
+        /// <summary>
+        /// The most gold the player can hold — far beyond play, and just under 10¹⁵ so a display
+        /// never needs a suffix past "T". It keeps every sum of gold inside <c>long</c>, and bounds
+        /// what any one gold storage may hold (GDD §8).
+        /// </summary>
+        public const long MaxGold = 999_999_999_999_999;
 
         private readonly EventBus _eventBus;
 
@@ -59,11 +66,20 @@ namespace KingdomRuler.Systems.Ledger
 
         // --- Gold ---
 
-        public void AddGold(long amount)
+        /// <summary>Add gold, up to <see cref="MaxGold"/>. Returns how much fitted.</summary>
+        /// <remarks>
+        /// What does not fit is the caller's to keep: a collect leaves it in the storage rather than
+        /// losing it. Nothing fitted publishes nothing.
+        /// </remarks>
+        public long AddGold(long amount)
         {
             if (amount < 0) throw new ArgumentException("Use SpendGold for negative changes.", nameof(amount));
-            _gold += amount;
-            _eventBus.Publish(new GoldChangedEvent(_gold, amount));
+            long added = Math.Min(amount, MaxGold - _gold);
+            if (added <= 0) return 0;
+
+            _gold += added;
+            _eventBus.Publish(new GoldChangedEvent(_gold, added));
+            return added;
         }
 
         public bool SpendGold(long amount)
@@ -79,6 +95,7 @@ namespace KingdomRuler.Systems.Ledger
         public void SetGold(long amount)
         {
             if (amount < 0) throw new ArgumentException("Gold cannot be negative.", nameof(amount));
+            if (amount > MaxGold) throw new ArgumentException($"Gold cannot exceed {MaxGold}.", nameof(amount));
             _gold = amount;
         }
 
@@ -336,7 +353,7 @@ namespace KingdomRuler.Systems.Ledger
         {
             if (dto == null) return;
 
-            _gold     = Math.Max(0L, dto.Gold);
+            _gold     = Math.Clamp(dto.Gold, 0L, MaxGold);
             _crystals = Math.Max(0, dto.Crystals);
 
             if (dto.TradeResources != null)

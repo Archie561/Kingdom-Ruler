@@ -2,6 +2,7 @@
     "name": "KingdomRuler.Systems",
     "rootNamespace": "KingdomRuler.Systems",
     "references": [
+        "KingdomRuler.Shared",
         "VContainer",
         "Unity.Localization",
         "Unity.ResourceManager",

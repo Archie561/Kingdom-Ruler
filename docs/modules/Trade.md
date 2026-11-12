@@ -177,9 +177,10 @@ agree on, no float landing one ulp under capacity, no NaN guard.
 Regeneration still needs no fraction. A warehouse gains **one unit every `TicksPerDay / capacity`**,
 so an empty one is full after exactly 24 h at any size, and `TradeResourceState.LastUpdatedUtc` is
 **the moment the unit now in progress started** — the partial unit lives in the timestamp, the same
-deadline idea as `OfferRefreshTimer`. The arithmetic is exact in `long`, which the Ledger guarantees
-by clamping capacity to `KingdomLedger.MaxWarehouseCapacity` (10,000,000). Many short ticks give
-exactly what one long absence gives. The rules are the Ledger's (`ARCHITECTURE.md` §4.3); Trade only
+deadline idea as `OfferRefreshTimer`. The arithmetic is the shared `WholeUnitAccrual`
+(`ARCHITECTURE.md` §4.5), exact at any capacity; the Ledger still clamps capacity to
+`KingdomLedger.MaxWarehouseCapacity` (10,000,000) as a sanity ceiling on tuning. Many short ticks give
+what one long absence gives. The rules are the Ledger's (`ARCHITECTURE.md` §4.3); Trade only
 hands it a capacity.
 
 ### Sizing
@@ -531,6 +532,7 @@ popups and the receipt all pick it up.
 
 Also `Systems/Ledger/TradeResourceRegenTests` (whole-unit regen: exactly 24 h at every capacity, many
 ticks equal one absence, progress kept across an upgrade, the read-outs, a backwards clock),
+`Shared/Accrual/WholeUnitAccrualTests` (the shared algorithm, up to the top of `long`),
 `KingdomLedgerTests`/`KingdomLedgerSaveTests` (the integer API, the capacity ceiling, a schema-7 file
 loading, integers written) and `Shared/Text/TimeFormatTests`.
 

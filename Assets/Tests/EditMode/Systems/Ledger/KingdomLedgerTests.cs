@@ -111,6 +111,79 @@ namespace KingdomRuler.Tests.EditMode.Systems
             Assert.Throws<ArgumentException>(() => _ledger.SetGold(-10));
         }
 
+        // ── The ceiling (KingdomLedger.MaxGold) ──────────────────────────────────
+
+        [Test]
+        public void AddGold_ReturnsWhatWasAdded()
+        {
+            Assert.AreEqual(100, _ledger.AddGold(100));
+        }
+
+        [Test]
+        public void AddGold_UpToTheCeilingExactly_AddsAll()
+        {
+            _ledger.SetGold(KingdomLedger.MaxGold - 25);
+
+            Assert.AreEqual(25, _ledger.AddGold(25));
+            Assert.AreEqual(KingdomLedger.MaxGold, _ledger.Gold);
+        }
+
+        [Test]
+        public void AddGold_PastTheCeiling_StopsAtIt_AndReportsOnlyWhatFitted()
+        {
+            _ledger.SetGold(KingdomLedger.MaxGold - 10);
+            GoldChangedEvent? receivedEvent = null;
+            _eventBus.Subscribe<GoldChangedEvent>(e => receivedEvent = e);
+
+            long added = _ledger.AddGold(25);
+
+            Assert.AreEqual(10, added);
+            Assert.AreEqual(KingdomLedger.MaxGold, _ledger.Gold);
+            Assert.AreEqual(KingdomLedger.MaxGold, receivedEvent.Value.NewAmount);
+            Assert.AreEqual(10, receivedEvent.Value.Delta, "The event carries the real change, not the request.");
+        }
+
+        [Test]
+        public void AddGold_AtTheCeiling_AddsNothing_AndPublishesNothing()
+        {
+            _ledger.SetGold(KingdomLedger.MaxGold);
+            int events = 0;
+            _eventBus.Subscribe<GoldChangedEvent>(_ => events++);
+
+            Assert.AreEqual(0, _ledger.AddGold(1));
+            Assert.AreEqual(KingdomLedger.MaxGold, _ledger.Gold);
+            Assert.AreEqual(0, events);
+        }
+
+        [Test]
+        public void AddGold_OfAnyAmount_NeverOverflows()
+        {
+            _ledger.AddGold(5);
+
+            Assert.AreEqual(KingdomLedger.MaxGold - 5, _ledger.AddGold(long.MaxValue));
+            Assert.AreEqual(KingdomLedger.MaxGold, _ledger.Gold);
+        }
+
+        [Test]
+        public void AddGold_WithZero_PublishesNothing()
+        {
+            int events = 0;
+            _eventBus.Subscribe<GoldChangedEvent>(_ => events++);
+
+            Assert.AreEqual(0, _ledger.AddGold(0));
+            Assert.AreEqual(0, events);
+        }
+
+        [Test]
+        public void SetGold_AtTheCeiling_IsAllowed_AndAboveItThrows()
+        {
+            _ledger.SetGold(KingdomLedger.MaxGold);
+            Assert.AreEqual(KingdomLedger.MaxGold, _ledger.Gold);
+
+            Assert.Throws<ArgumentException>(() => _ledger.SetGold(KingdomLedger.MaxGold + 1));
+            Assert.AreEqual(KingdomLedger.MaxGold, _ledger.Gold, "A refused set changes nothing.");
+        }
+
         #endregion
 
         #region Crystal Tests

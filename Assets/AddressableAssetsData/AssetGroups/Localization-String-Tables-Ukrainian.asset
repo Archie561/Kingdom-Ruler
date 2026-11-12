@@ -27,8 +27,20 @@ MonoBehaviour:
     m_SerializedLabels:
     - Locale-uk
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 88754dd6785cab74cb8bf6fc3c5a70de
+    m_Address: BusinessesTable_uk
+    m_ReadOnly: 1
+    m_SerializedLabels:
+    - Locale-uk
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: abff557204c99574bbe16e89a67c2af7
     m_Address: SharedTable_uk
+    m_ReadOnly: 1
+    m_SerializedLabels:
+    - Locale-uk
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: ae916efd49e02c24a8815e6944775e3d
+    m_Address: EconomyUITable_uk
     m_ReadOnly: 1
     m_SerializedLabels:
     - Locale-uk

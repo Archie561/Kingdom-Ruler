@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9620f8c34305754d8cc9a7e49e852d9, type: 3}
+  m_Name: BusinessesTable_en
+  m_EditorClassIdentifier: Unity.Localization::UnityEngine.Localization.Tables.StringTable
+  m_LocaleId:
+    m_Code: en
+  m_SharedData: {fileID: 11400000, guid: 047023b5025b3764aae8a122a2d0232b, type: 2}
+  m_Metadata:
+    m_Items: []
+  m_TableData:
+  - m_Id: 44978700288
+    m_Localized: Bakery
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974976
+    m_Localized: Fresh loaves at dawn, and a queue out the door by noon.
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974977
+    m_Localized: Tavern
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974978
+    m_Localized: Ale, gossip and the clink of coin until the candles burn low.
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974979
+    m_Localized: Tailor
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974980
+    m_Localized: Every noble wants a new cloak before the feast.
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974981
+    m_Localized: Market
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974982
+    m_Localized: Stalls from wall to wall, and a toll on every one.
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974983
+    m_Localized: Jeweller
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974984
+    m_Localized: Small stones, steady hands, and prices to match.
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974985
+    m_Localized: Bank
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974986
+    m_Localized: Other people's gold, kept safe, for a modest fee.
+    m_Metadata:
+      m_Items: []
+  references:
+    version: 2
+    RefIds: []

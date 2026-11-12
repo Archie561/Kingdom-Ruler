@@ -1,0 +1,76 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b11a58205ec3474ca216360e9fa74a8, type: 3}
+  m_Name: BusinessesTable Shared Data
+  m_EditorClassIdentifier: Unity.Localization::UnityEngine.Localization.Tables.SharedTableData
+  m_TableCollectionName: BusinessesTable
+  m_TableCollectionNameGuidString: 047023b5025b3764aae8a122a2d0232b
+  m_Entries:
+  - m_Id: 44978700288
+    m_Key: business.bakery.name
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974976
+    m_Key: business.bakery.flavor
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974977
+    m_Key: business.tavern.name
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974978
+    m_Key: business.tavern.flavor
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974979
+    m_Key: business.tailor.name
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974980
+    m_Key: business.tailor.flavor
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974981
+    m_Key: business.market.name
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974982
+    m_Key: business.market.flavor
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974983
+    m_Key: business.jeweller.name
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974984
+    m_Key: business.jeweller.flavor
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974985
+    m_Key: business.bank.name
+    m_Metadata:
+      m_Items: []
+  - m_Id: 45070974986
+    m_Key: business.bank.flavor
+    m_Metadata:
+      m_Items: []
+  m_Metadata:
+    m_Items: []
+  m_KeyGenerator:
+    rid: 9120051210388766802
+  references:
+    version: 2
+    RefIds:
+    - rid: 9120051210388766802
+      type: {class: DistributedUIDGenerator, ns: UnityEngine.Localization.Tables, asm: Unity.Localization}
+      data:
+        m_CustomEpoch: 1794478340036

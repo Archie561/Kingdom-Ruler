@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e4cf237c38c503a4984a6803b4def732, type: 3}
+  m_Name: EconomyConfig
+  m_EditorClassIdentifier: KingdomRuler.Modules.Economy::KingdomRuler.Modules.Economy.EconomyConfig
+  StorageHours: 24
+  GoldPerCrystal: 100
+  Businesses:
+  - {fileID: 11400000, guid: 58fe4cafc27bd924fa97260ecf378f59, type: 2}
+  - {fileID: 11400000, guid: 518e97e7b52ad744e84d621a7b85c86c, type: 2}
+  - {fileID: 11400000, guid: 3c309916bdd54474bb21ca01dd305d92, type: 2}
+  - {fileID: 11400000, guid: f97c49f881d9eed4780bc7f62ff444d8, type: 2}
+  - {fileID: 11400000, guid: e883eadcf2ccade4aa45b0ee76ae8c8f, type: 2}
+  - {fileID: 11400000, guid: 9e278f9cef7704a45bf4aaaa32b46a29, type: 2}

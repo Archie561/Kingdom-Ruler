@@ -165,6 +165,37 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
         }
 
         [Test]
+        public void LoadFromDto_GoldAboveTheCeiling_ClampsToIt()
+        {
+            var ledger = NewLedger();
+            ledger.LoadFromDto(new LedgerStateDto { Gold = long.MaxValue });
+
+            Assert.AreEqual(KingdomLedger.MaxGold, ledger.Gold);
+        }
+
+        [Test]
+        public void Load_AHandEditedHugeGold_FromJson_ClampsToTheCeiling()
+        {
+            var ledger = NewLedger();
+            ledger.LoadFromDto(FromJson(@"{ ""gold"": 9000000000000000000 }"));
+
+            Assert.AreEqual(KingdomLedger.MaxGold, ledger.Gold);
+        }
+
+        [Test]
+        public void RoundTrip_AtTheCeiling_Survives()
+        {
+            var source = NewLedger();
+            source.SetGold(KingdomLedger.MaxGold);
+
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(source.ToDto());
+            var restored = NewLedger();
+            restored.LoadFromDto(Newtonsoft.Json.JsonConvert.DeserializeObject<LedgerStateDto>(json));
+
+            Assert.AreEqual(KingdomLedger.MaxGold, restored.Gold);
+        }
+
+        [Test]
         public void LoadFromDto_UnknownEnumNames_AreSkippedNotThrown()
         {
             var dto = new LedgerStateDto();
