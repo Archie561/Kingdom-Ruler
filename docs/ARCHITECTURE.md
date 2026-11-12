@@ -153,7 +153,7 @@
 
   | Table | Holds | Because |
   |---|---|---|
-  | `Systems/Localization/Tables/SharedTable` | characteristic names, cross-cutting words | Cities and Random Occurrences need the identical strings |
+  | `Systems/Localization/Tables/SharedTable` | characteristic names, cross-cutting words, the big-number suffixes (`{0}K`, `{0} тис.`) | Cities and Random Occurrences need the identical strings; every screen that shows gold needs the suffixes |
   | `Modules/<X>/Localization/<X>UITable` | that screen's fixed chrome | small, stable, changes with the screen |
   | `Modules/Trade/Localization/TradeUITable` | Trade's chrome **and** its arg-taking messages | messages built from arguments are resolved from code, so it owns a `TradeUIText` keys type — see below (Laws' table has `LawsUIText` for the same reason) |
   | `Modules/Navigation/Localization/NavigationUITable` | the bottom bar's tab labels | the middle row's pattern — Navigation is a module (§4.6). Nothing outside the nav bar draws the word "Laws", so these are chrome, not cross-cutting words. It is resolved only by `LocalizeStringEvent` components, so no code names it and no test checks it — the tabs are on screen from the first frame |
@@ -287,7 +287,10 @@ Assets/
       UI/                   # UI atoms: buttons, toasts, currency pips
         Scripts/            # SafeAreaFitter — notch/gesture-bar insets (§4.6)
         Prefabs/
-      Text/                 # TimeFormat — static formatting helpers
+      Text/                 # TimeFormat, NumberFormat (big numbers: 9,999 · 12.3K · 1.23M,
+                            # truncated, never rounded up) — static formatting helpers. The
+                            # number suffixes' keys are owned by NumberSuffixes; a Presenter
+                            # resolves them and passes them in, since Shared cannot
       Accrual/              # WholeUnitAccrual — the whole-unit fill shared by warehouse regen and
                             # business storages (§4.5)
     Modules/
@@ -316,7 +319,9 @@ Assets/
                             # are generated, not authored (docs/modules/Trade.md)
       Economy/              # being built (GDD §8, docs/plans/economy-plan.md). Laws' shape: Data/
                             # (BusinessDefinition, EconomyConfig), Model/ (EconomyManager +
-                            # BusinessHolding, BusinessProduction, BusinessPricing);
+                            # BusinessHolding, BusinessProduction, BusinessPricing), UI/
+                            # (EconomyPresenter, EconomyUIText, BusinessRow/ and BusinessPopup/
+                            # view data);
                             # ScriptableObjects/Config/ and Businesses/ (one asset per business);
                             # Localization/ (BusinessesTable, EconomyUITable)
       Cities/               # EMPTY until built (GDD §9). Each of these three is a folder name
@@ -332,7 +337,7 @@ Assets/
       Modules/               # mirrors Modules/ — one test folder per module
       Systems/               # mirrors Systems/ — Ledger/ plus the service tests and the
                              # shared test fakes (TestServiceFakes)
-      Shared/                # mirrors Shared/ — Text/ (TimeFormat), Accrual/ (WholeUnitAccrual)
+      Shared/                # mirrors Shared/ — Text/ (TimeFormat, NumberFormat), Accrual/ (WholeUnitAccrual)
     PlayMode/                 # sparse — only for things that need the Unity runtime
 docs/
   GDD.md
@@ -945,8 +950,11 @@ Rules that reach beyond this system:
   `docs/modules/Popups.md` §6.
 - **Closing without a choice gives `null`** — the backdrop, `closeWhen`, a destroyed popup. It
   never equals a real choice, so it can never be mistaken for one.
-- **The tap spends nothing.** A purchase is charged only after the confirmation, and the price
-  is re-read at that moment rather than taken from what the popup displayed.
+- **A confirmed purchase spends nothing until Confirm.** Crystal purchases are always confirmed,
+  and so is every Trade purchase; each is charged only after Confirm, at the price re-read at that
+  moment rather than taken from what the popup displayed. **Gold purchases of businesses are not
+  confirmed** (GDD §8): buying units is the core loop, so it is charged on the tap. Only when the gold
+  falls short does a confirmation appear, and that one is a crystal purchase.
 - **`UniTaskVoid` + `.Forget()`, never `async void`**, whose exceptions are unobservable. An
   awaited object that can be destroyed must release its awaiter when it is.
 

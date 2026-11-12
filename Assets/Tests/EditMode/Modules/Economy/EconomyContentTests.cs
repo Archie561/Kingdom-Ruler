@@ -3,6 +3,7 @@ using System.Numerics;
 using NUnit.Framework;
 using UnityEngine;
 using KingdomRuler.Modules.Economy;
+using KingdomRuler.Modules.Economy.UI;
 using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Tests.EditMode.Systems;
 
@@ -128,6 +129,15 @@ namespace KingdomRuler.Tests.EditMode.Modules.Economy
                 Assert.LessOrEqual(businesses[i - 1].UnitPrice, businesses[i].UnitPrice,
                     $"{businesses[i - 1].name} ({businesses[i - 1].UnitPrice:N0}) is listed before the cheaper " +
                     $"{businesses[i].name} ({businesses[i].UnitPrice:N0}).");
+        }
+
+        /// <summary>Panel and confirmation text only appears in particular states — easy never to see.</summary>
+        [Test]
+        public void EveryCodeResolvedMessage_ExistsInEveryLocale()
+        {
+            var text = new LocalizationCheck(EconomyUIText.StringTable);
+            foreach (var key in EconomyUIText.AllKeys) text.Require(key);
+            text.Report();
         }
 
         /// <summary>Missing art is normal mid-project: one grouped warning, never a failure.</summary>

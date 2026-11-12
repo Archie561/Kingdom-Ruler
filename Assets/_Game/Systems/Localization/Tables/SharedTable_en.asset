@@ -74,6 +74,22 @@ MonoBehaviour:
     m_Localized: Cancel
     m_Metadata:
       m_Items: []
+  - m_Id: 33618222124138496
+    m_Localized: '{0}K'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 33618222224801792
+    m_Localized: '{0}M'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 33618222224801793
+    m_Localized: '{0}B'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 33618222224801794
+    m_Localized: '{0}T'
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

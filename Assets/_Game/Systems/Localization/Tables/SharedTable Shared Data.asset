@@ -71,6 +71,22 @@ MonoBehaviour:
     m_Key: ui.cancel
     m_Metadata:
       m_Items: []
+  - m_Id: 33618222124138496
+    m_Key: number.suffix.thousand
+    m_Metadata:
+      m_Items: []
+  - m_Id: 33618222224801792
+    m_Key: number.suffix.million
+    m_Metadata:
+      m_Items: []
+  - m_Id: 33618222224801793
+    m_Key: number.suffix.billion
+    m_Metadata:
+      m_Items: []
+  - m_Id: 33618222224801794
+    m_Key: number.suffix.trillion
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:

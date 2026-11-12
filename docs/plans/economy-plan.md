@@ -1,6 +1,6 @@
 # Economy — implementation plan
 
-**Progress:** steps done: 1, 2, 3, 4; next: step 5.
+**Progress:** steps done: 1–6; next: step 7.
 
 > Implements **GDD §8 — Economy**. The brief behind this plan is `docs/plans/economy-brief.md`.
 > Each step below is planned in detail and built in its own session, one step per prompt, and only
@@ -322,6 +322,11 @@ order, and it is why the ordering otherwise stands.
 >   - On exit the file had `schemaVersion` 9 and an `economy` section for all six businesses.
 >   - A second boot from that save granted nothing more.
 >   - The save was then restored byte-identical, and `ProjectSettings/` is unchanged.
+> - **Two follow-ups the user approved, done the same day.** 619 EditMode tests pass (604 + 15).
+>   - `WholeNumberJsonConverter` now clamps an integer beyond `int` instead of throwing, which
+>     set the whole save aside. `WholeNumberJsonConverterTests` covers it, plus a whole Ledger
+>     section with one oversized amount.
+>   - The three identical per-module `FakeClock` copies are now one, in `TestServiceFakes`.
 
 
 - **Goal.** Build the mechanic in plain C#:
@@ -386,7 +391,22 @@ order, and it is why the ordering otherwise stands.
     - restore the backup byte for byte;
     - reset `runInBackground`, and confirm `git diff ProjectSettings/` is empty.
 
-### Step 5 — Number abbreviation
+### Step 5 — Number abbreviation ✔
+
+> **Done 2026-11-12.** 655 EditMode tests pass (619 + 36 new). What turned out differently:
+> - **Two types, not one.** `NumberSuffixes` holds the four localized formats and owns their table
+>   and keys. `NumberFormat` holds `Abbreviate(value, suffixes, culture)` and
+>   `DisplayedValue(value)`. A test checks across 5,000 random pairs that equal `DisplayedValue`
+>   means equal text.
+> - **Trailing zeros are dropped:** `10K`, `1.2M`, not `10.0K`, `1.20M`.
+> - **Negatives truncate toward zero** (`-12.3K`), and `long.MinValue` cannot overflow.
+> - **Past 999T a number still shows, grouped** (`9,223,372T`). Only values beyond the gold
+>   ceiling reach that.
+> - **Keys:** `number.suffix.{thousand,million,billion,trillion}` in `SharedTable`, plain strings
+>   (not Smart). English `{0}K/M/B/T`; Ukrainian `{0} тис.`, `{0} млн`, `{0} млрд`, `{0} трлн`.
+> - **A suffix without `{0}`** (a missing entry's `[key]`) still shows the number. A test also
+>   fails any locale whose suffix lacks `{0}`.
+
 
 - **Goal.** Add `Shared/Text/NumberFormat`: whole numbers formatted for display.
   - Below 10,000 they are shown exactly, with grouping.
@@ -414,7 +434,35 @@ order, and it is why the ordering otherwise stands.
   Trade keeps its `N0` numbers.
 - **Verify.** Compile clean; EditMode count +N, all passing.
 
-### Step 6 — Presenter and view data, with tests
+### Step 6 — Presenter and view data, with tests ✔
+
+> **Done 2026-11-12.** 682 EditMode tests pass (655 + 27 new). What turned out differently:
+> - **Opening the panel moves to step 7.** `OpenBusiness` (the `Show` + `WaitForChoice` loop) needs
+>   the `BusinessPopup` view class, and that view and its `BusinessPopupChoice` belong with the
+>   prefab. It opens a popup, so EditMode could not test it either way. Everything else is here:
+>   `GetRow`, `GetBusiness`, `Collect`, `Buy`, the top-up confirmation, sounds, visibility.
+> - **`Buy(id, BuyAmount)` returns a `UniTask`**, so the panel loop can await a top-up
+>   confirmation before its next press. `BuyAmount` is `One / Ten / Max`.
+> - **Views get text as the screen needs it.** `Amount(long)`, `BusinessName(id)` and
+>   `UnitsOwnedText(int)`, plus `Gold` for the temporary total. The storage line is
+>   `Amount(stored) + " / " + Amount(capacity)`, composed in the view, as Trade's tiles do.
+> - **The suffixes are resolved once and cached**, then dropped on `LocaleChanged`, which the
+>   localization service also raises once at startup. A test pins that the startup placeholders
+>   do not stick.
+> - **The panel's buy buttons:**
+>   - An option past the units ceiling is inactive.
+>   - An unaffordable one stays tappable, because it offers the top-up, and is flagged
+>     (`AffordsOne/Ten/Max`) to be drawn muted.
+>   - At the ceiling, "Maximum owned" replaces the prices.
+> - **`EconomyUITable` keys:** `ui.units_owned`, `ui.rate`, `ui.buy_max`, `ui.maxed`,
+>   `ui.topup.title`, `ui.topup.body`, `ui.not_enough_crystals`, in `en` and `uk`. The Ukrainian
+>   top-up line avoids a number-then-noun plural.
+> - **Docs updated now, not in step 8:** `ARCHITECTURE.md` §4.7 states the confirmation rule. In
+>   `Popups.md`, §1's business-panel example confirms only the crystal top-up, and §5 is scoped
+>   the same way.
+> - **A Play-mode check** resolved the registered Presenter from the real container: six rows, and
+>   the Ukrainian name, owned and rate text all rendered. The save was restored byte-identical.
+
 
 - **Goal.** Build `EconomyPresenter`, `EconomyUIText` (with `AllKeys`) and the view-data types:
   - `BusinessRowViewData`: string-free, read every frame;
@@ -459,6 +507,8 @@ order, and it is why the ordering otherwise stands.
 
 - **Goal.** Build the Views and prefabs: `EconomyScreenView`, `BusinessRowView`, `BusinessPopup`
   (started as a copy of `ConfirmPopup.prefab`) and `GoldTotalView`.
+  - Add `BusinessPopupChoice` (Collect, BuyOne, BuyTen, BuyMax) and `EconomyPresenter.OpenBusiness`,
+    the panel's `Show` + `WaitForChoice` loop that awaits `Buy` (moved here from step 6).
   - Add `BusinessPopup` to `PopupRegistry.asset`.
   - Place an `EconomyScreen` instance in `Main` and assign the Economy tab's `NavTabButton._screen`.
   - Wire the fixed chrome through `LocalizeStringEvent`, and the DOTween feel (§6).

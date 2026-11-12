@@ -46,31 +46,33 @@ if (choice == ConfirmPopupChoice.Confirm) _manager.TryRefill();   // re-reads th
 
 **A panel that stays open** across several presses, with another popup opening on top of it —
 use `Show` and loop while it is open. `LawsPresenter.OpenCharacteristics` and
-`TradePresenter.OpenWarehouse` both work this way; the sketch below is the planned GDD §8 business
-panel:
+`TradePresenter.OpenWarehouse` both work this way, and so does the GDD §8 business panel, sketched
+here:
 
 ```csharp
-var panel = _popups.Create<BusinessPopup>().Show(() => BuildBusinessData(id));
+var panel = _popups.Create<BusinessPopup>().Show(() => GetBusiness(id));
 
 while (panel.IsOpen)
 {
     var choice = await panel.WaitForChoice();
 
-    if (choice == BusinessChoice.Collect)
-        _manager.Collect(id);                        // the panel redraws on its next refresh
+    if (choice == BusinessPopupChoice.Collect)
+        Collect(id);                                 // the panel redraws on its next refresh
 
-    if (choice == BusinessChoice.BuyAnother)
-    {
-        // A question on top of the panel. The panel stays open underneath, dimmed.
-        var answer = await _popups.Create<ConfirmPopup>().Ask(() => new ConfirmPopupData(
-            Resolve(EconomyUIText.BuyTitle),
-            Resolve(EconomyUIText.BuyBody, _manager.NextUnitCost(id)),
-            canConfirm: _manager.CanAffordNextUnit(id)));
-
-        if (answer == ConfirmPopupChoice.Confirm)
-            _manager.BuyAnother(id);                 // re-validates the price at this moment
-    }
+    if (choice == BusinessPopupChoice.BuyTen)
+        await Buy(id, BuyAmount.Ten);                // see below
 }
+
+// EconomyPresenter.Buy: a gold purchase is not confirmed (GDD §8) — only a crystal one is.
+if (_manager.CanAfford(id, count)) { _manager.TryBuy(id, count); return; }      // on the tap
+
+// Short of gold: a question on top of the panel, which stays open underneath, dimmed.
+var answer = await _popups.Create<ConfirmPopup>().Ask(() => new ConfirmPopupData(
+    Resolve(EconomyUIText.TopUpTitle), DescribeTopUp(id, count),
+    canConfirm: _manager.CanAffordCrystalTopUp(id, count)));
+
+if (answer == ConfirmPopupChoice.Confirm)
+    _manager.TryBuyWithCrystalTopUp(id, count);     // re-validates the price at this moment
 ```
 
 The loop needs no exit code of its own: when the panel closes (a backdrop tap, its own X button
@@ -80,7 +82,8 @@ false. What is on screen at each step:
 | Step | Stack (bottom → top) | Player can tap |
 |---|---|---|
 | Panel shown | Backdrop, **Panel** | the panel |
-| "Buy another" | Panel, Backdrop, **Confirm** | only the confirmation — the backdrop covers the panel |
+| A buy the gold covers | Backdrop, **Panel** | the panel — bought on the tap, nothing opens |
+| A buy the gold does not cover | Panel, Backdrop, **Confirm** | only the confirmation — the backdrop covers the panel |
 | Confirmation answered | Backdrop, **Panel** | the panel again |
 | Backdrop tap | (empty) | the screen; the loop ends |
 
@@ -176,7 +179,9 @@ stale data. Capture the id of the thing (`() => BuildBusinessData(id)`) and read
 
 **Money waits for the choice.** Opening a purchase confirmation spends nothing. The charge happens
 after `Confirm`, through the Manager, which re-reads and re-validates the price at that moment —
-never a price captured when the popup opened.
+never a price captured when the popup opened. Every crystal purchase and every Trade purchase is
+confirmed this way; buying business units for gold is not confirmed at all (GDD §8), so it opens
+no popup and is charged on the tap.
 
 **One stack, one backdrop.** `PopupSystem`'s list is the only record of what is open, and its
 single dimmer sits directly behind the topmost popup, so older popups are dimmed and unreachable.

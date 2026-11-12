@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using Newtonsoft.Json;
 using UnityEngine.Scripting;
 
@@ -10,7 +11,14 @@ namespace KingdomRuler.Systems.Save
     /// whole save would be set aside — this keeps saves that stored the value as a decimal, and
     /// hand-edited ones, readable.
     /// </summary>
-    /// <remarks><c>[Preserve]</c>: Newtonsoft creates it by reflection, which IL2CPP stripping cannot see.</remarks>
+    /// <remarks>
+    /// <para><b>A number outside <c>int</c> is clamped, not rejected</b> — <c>5000000000</c> reads as
+    /// <see cref="int.MaxValue"/>, and an integer beyond even <c>long</c> (which Newtonsoft hands over
+    /// as a <see cref="BigInteger"/>) likewise. Rejecting it would set the whole save aside over one
+    /// field; each field's own load then clamps it to its real range.</para>
+    ///
+    /// <para><c>[Preserve]</c>: Newtonsoft creates it by reflection, which IL2CPP stripping cannot see.</para>
+    /// </remarks>
     [Preserve]
     public sealed class WholeNumberJsonConverter : JsonConverter<int>
     {
@@ -23,7 +31,9 @@ namespace KingdomRuler.Systems.Save
             switch (reader.TokenType)
             {
                 case JsonToken.Integer:
-                    return Convert.ToInt32(reader.Value);
+                    if (reader.Value is BigInteger big)
+                        return big > int.MaxValue ? int.MaxValue : big < int.MinValue ? int.MinValue : (int)big;
+                    return (int)Math.Clamp(Convert.ToInt64(reader.Value), int.MinValue, int.MaxValue);
                 case JsonToken.Float:
                     double value = Convert.ToDouble(reader.Value);
                     if (double.IsNaN(value) || double.IsInfinity(value)) return 0;

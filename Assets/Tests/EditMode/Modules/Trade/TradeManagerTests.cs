@@ -8,6 +8,7 @@ using KingdomRuler.Modules.Trade;
 using KingdomRuler.Systems.Events;
 using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Systems.Save;
+using KingdomRuler.Tests.EditMode.Systems;
 
 namespace KingdomRuler.Tests.EditMode.Modules.Trade
 {

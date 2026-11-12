@@ -165,6 +165,17 @@ namespace KingdomRuler.Tests.EditMode.Systems.Ledger
         }
 
         [Test]
+        public void Load_AnAmountBeyondInt_ClampsInsteadOfFailingTheWholeSave()
+        {
+            var ledger = NewLedger();
+            ledger.LoadFromDto(FromJson(
+                @"{ ""gold"": 50, ""tradeResources"": { ""Wood"": { ""amount"": 5000000000, ""capacity"": 100 } } }"));
+
+            Assert.AreEqual(100, ledger.GetTradeResource(TradeResourceType.Wood).Amount, "Clamped to the warehouse.");
+            Assert.AreEqual(50, ledger.Gold, "The rest of the save still loads.");
+        }
+
+        [Test]
         public void Load_GoldWrittenAsADecimal_StillLoads()
         {
             var ledger = NewLedger();

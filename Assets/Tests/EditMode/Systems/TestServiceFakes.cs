@@ -1,16 +1,27 @@
 using System;
 using System.Collections.Generic;
 using KingdomRuler.Systems.Audio;
+using KingdomRuler.Systems.Clock;
 using KingdomRuler.Systems.Haptics;
 using KingdomRuler.Systems.Localization;
 
 namespace KingdomRuler.Tests.EditMode.Systems
 {
     // ── Shared service fakes ──────────────────────────────────────────────────────
-    // Promoted here from the Laws presenter tests once Trade needed the identical ones.
-    // Copying them per module is how you end up with two that drift; TestCharacteristics in
-    // Systems/Ledger already sets this precedent. FakeClock is deliberately NOT here — each
-    // module's test namespace declares its own and they do not collide.
+    // One copy of each fake every module's tests use: copies per module are how two end up
+    // drifting apart. TestCharacteristics in Systems/Ledger follows the same rule.
+
+    /// <summary>A clock driven by hand: set or advance the time, then <see cref="Tick"/> as GameClock does.</summary>
+    public sealed class FakeClock : IClock
+    {
+        public DateTime UtcNow { get; set; } = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        public void Advance(TimeSpan duration) => UtcNow += duration;
+
+        public event Action<DateTime> Ticked;
+
+        /// <summary>What GameClock does four times a second.</summary>
+        public void Tick() => Ticked?.Invoke(UtcNow);
+    }
 
     public sealed class FakeAudioService : IAudioService
     {

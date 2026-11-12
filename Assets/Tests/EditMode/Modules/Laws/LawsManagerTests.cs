@@ -7,6 +7,7 @@ using UnityEngine.TestTools;
 using KingdomRuler.Systems.Events;
 using KingdomRuler.Systems.Ledger;
 using KingdomRuler.Modules.Laws;
+using KingdomRuler.Tests.EditMode.Systems;
 
 namespace KingdomRuler.Tests.EditMode.Modules.Laws
 {

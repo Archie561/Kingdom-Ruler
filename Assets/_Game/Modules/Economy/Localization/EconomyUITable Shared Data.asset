@@ -14,7 +14,35 @@ MonoBehaviour:
   m_EditorClassIdentifier: Unity.Localization::UnityEngine.Localization.Tables.SharedTableData
   m_TableCollectionName: EconomyUITable
   m_TableCollectionNameGuidString: 212d67fe49d9fb243bb29408dec19e3b
-  m_Entries: []
+  m_Entries:
+  - m_Id: 14894924595200
+    m_Key: ui.units_owned
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895008481280
+    m_Key: ui.rate
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895012675584
+    m_Key: ui.buy_max
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895012675585
+    m_Key: ui.maxed
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895012675586
+    m_Key: ui.topup.title
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895012675587
+    m_Key: ui.topup.body
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895012675588
+    m_Key: ui.not_enough_crystals
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:

@@ -16,6 +16,7 @@ using VContainer.Unity;
 using KingdomRuler.Modules.Trade;
 using KingdomRuler.Modules.Trade.UI;
 using KingdomRuler.Modules.Economy;
+using KingdomRuler.Modules.Economy.UI;
 
 namespace KingdomRuler.Core
 {
@@ -66,6 +67,7 @@ namespace KingdomRuler.Core
             // Economy module.
             builder.RegisterInstance(ResolveEconomyConfig());
             builder.Register<EconomyManager>(Lifetime.Singleton);
+            builder.Register<EconomyPresenter>(Lifetime.Singleton);
 
             // Services
             // Explicit factory: picks the persistentDataPath constructor over the test-only one.

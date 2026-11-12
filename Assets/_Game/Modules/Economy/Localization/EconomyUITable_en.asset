@@ -17,7 +17,35 @@ MonoBehaviour:
   m_SharedData: {fileID: 11400000, guid: 212d67fe49d9fb243bb29408dec19e3b, type: 2}
   m_Metadata:
     m_Items: []
-  m_TableData: []
+  m_TableData:
+  - m_Id: 14894924595200
+    m_Localized: '{0} owned'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895008481280
+    m_Localized: +{0} per hour
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895012675584
+    m_Localized: "Max \xD7{0}"
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895012675585
+    m_Localized: Maximum owned
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895012675586
+    m_Localized: Not enough gold
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895012675587
+    m_Localized: "You are {0} gold short of {1} \xD7 {2}.\nCover it with {3} crystals?"
+    m_Metadata:
+      m_Items: []
+  - m_Id: 14895012675588
+    m_Localized: Not enough crystals.
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []
